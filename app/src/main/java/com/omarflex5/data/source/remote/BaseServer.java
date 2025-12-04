@@ -23,13 +23,16 @@ public class BaseServer {
                         okhttp3.Request original = chain.request();
                         okhttp3.HttpUrl originalHttpUrl = original.url();
 
-                        okhttp3.HttpUrl url = originalHttpUrl.newBuilder()
-                                .addQueryParameter("api_key", API_KEY)
-                                .addQueryParameter("language", "ar-SA")
-                                .build();
+                        okhttp3.HttpUrl.Builder urlBuilder = originalHttpUrl.newBuilder()
+                                .addQueryParameter("api_key", API_KEY);
+
+                        // Only add Arabic language if not already specified in the request
+                        if (originalHttpUrl.queryParameter("language") == null) {
+                            urlBuilder.addQueryParameter("language", "ar-SA");
+                        }
 
                         okhttp3.Request.Builder requestBuilder = original.newBuilder()
-                                .url(url);
+                                .url(urlBuilder.build());
 
                         okhttp3.Request request = requestBuilder.build();
                         return chain.proceed(request);

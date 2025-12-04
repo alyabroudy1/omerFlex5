@@ -33,6 +33,13 @@
             </intent-filter>
         </activity>
 
+        <!-- YouTube Test Activity - Temporary for debugging -->
+        <activity
+            android:name=".ui.test.YouTubeTestActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:theme="@style/Theme.OmarFlex5.Fullscreen" />
+
         <activity
             android:name=".ui.player.PlayerActivity"
             android:exported="false"
