@@ -31,6 +31,8 @@ import com.omarflex5.data.model.Category;
 import com.omarflex5.data.model.Movie;
 import com.omarflex5.data.repository.MovieRepository;
 import com.omarflex5.data.source.DummyDataProvider;
+import com.omarflex5.ui.controller.DefaultMovieClickController;
+import com.omarflex5.ui.controller.MovieClickController;
 import com.omarflex5.ui.home.adapter.CategoryAdapter;
 import com.omarflex5.ui.home.adapter.MovieCardAdapter;
 
@@ -214,6 +216,9 @@ public class HomeActivity extends AppCompatActivity {
         categoryAdapter.setListener(category -> viewModel.selectCategory(category));
         recyclerCategories.setAdapter(categoryAdapter);
 
+        // Create click controller for movie actions
+        MovieClickController clickController = new DefaultMovieClickController();
+
         movieCardAdapter = new MovieCardAdapter();
         movieCardAdapter.setListener(new MovieCardAdapter.OnMovieListener() {
             @Override
@@ -224,7 +229,8 @@ public class HomeActivity extends AppCompatActivity {
             @Override
             public void onMovieClicked(Movie movie) {
                 if (movie.equals(viewModel.getSelectedMovie().getValue())) {
-                    Toast.makeText(HomeActivity.this, "Playing: " + movie.getTitle(), Toast.LENGTH_SHORT).show();
+                    // Movie is already selected, handle the click action
+                    clickController.handleClick(HomeActivity.this, movie);
                 } else {
                     viewModel.selectMovie(movie);
                 }
