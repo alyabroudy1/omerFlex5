@@ -1,86 +1,37 @@
 package com.omarflex5.data.repository;
 
-import android.os.Handler;
-import android.os.Looper;
-
 import com.omarflex5.data.model.Category;
 import com.omarflex5.data.model.Movie;
 import com.omarflex5.data.source.DataSourceCallback;
-import com.omarflex5.data.source.MovieDataSource;
+import com.omarflex5.data.source.remote.MovieDBServer;
 
 import java.util.List;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 
 public class MovieRepository {
 
     private static volatile MovieRepository INSTANCE;
-    private final MovieDataSource dataSource;
-    private final ExecutorService executorService;
-    private final Handler mainHandler;
+    private final MovieDBServer remoteDataSource;
 
-    private MovieRepository(MovieDataSource dataSource) {
-        this.dataSource = dataSource;
-        this.executorService = Executors.newCachedThreadPool();
-        this.mainHandler = new Handler(Looper.getMainLooper());
+    private MovieRepository() {
+        this.remoteDataSource = new MovieDBServer();
     }
 
-    public static MovieRepository getInstance(MovieDataSource dataSource) {
+    public static MovieRepository getInstance() {
         if (INSTANCE == null) {
             synchronized (MovieRepository.class) {
                 if (INSTANCE == null) {
-                    INSTANCE = new MovieRepository(dataSource);
+                    INSTANCE = new MovieRepository();
                 }
             }
         }
         return INSTANCE;
     }
 
-    public void getCategories(final DataSourceCallback<List<Category>> callback) {
-        executorService.execute(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    final List<Category> categories = dataSource.getCategories();
-                    mainHandler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            callback.onSuccess(categories);
-                        }
-                    });
-                } catch (final Exception e) {
-                    mainHandler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            callback.onError(e);
-                        }
-                    });
-                }
-            }
-        });
+    public void getCategories(DataSourceCallback<List<Category>> callback) {
+        remoteDataSource.getCategories(callback);
     }
 
-    public void getMoviesByCategory(final String categoryId, final DataSourceCallback<List<Movie>> callback) {
-        executorService.execute(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    final List<Movie> movies = dataSource.getMoviesByCategory(categoryId);
-                    mainHandler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            callback.onSuccess(movies);
-                        }
-                    });
-                } catch (final Exception e) {
-                    mainHandler.post(new Runnable() {
-                        @Override
-                        public void run() {
-                            callback.onError(e);
-                        }
-                    });
-                }
-            }
-        });
+    public void getMoviesByCategory(String categoryId, DataSourceCallback<List<Movie>> callback) {
+        remoteDataSource.getMoviesByCategory(categoryId, callback);
     }
 }

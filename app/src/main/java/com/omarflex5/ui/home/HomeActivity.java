@@ -30,13 +30,10 @@ import com.omarflex5.R;
 import com.omarflex5.data.model.Category;
 import com.omarflex5.data.model.Movie;
 import com.omarflex5.data.repository.MovieRepository;
-import com.omarflex5.data.source.DummyDataProvider;
 import com.omarflex5.ui.controller.DefaultMovieClickController;
 import com.omarflex5.ui.controller.MovieClickController;
 import com.omarflex5.ui.home.adapter.CategoryAdapter;
 import com.omarflex5.ui.home.adapter.MovieCardAdapter;
-
-import java.util.List;
 
 public class HomeActivity extends AppCompatActivity {
 
@@ -214,9 +211,7 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     private void initViewModel() {
-        DummyDataProvider dataProvider = new DummyDataProvider();
-        MovieRepository repository = MovieRepository.getInstance(dataProvider);
-        HomeViewModelFactory factory = new HomeViewModelFactory(repository);
+        HomeViewModelFactory factory = new HomeViewModelFactory(MovieRepository.getInstance());
         viewModel = new ViewModelProvider(this, factory).get(HomeViewModel.class);
     }
 
