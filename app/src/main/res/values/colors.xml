@@ -13,4 +13,5 @@
     <color name="netflix_background">#141414</color>
     <color name="netflix_card_background">#2F2F2F</color>
     <color name="netflix_text_secondary">#B3B3B3</color>
+    <color name="netflix_overlay">#80000000</color>
 </resources>
