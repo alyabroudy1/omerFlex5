@@ -17,4 +17,12 @@
         <item name="windowActionBar">false</item>
         <!-- Customize your theme here. -->
     </style>
+    
+    <!-- Fullscreen theme for YouTube test -->
+    <style name="Theme.OmarFlex5.Fullscreen" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:windowFullscreen">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowActionBar">false</item>
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
 </resources>

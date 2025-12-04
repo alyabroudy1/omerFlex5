@@ -5,6 +5,8 @@ import com.omarflex5.data.model.Movie;
 import com.omarflex5.data.model.tmdb.TmdbGenreResponse;
 import com.omarflex5.data.model.tmdb.TmdbMapper;
 import com.omarflex5.data.model.tmdb.TmdbMovieResponse;
+import com.omarflex5.data.model.tmdb.TmdbVideo;
+import com.omarflex5.data.model.tmdb.TmdbVideoResponse;
 import com.omarflex5.data.source.DataSourceCallback;
 
 import java.util.ArrayList;
@@ -23,12 +25,10 @@ public class MovieDBServer {
     }
 
     public void getCategories(DataSourceCallback<List<Category>> callback) {
-        // First add "Trending" and "Popular" as static categories
         List<Category> categories = new ArrayList<>();
         categories.add(new Category("trending", "Trending Now", new ArrayList<>()));
         categories.add(new Category("popular", "Popular", new ArrayList<>()));
 
-        // Then fetch genres from TMDB
         api.getGenres().enqueue(new Callback<TmdbGenreResponse>() {
             @Override
             public void onResponse(Call<TmdbGenreResponse> call, Response<TmdbGenreResponse> response) {
@@ -42,7 +42,6 @@ public class MovieDBServer {
 
             @Override
             public void onFailure(Call<TmdbGenreResponse> call, Throwable t) {
-                // Return at least the static categories if network fails
                 if (!categories.isEmpty()) {
                     callback.onSuccess(categories);
                 } else {
@@ -60,7 +59,6 @@ public class MovieDBServer {
         } else if ("popular".equals(categoryId)) {
             call = api.getPopularMovies();
         } else {
-            // Assume it's a genre ID
             call = api.getMoviesByGenre(categoryId);
         }
 
@@ -80,5 +78,54 @@ public class MovieDBServer {
                 callback.onError(t);
             }
         });
+    }
+
+    /**
+     * Fetch trailer URL for a specific movie (called on selection)
+     * Note: We use en-US for videos since Arabic trailers are rarely available
+     */
+    public void getMovieTrailer(int movieId, DataSourceCallback<String> callback) {
+        api.getMovieVideos(movieId, "en-US").enqueue(new Callback<TmdbVideoResponse>() {
+            @Override
+            public void onResponse(Call<TmdbVideoResponse> call, Response<TmdbVideoResponse> response) {
+                if (response.isSuccessful() && response.body() != null) {
+                    String trailerUrl = findBestTrailer(response.body().getResults());
+                    callback.onSuccess(trailerUrl);
+                } else {
+                    callback.onSuccess(null); // No trailer found
+                }
+            }
+
+            @Override
+            public void onFailure(Call<TmdbVideoResponse> call, Throwable t) {
+                callback.onSuccess(null); // Fallback to default
+            }
+        });
+    }
+
+    private String findBestTrailer(List<TmdbVideo> videos) {
+        if (videos == null || videos.isEmpty()) {
+            return null;
+        }
+
+        TmdbVideo best = null;
+        for (TmdbVideo video : videos) {
+            if (!"YouTube".equalsIgnoreCase(video.getSite())) {
+                continue;
+            }
+
+            if (video.isOfficial() && "Trailer".equalsIgnoreCase(video.getType())) {
+                best = video;
+                break;
+            } else if ("Trailer".equalsIgnoreCase(video.getType()) && best == null) {
+                best = video;
+            } else if ("Teaser".equalsIgnoreCase(video.getType()) && best == null) {
+                best = video;
+            } else if (best == null) {
+                best = video;
+            }
+        }
+
+        return best != null ? best.getVideoUrl() : null;
     }
 }

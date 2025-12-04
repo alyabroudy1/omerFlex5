@@ -6,6 +6,7 @@ import android.media.AudioManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.provider.Settings;
+import android.util.Log;
 import android.view.View;
 import android.widget.ImageButton;
 import android.widget.ImageView;
@@ -37,6 +38,7 @@ import com.omarflex5.ui.home.adapter.MovieCardAdapter;
 
 public class HomeActivity extends AppCompatActivity {
 
+    private static final String TAG = "HomeActivity";
     private HomeViewModel viewModel;
     private ImageView heroBackground;
     private TextView heroTitle;
@@ -47,6 +49,7 @@ public class HomeActivity extends AppCompatActivity {
     private MovieCardAdapter movieCardAdapter;
 
     private PlayerView playerView;
+    private android.webkit.WebView youtubeWebView;
     private ExoPlayer player;
     private Movie lastSelectedMovie;
 
@@ -60,6 +63,9 @@ public class HomeActivity extends AppCompatActivity {
     private ImageButton btnMute;
     private boolean isMuted = false;
     private ContentObserver volumeObserver;
+
+    // YouTube controls overlay
+    private YouTubeControlsOverlay youtubeControlsOverlay;
 
     // Focus memory for each layer (to restore focus when navigating back)
     private View lastFocusedHero = null;
@@ -108,8 +114,19 @@ public class HomeActivity extends AppCompatActivity {
         // Fullscreen components
         heroContainer = findViewById(R.id.hero_container);
         gradientOverlay = findViewById(R.id.gradient_overlay);
+        youtubeWebView = findViewById(R.id.youtube_webview);
         btnFullscreen = findViewById(R.id.btn_fullscreen);
         btnFullscreen.setOnClickListener(v -> toggleFullscreen());
+
+        // Setup WebView for YouTube
+        android.webkit.WebSettings webSettings = youtubeWebView.getSettings();
+        webSettings.setJavaScriptEnabled(true);
+        webSettings.setMediaPlaybackRequiresUserGesture(false);
+        webSettings.setDomStorageEnabled(true);
+        webSettings.setAllowFileAccess(false);
+        webSettings.setAllowContentAccess(false);
+        youtubeWebView.setWebChromeClient(new android.webkit.WebChromeClient());
+        youtubeWebView.setBackgroundColor(0x00000000); // Transparent background
 
         // Mute button
         btnMute = findViewById(R.id.btn_mute);
@@ -117,6 +134,11 @@ public class HomeActivity extends AppCompatActivity {
 
         // Setup volume observer
         setupVolumeObserver();
+
+        // Setup YouTube controls overlay
+        View overlayRoot = findViewById(R.id.youtube_controls_root);
+        youtubeControlsOverlay = new YouTubeControlsOverlay(overlayRoot, youtubeWebView);
+        youtubeControlsOverlay.setOnExitFullscreenListener(() -> toggleFullscreen());
     }
 
     private void setupVolumeObserver() {
@@ -141,11 +163,33 @@ public class HomeActivity extends AppCompatActivity {
 
     private void toggleMute() {
         isMuted = !isMuted;
+        updateMuteButton();
 
+        // Update ExoPlayer volume if active
         if (player != null) {
             player.setVolume(isMuted ? 0f : 1f);
         }
 
+        // Update YouTube video mute state if WebView is visible
+        if (youtubeWebView != null && youtubeWebView.getVisibility() == View.VISIBLE) {
+            toggleYouTubeMute();
+        }
+    }
+
+    private void toggleYouTubeMute() {
+        String js = "(function() {" +
+                "var video = document.querySelector('video');" +
+                "if (video) {" +
+                "  video.muted = " + isMuted + ";" +
+                "  console.log('YouTube video muted: ' + " + isMuted + ");" +
+                "}" +
+                "})();";
+
+        youtubeWebView.evaluateJavascript(js, null);
+        Log.d(TAG, "YouTube mute toggled: " + isMuted);
+    }
+
+    private void updateMuteButton() {
         btnMute.setImageResource(isMuted ? R.drawable.ic_volume_off : R.drawable.ic_volume_on);
     }
 
@@ -173,6 +217,11 @@ public class HomeActivity extends AppCompatActivity {
             btnFullscreen.setVisibility(View.GONE);
             btnMute.setVisibility(View.GONE);
         } else {
+            // Exit fullscreen - hide the overlay first
+            if (youtubeControlsOverlay != null) {
+                youtubeControlsOverlay.hide();
+            }
+
             // Exit fullscreen
             recyclerCategories.setVisibility(View.VISIBLE);
             recyclerMovies.setVisibility(View.VISIBLE);
@@ -192,6 +241,19 @@ public class HomeActivity extends AppCompatActivity {
             // Show our buttons again
             btnFullscreen.setVisibility(View.VISIBLE);
             btnMute.setVisibility(View.VISIBLE);
+
+            // Restore focus to categories row
+            recyclerCategories.postDelayed(() -> {
+                if (recyclerCategories.getChildCount() > 0) {
+                    View firstCategory = lastFocusedCategory != null
+                            && lastFocusedCategory.getParent() == recyclerCategories
+                                    ? lastFocusedCategory
+                                    : recyclerCategories.getChildAt(0);
+                    if (firstCategory != null) {
+                        firstCategory.requestFocus();
+                    }
+                }
+            }, 100);
         }
     }
 
@@ -264,11 +326,39 @@ public class HomeActivity extends AppCompatActivity {
     @Override
     public boolean dispatchKeyEvent(android.view.KeyEvent event) {
         if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+            int keyCode = event.getKeyCode();
+
+            // Handle YouTube controls overlay when in fullscreen mode
+            if (isFullscreen && youtubeWebView != null && youtubeWebView.getVisibility() == View.VISIBLE) {
+                // Handle BACK key specially
+                if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+                    if (youtubeControlsOverlay != null && youtubeControlsOverlay.isVisible()) {
+                        // First back press hides overlay
+                        youtubeControlsOverlay.hide();
+                    } else {
+                        // Second back press (or first if overlay hidden) exits fullscreen
+                        toggleFullscreen();
+                    }
+                    return true;
+                }
+
+                // Show overlay on any other key press
+                if (youtubeControlsOverlay != null && !youtubeControlsOverlay.isVisible()) {
+                    youtubeControlsOverlay.show();
+                    return true;
+                }
+
+                // When overlay is visible, let it handle navigation
+                if (youtubeControlsOverlay != null && youtubeControlsOverlay.isVisible()) {
+                    // Let the overlay handle focus navigation
+                    return super.dispatchKeyEvent(event);
+                }
+            }
+
+            // Normal navigation handling (when NOT in fullscreen YouTube mode)
             View focused = getCurrentFocus();
 
             if (focused != null) {
-                int keyCode = event.getKeyCode();
-
                 // Check if focus is in categories row
                 if (isDescendantOf(focused, recyclerCategories)) {
                     if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
@@ -396,6 +486,13 @@ public class HomeActivity extends AppCompatActivity {
             }
         });
 
+        // Observe trailer URL - this is fetched asynchronously when a movie is selected
+        viewModel.getTrailerUrl().observe(this, trailerUrl -> {
+            if (trailerUrl != null && !trailerUrl.isEmpty()) {
+                playTrailer(trailerUrl);
+            }
+        });
+
         viewModel.getError().observe(this, new Observer<String>() {
             @Override
             public void onChanged(String error) {
@@ -434,8 +531,8 @@ public class HomeActivity extends AppCompatActivity {
         heroBackground.setVisibility(View.VISIBLE);
         playerView.setVisibility(View.GONE);
 
-        // Prepare and play video
-        playTrailer(movie.getTrailerUrl());
+        // Trailer will be played when trailerUrl LiveData is updated
+        // (fetched asynchronously from TMDB via ViewModel)
 
         // Restore focus and re-enable hero buttons after a delay
         if (currentFocus != null) {
@@ -472,47 +569,260 @@ public class HomeActivity extends AppCompatActivity {
     private void playTrailer(String videoUrl) {
         releasePlayer();
         if (videoUrl != null && !videoUrl.isEmpty()) {
-            // Disable focus on playerView BEFORE attaching player
-            playerView.setFocusable(false);
-            playerView.setFocusableInTouchMode(false);
-
-            player = new ExoPlayer.Builder(this).build();
-            playerView.setPlayer(player);
-
-            MediaItem mediaItem = MediaItem.fromUri(videoUrl);
-            player.setMediaItem(mediaItem);
-            player.prepare();
-            player.setPlayWhenReady(true);
-
-            // Apply current mute state
-            player.setVolume(isMuted ? 0f : 1f);
-
-            // Listen for when video is ready to render to hide the image
-            player.addListener(new Player.Listener() {
-                @Override
-                public void onRenderedFirstFrame() {
-                    runOnUiThread(() -> {
-                        heroBackground.setVisibility(View.GONE);
-                        playerView.setVisibility(View.VISIBLE);
-                    });
+            // Check if it's a YouTube URL
+            if (isYouTubeUrl(videoUrl)) {
+                // Extract YouTube video ID and play in WebView
+                String videoId = extractYouTubeId(videoUrl);
+                if (videoId != null) {
+                    playYouTubeInWebView(videoId);
+                } else {
+                    // Fallback to showing image only
+                    heroBackground.setVisibility(View.VISIBLE);
+                    playerView.setVisibility(View.GONE);
+                    youtubeWebView.setVisibility(View.GONE);
                 }
-
-                @Override
-                public void onPlaybackStateChanged(int playbackState) {
-                    if (playbackState == Player.STATE_ENDED) {
-                        // Loop for background effect
-                        player.seekTo(0);
-                        player.play();
-                    }
-                }
-            });
+            } else {
+                // Direct URL, play in ExoPlayer
+                playDirectUrl(videoUrl);
+            }
         }
+    }
+
+    private boolean isYouTubeUrl(String url) {
+        return url.contains("youtube.com") || url.contains("youtu.be");
+    }
+
+    private String extractYouTubeId(String url) {
+        // Extract video ID from various YouTube URL formats
+        String[] patterns = {
+                "(?:youtube\\.com/watch\\?v=|youtu\\.be/)([a-zA-Z0-9_-]{11})",
+                "youtube\\.com/embed/([a-zA-Z0-9_-]{11})",
+                "youtube\\.com/v/([a-zA-Z0-9_-]{11})"
+        };
+
+        for (String pattern : patterns) {
+            java.util.regex.Pattern compiledPattern = java.util.regex.Pattern.compile(pattern);
+            java.util.regex.Matcher matcher = compiledPattern.matcher(url);
+            if (matcher.find()) {
+                return matcher.group(1);
+            }
+        }
+        return null;
+    }
+
+    private void playYouTubeInWebView(String videoId) {
+        Log.d(TAG, "Playing YouTube video: " + videoId);
+
+        // Load YouTube with caption parameters:
+        // cc_load_policy=1 forces captions on
+        // cc_lang_pref=ar prefers Arabic captions/translation
+        // hl=ar sets interface language to Arabic
+        String youtubeUrl = "https://www.youtube.com/watch?v=" + videoId
+                + "&cc_load_policy=1&cc_lang_pref=ar&hl=ar";
+        youtubeWebView.loadUrl(youtubeUrl);
+
+        // Show WebView, hide others
+        runOnUiThread(() -> {
+            heroBackground.setVisibility(View.GONE);
+            playerView.setVisibility(View.GONE);
+            youtubeWebView.setVisibility(View.VISIBLE);
+        });
+
+        // Apply fullscreen CSS after page loads
+        youtubeWebView.setWebViewClient(new android.webkit.WebViewClient() {
+            @Override
+            public void onPageFinished(android.webkit.WebView view, String url) {
+                Log.d(TAG, "YouTube page loaded, applying fullscreen");
+                applyYouTubeFullscreen(2000);
+                applyYouTubeFullscreen(3000);
+                // Try to enable captions multiple times - YouTube loads caption data slowly
+                applyYouTubeFullscreen(5000);
+                applyYouTubeFullscreen(7000);
+                applyYouTubeFullscreen(10000);
+                applyYouTubeFullscreen(15000);
+            }
+        });
+    }
+
+    private void applyYouTubeFullscreen(int delayMs) {
+        youtubeWebView.postDelayed(() -> {
+            String js = "(function() {" +
+            // Force page and body to be fullscreen
+                    "var style = document.createElement('style');" +
+                    "style.textContent = '" +
+            // Page-level fullscreen
+                    "  html, body { " +
+                    "    margin: 0 !important;" +
+                    "    padding: 0 !important;" +
+                    "    width: 100vw !important;" +
+                    "    height: 100vh !important;" +
+                    "    overflow: hidden !important;" +
+                    "    background: #000 !important;" +
+                    "  }" +
+            // Hide ALL mobile YouTube UI elements
+                    "  .mobile-topbar-header, " +
+                    "  .player-controls-top, " +
+                    "  .watch-below-the-player, " +
+                    "  ytm-app-header-layout header, " +
+                    "  .ytm-autonav-bar, " +
+                    "  .related-chips-slot-wrapper, " +
+                    "  .slim-video-metadata-header, " +
+                    "  .slim-video-information-renderer, " +
+                    "  ytm-item-section-renderer, " +
+                    "  ytm-comments-entry-point-header-renderer, " +
+                    "  ytm-comments-simplebox-renderer, " +
+                    "  .ytp-chrome-top, " +
+                    "  .ytp-chrome-bottom { display: none !important; visibility: hidden !important; }" +
+                    "  ytm-watch, ytm-app { background: #000 !important; padding: 0 !important; margin: 0 !important; }"
+                    +
+            // Force ALL containers to fill screen
+                    "  #player-container-id, " +
+                    "  .player-container, " +
+                    "  #player, " +
+                    "  ytm-player, " +
+                    "  #movie_player, " +
+                    "  .html5-video-container, " +
+                    "  .html5-video-player, " +
+                    "  .html5-main-video { " +
+                    "    position: fixed !important;" +
+                    "    top: 0 !important;" +
+                    "    left: 0 !important;" +
+                    "    right: 0 !important;" +
+                    "    bottom: 0 !important;" +
+                    "    width: 100vw !important;" +
+                    "    height: 100vh !important;" +
+                    "    max-width: 100vw !important;" +
+                    "    max-height: 100vh !important;" +
+                    "    margin: 0 !important;" +
+                    "    padding: 0 !important;" +
+                    "    z-index: 9999 !important;" +
+                    "  }" +
+            // Force video element to fill entire screen
+                    "  video { " +
+                    "    position: fixed !important;" +
+                    "    top: 0 !important;" +
+                    "    left: 0 !important;" +
+                    "    width: 100vw !important;" +
+                    "    height: 100vh !important;" +
+                    "    object-fit: cover !important;" +
+                    "    z-index: 9998 !important;" +
+                    "  }" +
+            // ENSURE CAPTION CONTAINERS ARE VISIBLE
+                    "  .ytp-caption-window-container, " +
+                    "  .caption-window, " +
+                    "  .captions-text, " +
+                    "  .ytp-caption-segment { " +
+                    "    display: block !important;" +
+                    "    visibility: visible !important;" +
+                    "    opacity: 1 !important;" +
+                    "    z-index: 99999 !important;" +
+                    "  }" +
+                    "';" +
+                    "document.head.appendChild(style);" +
+
+            // Auto-play video (muted)
+                    "var video = document.querySelector('video');" +
+                    "if (video) {" +
+                    "  video.muted = " + (isMuted ? "true" : "false") + ";" +
+                    "  video.play();" +
+                    "}" +
+
+            // Enable Arabic captions by default using YouTube player API
+                    "try {" +
+                    "  var player = document.querySelector('#movie_player');" +
+                    "  if (player && player.getOption) {" +
+            // Get available caption tracks
+                    "    var tracks = player.getOption('captions', 'tracklist');" +
+                    "    console.log('Available tracks:', JSON.stringify(tracks));" +
+                    "    if (tracks && tracks.length > 0) {" +
+            // Look for Arabic track first
+                    "      var arabicTrack = tracks.find(function(t) { return t.languageCode === 'ar'; });" +
+                    "      if (arabicTrack) {" +
+                    "        player.setOption('captions', 'track', arabicTrack);" +
+                    "        console.log('Set Arabic captions');" +
+                    "      } else {" +
+            // If no Arabic, try to use auto-translate to Arabic
+                    "        var autoTrack = tracks.find(function(t) { return t.kind === 'asr' || t.is_default; }) || tracks[0];"
+                    +
+                    "        if (autoTrack) {" +
+                    "          player.setOption('captions', 'track', {languageCode: autoTrack.languageCode});" +
+                    "          player.setOption('captions', 'translationLanguage', {languageCode: 'ar', languageName: 'Arabic'});"
+                    +
+                    "          console.log('Set captions with Arabic translation');" +
+                    "        }" +
+                    "      }" +
+            // IMPORTANT: Force captions to be visible
+                    "      if (player.loadModule) { player.loadModule('captions'); }" +
+                    "      if (player.toggleSubtitles) { " +
+                    "        if (!player.isSubtitlesOn || !player.isSubtitlesOn()) { player.toggleSubtitles(); }" +
+                    "      }" +
+            // Alternative: directly click the CC button to ensure visibility
+                    "      var ccBtn = document.querySelector('.ytp-subtitles-button');" +
+                    "      if (ccBtn && ccBtn.getAttribute('aria-pressed') !== 'true') { ccBtn.click(); }" +
+                    "      console.log('Captions visibility enabled');" +
+                    "    }" +
+                    "  }" +
+                    "} catch(e) { console.log('Caption setup error: ' + e.message); }" +
+                    "})();";
+
+            youtubeWebView.evaluateJavascript(js, null);
+        }, delayMs);
+    }
+
+    private void playDirectUrl(String videoUrl) {
+        if (videoUrl == null || videoUrl.isEmpty()) {
+            return;
+        }
+
+        // Hide WebView, show ExoPlayer
+        youtubeWebView.setVisibility(View.GONE);
+        youtubeWebView.loadUrl("about:blank");
+
+        // Disable focus on playerView BEFORE attaching player
+        playerView.setFocusable(false);
+        playerView.setFocusableInTouchMode(false);
+
+        player = new ExoPlayer.Builder(this).build();
+        playerView.setPlayer(player);
+
+        MediaItem mediaItem = MediaItem.fromUri(videoUrl);
+        player.setMediaItem(mediaItem);
+        player.prepare();
+        player.setPlayWhenReady(true);
+
+        // Apply current mute state
+        player.setVolume(isMuted ? 0f : 1f);
+
+        // Listen for when video is ready to render to hide the image
+        player.addListener(new Player.Listener() {
+            @Override
+            public void onRenderedFirstFrame() {
+                runOnUiThread(() -> {
+                    heroBackground.setVisibility(View.GONE);
+                    playerView.setVisibility(View.VISIBLE);
+                });
+            }
+
+            @Override
+            public void onPlaybackStateChanged(int playbackState) {
+                if (playbackState == Player.STATE_ENDED) {
+                    // Loop for background effect
+                    player.seekTo(0);
+                    player.play();
+                }
+            }
+        });
     }
 
     private void releasePlayer() {
         if (player != null) {
             player.release();
             player = null;
+        }
+        // Clear WebView
+        if (youtubeWebView != null) {
+            youtubeWebView.loadUrl("about:blank");
+            youtubeWebView.setVisibility(View.GONE);
         }
     }
 
@@ -525,9 +835,10 @@ public class HomeActivity extends AppCompatActivity {
     @Override
     protected void onStart() {
         super.onStart();
-        Movie currentMovie = viewModel.getSelectedMovie().getValue();
-        if (currentMovie != null && currentMovie.getTrailerUrl() != null && !currentMovie.getTrailerUrl().isEmpty()) {
-            playTrailer(currentMovie.getTrailerUrl());
+        // Resume playing the trailer if we have one cached
+        String trailerUrl = viewModel.getTrailerUrl().getValue();
+        if (trailerUrl != null && !trailerUrl.isEmpty()) {
+            playTrailer(trailerUrl);
         }
     }
 

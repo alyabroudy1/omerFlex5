@@ -34,4 +34,8 @@ public class MovieRepository {
     public void getMoviesByCategory(String categoryId, DataSourceCallback<List<Movie>> callback) {
         remoteDataSource.getMoviesByCategory(categoryId, callback);
     }
+
+    public void getMovieTrailer(int movieId, DataSourceCallback<String> callback) {
+        remoteDataSource.getMovieTrailer(movieId, callback);
+    }
 }

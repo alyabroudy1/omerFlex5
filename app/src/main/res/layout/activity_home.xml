@@ -34,6 +34,19 @@
             app:shutter_background_color="@android:color/transparent"
             app:surface_type="texture_view" />
 
+        <!-- WebView for YouTube embed playback -->
+        <WebView
+            android:id="@+id/youtube_webview"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:visibility="gone" />
+
+        <!-- YouTube Controls Overlay (hidden by default) -->
+        <include
+            layout="@layout/youtube_controls_overlay"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent" />
+
         <!-- Gradient Overlay -->
         <View
             android:id="@+id/gradient_overlay"

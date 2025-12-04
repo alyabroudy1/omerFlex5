@@ -11,6 +11,10 @@ public class TmdbMapper {
     private static final String BACKDROP_BASE_URL = "https://image.tmdb.org/t/p/w1280";
 
     public static Movie mapToMovie(TmdbMovie tmdbMovie) {
+        return mapToMovie(tmdbMovie, null);
+    }
+
+    public static Movie mapToMovie(TmdbMovie tmdbMovie, String trailerUrl) {
         String id = String.valueOf(tmdbMovie.getId());
         String title = tmdbMovie.getTitle();
         String description = tmdbMovie.getOverview();
@@ -19,9 +23,11 @@ public class TmdbMapper {
         }
         String posterUrl = IMAGE_BASE_URL + tmdbMovie.getPosterPath();
         String backgroundUrl = BACKDROP_BASE_URL + tmdbMovie.getBackdropPath();
-        // For now, use a dummy trailer since the main list endpoint doesn't return
-        // videos
-        String trailerUrl = "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+
+        // Use provided trailer URL or fallback to dummy
+        if (trailerUrl == null || trailerUrl.isEmpty()) {
+            trailerUrl = "https://storage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+        }
         String year = ""; // TMDB release date parsing omitted for brevity
         String rating = String.valueOf(tmdbMovie.getVoteAverage());
 

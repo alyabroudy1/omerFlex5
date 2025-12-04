@@ -17,6 +17,7 @@ public class HomeViewModel extends ViewModel {
     private final MutableLiveData<List<Category>> categories = new MutableLiveData<>();
     private final MutableLiveData<List<Movie>> movies = new MutableLiveData<>();
     private final MutableLiveData<Movie> selectedMovie = new MutableLiveData<>();
+    private final MutableLiveData<String> trailerUrl = new MutableLiveData<>();
     private final MutableLiveData<String> error = new MutableLiveData<>();
     private boolean isInitialLoad = true;
 
@@ -35,6 +36,10 @@ public class HomeViewModel extends ViewModel {
 
     public LiveData<Movie> getSelectedMovie() {
         return selectedMovie;
+    }
+
+    public LiveData<String> getTrailerUrl() {
+        return trailerUrl;
     }
 
     public LiveData<String> getError() {
@@ -79,5 +84,23 @@ public class HomeViewModel extends ViewModel {
 
     public void selectMovie(Movie movie) {
         selectedMovie.setValue(movie);
+
+        // Fetch trailer for selected movie
+        try {
+            int movieId = Integer.parseInt(movie.getId());
+            repository.getMovieTrailer(movieId, new DataSourceCallback<String>() {
+                @Override
+                public void onSuccess(String result) {
+                    trailerUrl.setValue(result);
+                }
+
+                @Override
+                public void onError(Throwable t) {
+                    trailerUrl.setValue(null);
+                }
+            });
+        } catch (NumberFormatException e) {
+            trailerUrl.setValue(null);
+        }
     }
 }
