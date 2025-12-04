@@ -18,6 +18,7 @@ public class HomeViewModel extends ViewModel {
     private final MutableLiveData<List<Movie>> movies = new MutableLiveData<>();
     private final MutableLiveData<Movie> selectedMovie = new MutableLiveData<>();
     private final MutableLiveData<String> error = new MutableLiveData<>();
+    private boolean isInitialLoad = true;
 
     public HomeViewModel(MovieRepository repository) {
         this.repository = repository;
@@ -62,7 +63,11 @@ public class HomeViewModel extends ViewModel {
             @Override
             public void onSuccess(List<Movie> result) {
                 movies.setValue(result);
-                // No auto-selection - movies are only selected when explicitly clicked
+                // Auto-select first movie only on initial app load
+                if (isInitialLoad && !result.isEmpty()) {
+                    selectMovie(result.get(0));
+                    isInitialLoad = false;
+                }
             }
 
             @Override
