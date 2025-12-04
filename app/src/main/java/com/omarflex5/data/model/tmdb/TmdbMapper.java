@@ -14,6 +14,9 @@ public class TmdbMapper {
         String id = String.valueOf(tmdbMovie.getId());
         String title = tmdbMovie.getTitle();
         String description = tmdbMovie.getOverview();
+        if (description == null || description.isEmpty()) {
+            description = "لا يتوفر وصف لهذا الفيلم حالياً."; // "No description available for this movie currently."
+        }
         String posterUrl = IMAGE_BASE_URL + tmdbMovie.getPosterPath();
         String backgroundUrl = BACKDROP_BASE_URL + tmdbMovie.getBackdropPath();
         // For now, use a dummy trailer since the main list endpoint doesn't return
