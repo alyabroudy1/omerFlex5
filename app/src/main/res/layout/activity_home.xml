@@ -8,12 +8,15 @@
     android:orientation="vertical"
     android:weightSum="10">
 
-    <!-- Hero View (Weight 6 = 60%) -->
+    <!-- LAYER 1: Hero View (Weight 6 = 60%) - Can only go DOWN -->
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/hero_container"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="6">
+        android:layout_weight="6"
+        android:focusable="true"
+        android:focusableInTouchMode="false"
+        android:descendantFocusability="afterDescendants">
 
         <ImageView
             android:id="@+id/image_hero_background"
@@ -69,52 +72,70 @@
             app:layout_constraintWidth_percent="0.4"
             tools:text="When a young boy vanishes, a small town uncovers a mystery..." />
 
-        <!-- Mute Button - Bottom Right, left of fullscreen -->
+        <!-- Mute Button - Can only go RIGHT and DOWN (not UP) -->
         <ImageButton
             android:id="@+id/btn_mute"
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:layout_margin="16dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:background="@drawable/selector_button_focus"
             android:contentDescription="Toggle mute"
             android:src="@drawable/ic_volume_on"
             android:focusable="true"
+            android:nextFocusUp="@id/btn_mute"
+            android:nextFocusLeft="@id/btn_mute"
+            android:nextFocusRight="@id/btn_fullscreen"
+            android:nextFocusDown="@id/recycler_categories"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toStartOf="@+id/btn_fullscreen" />
 
-        <!-- Fullscreen Button - Bottom Right -->
+        <!-- Fullscreen Button - Can only go LEFT and DOWN (not UP) -->
         <ImageButton
             android:id="@+id/btn_fullscreen"
             android:layout_width="48dp"
             android:layout_height="48dp"
             android:layout_margin="16dp"
-            android:background="?attr/selectableItemBackgroundBorderless"
+            android:background="@drawable/selector_button_focus"
             android:contentDescription="Toggle fullscreen"
             android:src="@drawable/ic_fullscreen"
             android:focusable="true"
+            android:nextFocusUp="@id/btn_fullscreen"
+            android:nextFocusLeft="@id/btn_mute"
+            android:nextFocusRight="@id/btn_fullscreen"
+            android:nextFocusDown="@id/recycler_categories"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent" />
 
     </androidx.constraintlayout.widget.ConstraintLayout>
 
-    <!-- Categories Row (Weight 1 = 10%) -->
+    <!-- LAYER 2: Categories Row (Weight 1 = 10%) - Can go UP, DOWN, LEFT, RIGHT -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler_categories"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="1"
+        android:clipToPadding="false"
+        android:descendantFocusability="afterDescendants"
+        android:focusable="true"
+        android:nextFocusUp="@id/btn_mute"
+        android:nextFocusDown="@id/recycler_movies"
         android:orientation="horizontal"
         android:paddingStart="24dp"
         android:paddingEnd="24dp"
         app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
         tools:listitem="@layout/item_category" />
 
-    <!-- Movies Row (Weight 3 = 30%) -->
+    <!-- LAYER 3: Movies Row (Weight 3 = 30%) - Can only go UP, LEFT, RIGHT (not DOWN) -->
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler_movies"
         android:layout_width="match_parent"
         android:layout_height="0dp"
         android:layout_weight="3"
+        android:clipToPadding="false"
+        android:descendantFocusability="afterDescendants"
+        android:focusable="true"
+        android:nextFocusUp="@id/recycler_categories"
+        android:nextFocusDown="@id/recycler_movies"
         android:orientation="horizontal"
         android:paddingStart="24dp"
         android:paddingEnd="24dp"

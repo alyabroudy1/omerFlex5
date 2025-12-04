@@ -62,11 +62,7 @@ public class HomeViewModel extends ViewModel {
             @Override
             public void onSuccess(List<Movie> result) {
                 movies.setValue(result);
-                if (!result.isEmpty()) {
-                    // Optionally auto-select first movie or keep previous selection if valid
-                    // For now, let's auto-select the first one to update hero
-                    selectMovie(result.get(0));
-                }
+                // No auto-selection - movies are only selected when explicitly clicked
             }
 
             @Override

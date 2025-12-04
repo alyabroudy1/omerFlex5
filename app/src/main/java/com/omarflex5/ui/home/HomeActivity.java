@@ -64,6 +64,15 @@ public class HomeActivity extends AppCompatActivity {
     private boolean isMuted = false;
     private ContentObserver volumeObserver;
 
+    // Focus memory for each layer (to restore focus when navigating back)
+    private View lastFocusedHero = null;
+    private View lastFocusedCategory = null;
+    private View lastFocusedMovie = null;
+
+    // Track last focused movie position per category
+    private java.util.Map<String, Integer> categoryToMoviePosition = new java.util.HashMap<>();
+    private String currentCategoryId = null;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -213,7 +222,24 @@ public class HomeActivity extends AppCompatActivity {
 
     private void setupAdapters() {
         categoryAdapter = new CategoryAdapter();
-        categoryAdapter.setListener(category -> viewModel.selectCategory(category));
+        categoryAdapter.setListener(category -> {
+            // Save current movie position for the old category before switching
+            if (currentCategoryId != null && lastFocusedMovie != null) {
+                int moviePosition = recyclerMovies.getChildLayoutPosition(lastFocusedMovie);
+                if (moviePosition != RecyclerView.NO_POSITION) {
+                    categoryToMoviePosition.put(currentCategoryId, moviePosition);
+                }
+            }
+
+            // Update current category
+            currentCategoryId = category.getId();
+
+            // Tell ViewModel to load movies for this category
+            viewModel.selectCategory(category);
+
+            // Auto-select last focused movie for this category (done in observer after
+            // movies load)
+        });
         recyclerCategories.setAdapter(categoryAdapter);
 
         // Create click controller for movie actions
@@ -228,15 +254,119 @@ public class HomeActivity extends AppCompatActivity {
 
             @Override
             public void onMovieClicked(Movie movie) {
-                if (movie.equals(viewModel.getSelectedMovie().getValue())) {
-                    // Movie is already selected, handle the click action
-                    clickController.handleClick(HomeActivity.this, movie);
-                } else {
-                    viewModel.selectMovie(movie);
-                }
+                // This is called on second click (when already selected)
+                clickController.handleClick(HomeActivity.this, movie);
             }
         });
         recyclerMovies.setAdapter(movieCardAdapter);
+    }
+
+    /**
+     * Override dispatchKeyEvent to intercept D-pad navigation BEFORE the focus
+     * system.
+     * Implements focus memory - remembers last focused element in each layer.
+     */
+    @Override
+    public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+        if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+            View focused = getCurrentFocus();
+
+            if (focused != null) {
+                int keyCode = event.getKeyCode();
+
+                // Check if focus is in categories row
+                if (isDescendantOf(focused, recyclerCategories)) {
+                    if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
+                        // Save current focus before leaving
+                        lastFocusedCategory = focused;
+                        // Restore to last focused movie, or first if none
+                        View target = (lastFocusedMovie != null && lastFocusedMovie.getParent() == recyclerMovies)
+                                ? lastFocusedMovie
+                                : (recyclerMovies.getChildCount() > 0 ? recyclerMovies.getChildAt(0) : null);
+                        if (target != null) {
+                            target.requestFocus();
+                            return true;
+                        }
+                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
+                        // Save current focus before leaving
+                        lastFocusedCategory = focused;
+                        // Restore to last focused hero button, or mute if none
+                        View target = (lastFocusedHero != null) ? lastFocusedHero : btnMute;
+                        target.requestFocus();
+                        return true;
+                    }
+                }
+                // Check if focus is in movies row
+                else if (isDescendantOf(focused, recyclerMovies)) {
+                    if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
+                        // Save current focus before leaving
+                        lastFocusedMovie = focused;
+                        // Restore to last focused category, or first if none
+                        View target = (lastFocusedCategory != null
+                                && lastFocusedCategory.getParent() == recyclerCategories)
+                                        ? lastFocusedCategory
+                                        : (recyclerCategories.getChildCount() > 0 ? recyclerCategories.getChildAt(0)
+                                                : null);
+                        if (target != null) {
+                            target.requestFocus();
+                            return true;
+                        }
+                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
+                        // Block movement - stay in movies row
+                        return true;
+                    }
+                }
+                // Check if focus is on hero buttons
+                else if (focused == btnMute || focused == btnFullscreen) {
+                    if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
+                        // Block movement - stay in hero
+                        return true;
+                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
+                        // Save current focus before leaving
+                        lastFocusedHero = focused;
+                        // Restore to last focused category, or first if none
+                        View target = (lastFocusedCategory != null
+                                && lastFocusedCategory.getParent() == recyclerCategories)
+                                        ? lastFocusedCategory
+                                        : (recyclerCategories.getChildCount() > 0 ? recyclerCategories.getChildAt(0)
+                                                : null);
+                        if (target != null) {
+                            target.requestFocus();
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    /**
+     * Check if a view is a descendant of a parent view.
+     */
+    private boolean isDescendantOf(View child, View parent) {
+        if (child == null || parent == null)
+            return false;
+        if (child == parent)
+            return true;
+
+        android.view.ViewParent viewParent = child.getParent();
+        while (viewParent != null) {
+            if (viewParent == parent) {
+                return true;
+            }
+            viewParent = viewParent.getParent();
+        }
+        return false;
+    }
+
+    /**
+     * Focus navigation is now handled by adapter-level key listeners on each item.
+     * - CategoryAdapter.OnNavigationListener handles UP/DOWN from categories
+     * - MovieCardAdapter.OnNavigationListener handles UP from movies
+     */
+    private void setupLayerFocusNavigation() {
+        // Navigation is handled in adapters via OnNavigationListener interfaces
     }
 
     private void observeViewModel() {
@@ -246,9 +376,21 @@ public class HomeActivity extends AppCompatActivity {
 
         viewModel.getMovies().observe(this, movies -> {
             movieCardAdapter.setMovies(movies);
-            // Reset focus to first item when category changes
+
             if (!movies.isEmpty()) {
                 recyclerMovies.scrollToPosition(0);
+
+                // Restore selected movie if it exists in this category
+                if (lastSelectedMovie != null) {
+                    for (int i = 0; i < movies.size(); i++) {
+                        if (movies.get(i).getId().equals(lastSelectedMovie.getId())) {
+                            // Found the selected movie in this category - restore selection
+                            final int position = i;
+                            recyclerMovies.post(() -> movieCardAdapter.selectMovie(position));
+                            break;
+                        }
+                    }
+                }
             }
         });
 
@@ -271,6 +413,15 @@ public class HomeActivity extends AppCompatActivity {
         if (movie == null)
             return;
 
+        // Save current focus before updating hero - we'll restore it after
+        View currentFocus = getCurrentFocus();
+
+        // TEMPORARILY disable focus on ALL hero elements to prevent focus stealing
+        btnMute.setFocusable(false);
+        btnFullscreen.setFocusable(false);
+        playerView.setFocusable(false);
+        playerView.setFocusableInTouchMode(false);
+
         heroTitle.setText(movie.getTitle());
         // Limit description to 300 characters
         String description = movie.getDescription();
@@ -290,11 +441,46 @@ public class HomeActivity extends AppCompatActivity {
 
         // Prepare and play video
         playTrailer(movie.getTrailerUrl());
+
+        // Restore focus and re-enable hero buttons after a delay
+        if (currentFocus != null) {
+            currentFocus.postDelayed(() -> {
+                currentFocus.requestFocus();
+                // Re-enable hero buttons after focus is restored
+                btnMute.setFocusable(true);
+                btnFullscreen.setFocusable(true);
+            }, 150);
+        } else {
+            // No current focus, just re-enable buttons
+            btnMute.postDelayed(() -> {
+                btnMute.setFocusable(true);
+                btnFullscreen.setFocusable(true);
+            }, 150);
+        }
+    }
+
+    private boolean isViewInRecyclerView(View view, RecyclerView recyclerView) {
+        View parent = (View) view.getParent();
+        while (parent != null) {
+            if (parent == recyclerView) {
+                return true;
+            }
+            if (parent.getParent() instanceof View) {
+                parent = (View) parent.getParent();
+            } else {
+                break;
+            }
+        }
+        return false;
     }
 
     private void playTrailer(String videoUrl) {
         releasePlayer();
         if (videoUrl != null && !videoUrl.isEmpty()) {
+            // Disable focus on playerView BEFORE attaching player
+            playerView.setFocusable(false);
+            playerView.setFocusableInTouchMode(false);
+
             player = new ExoPlayer.Builder(this).build();
             playerView.setPlayer(player);
 
