@@ -4,20 +4,23 @@ import java.util.Objects;
 
 public class Movie {
     private final String id;
-    private final String title;
+    private final String title; // Localized title (Arabic)
+    private final String originalTitle; // Original title (English) for search
     private final String description;
     private final String backgroundUrl;
     private final String posterUrl;
     private final String trailerUrl;
-    private final String videoUrl; // Full video URL for playback
+    private final String videoUrl;
     private final String year;
     private final String rating;
     private final MovieActionType actionType;
 
-    public Movie(String id, String title, String description, String backgroundUrl, String posterUrl,
-            String trailerUrl, String videoUrl, String year, String rating, MovieActionType actionType) {
+    public Movie(String id, String title, String originalTitle, String description,
+            String backgroundUrl, String posterUrl, String trailerUrl, String videoUrl,
+            String year, String rating, MovieActionType actionType) {
         this.id = id;
         this.title = title;
+        this.originalTitle = originalTitle != null ? originalTitle : title;
         this.description = description;
         this.backgroundUrl = backgroundUrl;
         this.posterUrl = posterUrl;
@@ -28,11 +31,19 @@ public class Movie {
         this.actionType = actionType;
     }
 
-    // Legacy constructor for backward compatibility
+    // Legacy constructor for backward compatibility (no originalTitle)
     public Movie(String id, String title, String description, String backgroundUrl, String posterUrl,
             String trailerUrl, String year, String rating) {
-        this(id, title, description, backgroundUrl, posterUrl, trailerUrl, trailerUrl, year, rating,
-                MovieActionType.EXOPLAYER);
+        this(id, title, title, description, backgroundUrl, posterUrl, trailerUrl, trailerUrl,
+                year, rating, MovieActionType.EXOPLAYER);
+    }
+
+    // Legacy 10-arg constructor with videoUrl and actionType (for
+    // DummyDataProvider)
+    public Movie(String id, String title, String description, String backgroundUrl, String posterUrl,
+            String trailerUrl, String videoUrl, String year, String rating, MovieActionType actionType) {
+        this(id, title, title, description, backgroundUrl, posterUrl, trailerUrl, videoUrl,
+                year, rating, actionType);
     }
 
     public String getId() {
@@ -41,6 +52,20 @@ public class Movie {
 
     public String getTitle() {
         return title;
+    }
+
+    /**
+     * Get original title (English) for searching on servers
+     */
+    public String getOriginalTitle() {
+        return originalTitle;
+    }
+
+    /**
+     * Get the best title for search - prefers original title
+     */
+    public String getSearchTitle() {
+        return originalTitle != null && !originalTitle.isEmpty() ? originalTitle : title;
     }
 
     public String getDescription() {

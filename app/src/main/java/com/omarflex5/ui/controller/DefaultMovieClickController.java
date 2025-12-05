@@ -7,6 +7,7 @@ import android.widget.Toast;
 import com.omarflex5.data.model.Movie;
 import com.omarflex5.data.model.MovieActionType;
 import com.omarflex5.ui.player.PlayerActivity;
+import com.omarflex5.ui.search.SearchActivity;
 
 /**
  * Default implementation of MovieClickController.
@@ -30,7 +31,8 @@ public class DefaultMovieClickController implements MovieClickController {
                 handleBrowserAction(context, movie);
                 break;
             case EXOPLAYER:
-                handleExoPlayerAction(context, movie);
+                // Now triggers multi-server search instead of playing directly
+                handleSearchAction(context, movie);
                 break;
             case DETAILS:
                 handleDetailsAction(context, movie);
@@ -39,6 +41,18 @@ public class DefaultMovieClickController implements MovieClickController {
                 handleExtendAction(context, movie);
                 break;
         }
+    }
+
+    /**
+     * Handle search action - opens SearchActivity to find sources across servers
+     * Uses original title (English) for better search results on servers
+     */
+    protected void handleSearchAction(Context context, Movie movie) {
+        Intent intent = new Intent(context, SearchActivity.class);
+        // Use original title for search (English), display localized title
+        intent.putExtra(SearchActivity.EXTRA_QUERY, movie.getSearchTitle());
+        intent.putExtra(SearchActivity.EXTRA_MOVIE_TITLE, movie.getTitle());
+        context.startActivity(intent);
     }
 
     /**
@@ -53,6 +67,7 @@ public class DefaultMovieClickController implements MovieClickController {
 
     /**
      * Handle ExoPlayer action - opens native video player
+     * Used when a specific source is selected from search results
      */
     protected void handleExoPlayerAction(Context context, Movie movie) {
         String videoUrl = movie.getVideoUrl();

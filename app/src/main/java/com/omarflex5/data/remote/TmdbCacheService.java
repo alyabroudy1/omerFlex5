@@ -36,6 +36,14 @@ public class TmdbCacheService {
     private static final long CACHE_EXPIRY_MS = TimeUnit.DAYS.toMillis(30);
     private static final long SEARCH_CACHE_EXPIRY_MS = TimeUnit.DAYS.toMillis(7);
 
+    /**
+     * Cache version - bump this to invalidate all cached data.
+     * v1 = initial cache
+     * v2 = added original_title for English search
+     */
+    private static final int CACHE_VERSION = 2;
+    private static final String CACHE_VERSION_KEY = "cache_version";
+
     private final FirebaseFirestore db;
 
     private TmdbCacheService() {
@@ -139,8 +147,6 @@ public class TmdbCacheService {
                 .addOnFailureListener(e -> Log.e(TAG, "Failed to cache TV show: " + e.getMessage()));
     }
 
-    // ==================== SEARCH CACHE ====================
-
     /**
      * Get cached search results.
      */
@@ -151,10 +157,14 @@ public class TmdbCacheService {
                 .document(docId)
                 .get()
                 .addOnSuccessListener(document -> {
-                    if (document.exists() && !isSearchExpired(document)) {
+                    if (document.exists() && !isSearchExpired(document) && isValidCacheVersion(document)) {
                         Log.d(TAG, "Search cache hit: " + query);
                         callback.onCacheHit(document.getData());
                     } else {
+                        if (document.exists() && !isValidCacheVersion(document)) {
+                            Log.d(TAG, "Search cache version mismatch (v" + document.getLong(CACHE_VERSION_KEY)
+                                    + " != v" + CACHE_VERSION + "): " + query);
+                        }
                         Log.d(TAG, "Search cache miss: " + query);
                         callback.onCacheMiss();
                     }
@@ -176,11 +186,12 @@ public class TmdbCacheService {
         cacheData.put("results", results);
         cacheData.put("result_count", results.size());
         cacheData.put("cached_at", System.currentTimeMillis());
+        cacheData.put(CACHE_VERSION_KEY, CACHE_VERSION); // Store version for future invalidation
 
         db.collection(COLLECTION_SEARCH)
                 .document(docId)
                 .set(cacheData)
-                .addOnSuccessListener(aVoid -> Log.d(TAG, "Search cached: " + query))
+                .addOnSuccessListener(aVoid -> Log.d(TAG, "Search cached (v" + CACHE_VERSION + "): " + query))
                 .addOnFailureListener(e -> Log.e(TAG, "Failed to cache search: " + e.getMessage()));
     }
 
@@ -241,6 +252,18 @@ public class TmdbCacheService {
         if (cachedAt == null)
             return true;
         return System.currentTimeMillis() - cachedAt > SEARCH_CACHE_EXPIRY_MS;
+    }
+
+    /**
+     * Check if cached document has valid version.
+     * Old cache entries without version or with older version are invalid.
+     */
+    private boolean isValidCacheVersion(DocumentSnapshot document) {
+        Long version = document.getLong(CACHE_VERSION_KEY);
+        if (version == null) {
+            return false; // Old cache without version
+        }
+        return version.intValue() >= CACHE_VERSION;
     }
 
     private String normalizeQuery(String query) {

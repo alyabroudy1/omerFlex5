@@ -138,6 +138,7 @@ public class MovieDBServer {
                 Map<String, Object> map = new HashMap<>();
                 map.put("id", movie.getId());
                 map.put("title", movie.getTitle());
+                map.put("original_title", movie.getOriginalTitle());
                 map.put("poster_path", movie.getPosterPath());
                 map.put("backdrop_path", movie.getBackdropPath());
                 map.put("overview", movie.getOverview());
@@ -159,6 +160,7 @@ public class MovieDBServer {
             Number id = (Number) map.get("id");
             String movieId = id != null ? String.valueOf(id.intValue()) : "0";
             String title = (String) map.get("title");
+            String originalTitle = (String) map.get("original_title");
             String description = (String) map.get("overview");
 
             String posterPath = (String) map.get("poster_path");
@@ -170,7 +172,7 @@ public class MovieDBServer {
             Number ratingNum = (Number) map.get("vote_average");
             String rating = ratingNum != null ? String.format("%.1f", ratingNum.doubleValue()) : "";
 
-            Movie movie = new Movie(movieId, title, description, backdropUrl, posterUrl,
+            Movie movie = new Movie(movieId, title, originalTitle, description, backdropUrl, posterUrl,
                     null, null, "", rating, MovieActionType.EXOPLAYER);
             movies.add(movie);
         }

@@ -2,6 +2,7 @@ package com.omarflex5.data.model.tmdb;
 
 import com.omarflex5.data.model.Category;
 import com.omarflex5.data.model.Movie;
+import com.omarflex5.data.model.MovieActionType;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,6 +18,7 @@ public class TmdbMapper {
     public static Movie mapToMovie(TmdbMovie tmdbMovie, String trailerUrl) {
         String id = String.valueOf(tmdbMovie.getId());
         String title = tmdbMovie.getTitle();
+        String originalTitle = tmdbMovie.getOriginalTitle();
         String description = tmdbMovie.getOverview();
         if (description == null || description.isEmpty()) {
             description = "لا يتوفر وصف لهذا الفيلم حالياً."; // "No description available for this movie currently."
@@ -31,7 +33,8 @@ public class TmdbMapper {
         String year = ""; // TMDB release date parsing omitted for brevity
         String rating = String.valueOf(tmdbMovie.getVoteAverage());
 
-        return new Movie(id, title, description, backgroundUrl, posterUrl, trailerUrl, year, rating);
+        return new Movie(id, title, originalTitle, description, backgroundUrl, posterUrl,
+                trailerUrl, trailerUrl, year, rating, MovieActionType.EXOPLAYER);
     }
 
     public static List<Movie> mapToMovies(List<TmdbMovie> tmdbMovies) {
