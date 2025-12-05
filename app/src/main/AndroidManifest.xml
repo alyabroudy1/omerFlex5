@@ -3,6 +3,7 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-feature
         android:name="android.software.leanback"
         android:required="false" />
@@ -20,6 +21,7 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.OmarFlex5"
         android:usesCleartextTraffic="true"
+        android:networkSecurityConfig="@xml/network_security_config"
         android:hardwareAccelerated="true"
         android:banner="@mipmap/ic_launcher"> <!-- Placeholder banner -->
 
