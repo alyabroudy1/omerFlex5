@@ -155,4 +155,91 @@
         app:layoutManager="androidx.recyclerview.widget.LinearLayoutManager"
         tools:listitem="@layout/item_movie_card" />
 
+    <!-- Loading Overlay (shown during data fetch) -->
+    <FrameLayout
+        android:id="@+id/loading_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/netflix_background"
+        android:visibility="visible"
+        android:elevation="10dp">
+
+        <LinearLayout
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:gravity="center"
+            android:orientation="vertical">
+
+            <ProgressBar
+                android:layout_width="64dp"
+                android:layout_height="64dp"
+                android:indeterminateTint="#E50914"
+                android:layout_marginBottom="24dp" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="جاري التحميل..."
+                android:textColor="@android:color/white"
+                android:textSize="18sp" />
+
+        </LinearLayout>
+
+    </FrameLayout>
+
+    <!-- Error View (shown when no internet or API error) -->
+    <LinearLayout
+        android:id="@+id/error_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="@color/netflix_background"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:visibility="gone"
+        android:elevation="10dp"
+        android:padding="32dp">
+
+        <ImageView
+            android:id="@+id/image_error_icon"
+            android:layout_width="120dp"
+            android:layout_height="120dp"
+            android:src="@drawable/ic_no_wifi"
+            android:layout_marginBottom="24dp" />
+
+        <TextView
+            android:id="@+id/text_error_title"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="لا يوجد اتصال بالإنترنت"
+            android:textColor="@android:color/white"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:layout_marginBottom="12dp" />
+
+        <TextView
+            android:id="@+id/text_error_message"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="تحقق من اتصالك بالإنترنت وحاول مرة أخرى"
+            android:textColor="#AAAAAA"
+            android:textSize="16sp"
+            android:textAlignment="center"
+            android:layout_marginBottom="32dp" />
+
+        <Button
+            android:id="@+id/btn_retry"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="إعادة المحاولة"
+            android:textColor="@android:color/white"
+            android:backgroundTint="#E50914"
+            android:paddingStart="48dp"
+            android:paddingEnd="48dp"
+            android:textSize="18sp"
+            android:focusable="true"
+            android:focusableInTouchMode="true" />
+
+    </LinearLayout>
+
 </LinearLayout>

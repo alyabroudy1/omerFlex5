@@ -8,6 +8,7 @@ import android.os.Handler;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.View;
+import android.widget.Button;
 import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
@@ -66,6 +67,13 @@ public class HomeActivity extends AppCompatActivity {
 
     // YouTube controls overlay
     private YouTubeControlsOverlay youtubeControlsOverlay;
+
+    // Loading and Error state views
+    private View loadingContainer;
+    private View errorContainer;
+    private TextView errorTitle;
+    private TextView errorMessage;
+    private Button btnRetry;
 
     // Focus memory for each layer (to restore focus when navigating back)
     private View lastFocusedHero = null;
@@ -139,6 +147,16 @@ public class HomeActivity extends AppCompatActivity {
         View overlayRoot = findViewById(R.id.youtube_controls_root);
         youtubeControlsOverlay = new YouTubeControlsOverlay(overlayRoot, youtubeWebView);
         youtubeControlsOverlay.setOnExitFullscreenListener(() -> toggleFullscreen());
+
+        // Loading and Error state views
+        loadingContainer = findViewById(R.id.loading_container);
+        errorContainer = findViewById(R.id.error_container);
+        errorTitle = findViewById(R.id.text_error_title);
+        errorMessage = findViewById(R.id.text_error_message);
+        btnRetry = findViewById(R.id.btn_retry);
+        btnRetry.setOnClickListener(v -> {
+            viewModel.retry();
+        });
     }
 
     private void setupVolumeObserver() {
@@ -455,6 +473,21 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     private void observeViewModel() {
+        // Observe UI state for loading/error handling
+        viewModel.getUiState().observe(this, uiState -> {
+            switch (uiState.getState()) {
+                case LOADING:
+                    showLoading();
+                    break;
+                case SUCCESS:
+                    showContent();
+                    break;
+                case ERROR:
+                    showError(uiState.getErrorMessage(), uiState.getErrorType());
+                    break;
+            }
+        });
+
         viewModel.getCategories().observe(this, categories -> {
             categoryAdapter.setCategories(categories);
         });
@@ -496,9 +529,53 @@ public class HomeActivity extends AppCompatActivity {
         viewModel.getError().observe(this, new Observer<String>() {
             @Override
             public void onChanged(String error) {
-                Toast.makeText(HomeActivity.this, "Error: " + error, Toast.LENGTH_SHORT).show();
+                // Error is now handled by UiState observer, just log here
+                Log.w(TAG, "Error: " + error);
             }
         });
+    }
+
+    private void showLoading() {
+        loadingContainer.setVisibility(View.VISIBLE);
+        errorContainer.setVisibility(View.GONE);
+        heroContainer.setVisibility(View.GONE);
+        recyclerCategories.setVisibility(View.GONE);
+        recyclerMovies.setVisibility(View.GONE);
+    }
+
+    private void showContent() {
+        loadingContainer.setVisibility(View.GONE);
+        errorContainer.setVisibility(View.GONE);
+        heroContainer.setVisibility(View.VISIBLE);
+        recyclerCategories.setVisibility(View.VISIBLE);
+        recyclerMovies.setVisibility(View.VISIBLE);
+
+        // Set focus to first category when content loads
+        recyclerCategories.postDelayed(() -> {
+            if (recyclerCategories.getChildCount() > 0) {
+                recyclerCategories.getChildAt(0).requestFocus();
+            }
+        }, 100);
+    }
+
+    private void showError(String message, UiState.ErrorType errorType) {
+        loadingContainer.setVisibility(View.GONE);
+        errorContainer.setVisibility(View.VISIBLE);
+        heroContainer.setVisibility(View.GONE);
+        recyclerCategories.setVisibility(View.GONE);
+        recyclerMovies.setVisibility(View.GONE);
+
+        // Update error message based on type
+        if (errorType == UiState.ErrorType.NETWORK) {
+            errorTitle.setText("لا يوجد اتصال بالإنترنت");
+            errorMessage.setText("تحقق من اتصالك بالإنترنت وحاول مرة أخرى");
+        } else {
+            errorTitle.setText("حدث خطأ");
+            errorMessage.setText(message != null ? message : "يرجى المحاولة مرة أخرى");
+        }
+
+        // Focus retry button for D-pad navigation
+        btnRetry.requestFocus();
     }
 
     private void updateHeroView(Movie movie) {
@@ -763,6 +840,39 @@ public class HomeActivity extends AppCompatActivity {
                     "    }" +
                     "  }" +
                     "} catch(e) { console.log('Caption setup error: ' + e.message); }" +
+
+            // AD SKIPPER - Auto-skip YouTube ads
+                    "if (!window.adSkipperRunning) {" +
+                    "  window.adSkipperRunning = true;" +
+                    "  setInterval(function() {" +
+                    "    try {" +
+            // Method 1: Click skip button if available
+                    "      var skipBtn = document.querySelector('.ytp-ad-skip-button, .ytp-ad-skip-button-modern, .ytp-skip-ad-button, [class*=\"skip\"][class*=\"button\"]');"
+                    +
+                    "      if (skipBtn && skipBtn.style.display !== 'none') {" +
+                    "        skipBtn.click();" +
+                    "        console.log('Ad skipped via button');" +
+                    "      }" +
+            // Method 2: Click 'Skip Ad' text links
+                    "      var skipLinks = document.querySelectorAll('.ytp-ad-skip-button-container button, .ytp-ad-skip-button-slot button');"
+                    +
+                    "      skipLinks.forEach(function(btn) { btn.click(); });" +
+            // Method 3: Fast-forward through unskippable ads
+                    "      var player = document.querySelector('#movie_player');" +
+                    "      if (player && player.classList.contains('ad-showing')) {" +
+                    "        var video = document.querySelector('video');" +
+                    "        if (video && video.duration && video.duration > 0 && video.duration < 120) {" +
+                    "          video.currentTime = video.duration;" +
+                    "          console.log('Ad fast-forwarded');" +
+                    "        }" +
+                    "      }" +
+            // Method 4: Hide ad overlays
+                    "      var adOverlays = document.querySelectorAll('.ytp-ad-overlay-container, .ytp-ad-text-overlay, .video-ads');"
+                    +
+                    "      adOverlays.forEach(function(ad) { ad.style.display = 'none'; });" +
+                    "    } catch(e) {}" +
+                    "  }, 500);" +
+                    "}" +
                     "})();";
 
             youtubeWebView.evaluateJavascript(js, null);
