@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "722199500564",
+    "project_id": "omarflex5-78a3b",
+    "storage_bucket": "omarflex5-78a3b.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:722199500564:android:02444e381b3b2dbe231401",
+        "android_client_info": {
+          "package_name": "com.omarflex5"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCTh30o-Sh9gMthWIRsOZFcMKFPGF_gRrQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

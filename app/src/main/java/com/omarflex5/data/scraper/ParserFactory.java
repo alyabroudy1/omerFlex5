@@ -1,0 +1,125 @@
+package com.omarflex5.data.scraper;
+
+import com.omarflex5.data.scraper.parsers.MyCimaParser;
+
+/**
+ * Factory for creating server-specific HTML parsers.
+ */
+public class ParserFactory {
+
+    /**
+     * Get the appropriate parser for a server.
+     */
+    public static BaseHtmlParser getParser(String serverName, String html) {
+        if (serverName == null) {
+            return new GenericParser(html);
+        }
+
+        switch (serverName.toLowerCase()) {
+            case "mycima":
+                return new MyCimaParser(html);
+            // TODO: Add more parsers as needed
+            // case "faselhd":
+            // return new FaselHdParser(html);
+            // case "arabseed":
+            // return new ArabSeedParser(html);
+            // case "cimanow":
+            // return new CimaNowParser(html);
+            // case "akwam":
+            // return new AkwamParser(html);
+            default:
+                return new GenericParser(html);
+        }
+    }
+
+    /**
+     * Generic parser that works with common HTML structures.
+     */
+    private static class GenericParser extends BaseHtmlParser {
+        public GenericParser(String html) {
+            super(html);
+        }
+
+        @Override
+        public java.util.List<ParsedItem> parseSearchResults() {
+            java.util.List<ParsedItem> results = new java.util.ArrayList<>();
+
+            // Generic: Look for common card patterns
+            java.util.regex.Pattern cardPattern = java.util.regex.Pattern.compile(
+                    "<a[^>]+href=\"([^\"]+)\"[^>]*>.*?" +
+                            "<img[^>]+src=\"([^\"]+)\"[^>]*>.*?" +
+                            "(?:<(?:h\\d|strong|span)[^>]*>([^<]+)</(?:h\\d|strong|span)>)?",
+                    java.util.regex.Pattern.DOTALL);
+
+            java.util.regex.Matcher m = cardPattern.matcher(html);
+            while (m.find()) {
+                String url = m.group(1);
+                String poster = m.group(2);
+                String title = m.group(3);
+
+                // Filter media URLs only
+                if (!url.contains("/watch") &&
+                        !url.contains("/film") &&
+                        !url.contains("/movie") &&
+                        !url.contains("/series") &&
+                        !url.contains("/فيلم") &&
+                        !url.contains("/مسلسل")) {
+                    continue;
+                }
+
+                if (title != null) {
+                    title = stripHtml(title);
+                }
+
+                if (title == null || title.length() < 2)
+                    continue;
+
+                Integer year = extractYear(title);
+                String cleanedTitle = cleanTitle(title);
+
+                results.add(new ParsedItem()
+                        .setTitle(cleanedTitle)
+                        .setOriginalTitle(title)
+                        .setPosterUrl(poster)
+                        .setPageUrl(url)
+                        .setYear(year)
+                        .setType(detectMediaType(url, title))
+                        .setMatchKey(createMatchKey(cleanedTitle, year, null, null)));
+            }
+
+            return results;
+        }
+
+        @Override
+        public ParsedItem parseDetailPage() {
+            ParsedItem item = new ParsedItem();
+
+            // Title from h1 or og:title
+            String title = extractFirst("<h1[^>]*>([^<]+)</h1>", 1);
+            if (title == null) {
+                title = extractFirst("<meta property=\"og:title\" content=\"([^\"]+)\"", 1);
+            }
+            if (title != null) {
+                title = stripHtml(title);
+                item.setTitle(cleanTitle(title));
+                item.setOriginalTitle(title);
+                item.setYear(extractYear(title));
+            }
+
+            // Poster from og:image
+            String poster = extractFirst("<meta property=\"og:image\" content=\"([^\"]+)\"", 1);
+            item.setPosterUrl(poster);
+
+            // Description from og:description
+            String desc = extractFirst("<meta property=\"og:description\" content=\"([^\"]+)\"", 1);
+            if (desc == null) {
+                desc = extractFirst("<meta name=\"description\" content=\"([^\"]+)\"", 1);
+            }
+            item.setDescription(stripHtml(desc));
+
+            item.setType(detectMediaType(html, title != null ? title : ""));
+
+            return item;
+        }
+    }
+}

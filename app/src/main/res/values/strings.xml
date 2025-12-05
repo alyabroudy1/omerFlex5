@@ -1,3 +1,7 @@
 <resources>
     <string name="app_name">omarFlex5</string>
+    <string name="poster">ملصق</string>
+    <string name="search_hint">ابحث عن فيلم أو مسلسل...</string>
+    <string name="load_more">تحميل المزيد</string>
+    <string name="no_results">لا توجد نتائج</string>
 </resources>
