@@ -300,6 +300,13 @@ public class HomeActivity extends AppCompatActivity {
     }
 
     private void setupAdapters() {
+        // CRITICAL: Set horizontal layout managers explicitly (XML orientation is
+        // ignored)
+        recyclerCategories.setLayoutManager(
+                new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false));
+        recyclerMovies.setLayoutManager(
+                new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false));
+
         categoryAdapter = new CategoryAdapter();
         categoryAdapter.setListener(category -> {
             // Save current movie position for the old category before switching
@@ -347,6 +354,40 @@ public class HomeActivity extends AppCompatActivity {
      */
     @Override
     public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+        // DEBUG: Log all key events for NVIDIA Shield TV remote debugging
+        String keyName = android.view.KeyEvent.keyCodeToString(event.getKeyCode());
+        String action = event.getAction() == android.view.KeyEvent.ACTION_DOWN ? "DOWN"
+                : event.getAction() == android.view.KeyEvent.ACTION_UP ? "UP" : "OTHER";
+        Log.d("HomeActivity_KEY", "DISPATCH: " + keyName + " (code=" + event.getKeyCode() + ") action=" + action);
+
+        // Log current focus state
+        View currentFocusDebug = getCurrentFocus();
+        if (currentFocusDebug != null) {
+            String focusId = "NO_ID";
+            try {
+                if (currentFocusDebug.getId() != View.NO_ID) {
+                    focusId = getResources().getResourceEntryName(currentFocusDebug.getId());
+                }
+            } catch (Exception e) {
+                /* ignore */ }
+            Log.d("HomeActivity_KEY",
+                    "Current focus: " + currentFocusDebug.getClass().getSimpleName() + " id=" + focusId);
+
+            // Log parent info and position in RecyclerView
+            if (currentFocusDebug.getParent() instanceof RecyclerView) {
+                RecyclerView rv = (RecyclerView) currentFocusDebug.getParent();
+                int position = rv.getChildAdapterPosition(currentFocusDebug);
+                int totalItems = rv.getAdapter() != null ? rv.getAdapter().getItemCount() : 0;
+                boolean isHorizontal = rv.getLayoutManager() instanceof LinearLayoutManager
+                        && ((LinearLayoutManager) rv.getLayoutManager())
+                                .getOrientation() == LinearLayoutManager.HORIZONTAL;
+                Log.d("HomeActivity_KEY", "RecyclerView pos=" + position + "/" + totalItems
+                        + " isHorizontal=" + isHorizontal + " childCount=" + rv.getChildCount());
+            }
+        } else {
+            Log.d("HomeActivity_KEY", "Current focus: NONE");
+        }
+
         if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
             int keyCode = event.getKeyCode();
 
@@ -384,9 +425,7 @@ public class HomeActivity extends AppCompatActivity {
                 // Check if focus is in categories row
                 if (isDescendantOf(focused, recyclerCategories)) {
                     if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
-                        // Save current focus before leaving
                         lastFocusedCategory = focused;
-                        // Restore to last focused movie, or first if none
                         View target = (lastFocusedMovie != null && lastFocusedMovie.getParent() == recyclerMovies)
                                 ? lastFocusedMovie
                                 : (recyclerMovies.getChildCount() > 0 ? recyclerMovies.getChildAt(0) : null);
@@ -395,20 +434,31 @@ public class HomeActivity extends AppCompatActivity {
                             return true;
                         }
                     } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
-                        // Save current focus before leaving
                         lastFocusedCategory = focused;
-                        // Restore to last focused hero button, or mute if none
                         View target = (lastFocusedHero != null) ? lastFocusedHero : btnMute;
                         target.requestFocus();
                         return true;
+                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                            || keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                        // RTL layout: LEFT = next item (higher index), RIGHT = prev item (lower index)
+                        int currentIndex = recyclerCategories.indexOfChild(focused);
+                        int targetIndex = keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                ? currentIndex + 1
+                                : currentIndex - 1;
+                        if (targetIndex >= 0 && targetIndex < recyclerCategories.getChildCount()) {
+                            View target = recyclerCategories.getChildAt(targetIndex);
+                            if (target != null) {
+                                target.requestFocus();
+                                return true;
+                            }
+                        }
+                        return true; // At edge - block navigation
                     }
                 }
                 // Check if focus is in movies row
                 else if (isDescendantOf(focused, recyclerMovies)) {
                     if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
-                        // Save current focus before leaving
                         lastFocusedMovie = focused;
-                        // Restore to last focused category, or first if none
                         View target = (lastFocusedCategory != null
                                 && lastFocusedCategory.getParent() == recyclerCategories)
                                         ? lastFocusedCategory
@@ -419,19 +469,32 @@ public class HomeActivity extends AppCompatActivity {
                             return true;
                         }
                     } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
-                        // Block movement - stay in movies row
-                        return true;
+                        return true; // Block - stay in movies row
+                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                            || keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                        // RTL layout: LEFT = next item (higher index), RIGHT = prev item (lower index)
+                        int currentIndex = recyclerMovies.indexOfChild(focused);
+                        int targetIndex = keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
+                                ? currentIndex + 1
+                                : currentIndex - 1;
+                        if (targetIndex >= 0 && targetIndex < recyclerMovies.getChildCount()) {
+                            View target = recyclerMovies.getChildAt(targetIndex);
+                            if (target != null) {
+                                target.requestFocus();
+                                recyclerMovies.smoothScrollToPosition(
+                                        recyclerMovies.getChildAdapterPosition(target));
+                                return true;
+                            }
+                        }
+                        return true; // At edge - block navigation
                     }
                 }
                 // Check if focus is on hero buttons
                 else if (focused == btnMute || focused == btnFullscreen) {
                     if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
-                        // Block movement - stay in hero
-                        return true;
+                        return true; // Block - stay in hero
                     } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
-                        // Save current focus before leaving
                         lastFocusedHero = focused;
-                        // Restore to last focused category, or first if none
                         View target = (lastFocusedCategory != null
                                 && lastFocusedCategory.getParent() == recyclerCategories)
                                         ? lastFocusedCategory

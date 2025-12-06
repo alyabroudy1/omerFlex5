@@ -201,19 +201,8 @@ public class MovieCardAdapter extends RecyclerView.Adapter<MovieCardAdapter.Movi
 
             // Set selected state for visual styling (red border via selector)
             cardView.setSelected(isSelected);
-
-            // Constrain left/right within row
-            if (position == 0) {
-                cardView.setNextFocusLeftId(cardView.getId());
-            } else {
-                cardView.setNextFocusLeftId(View.NO_ID);
-            }
-
-            if (position == getItemCount() - 1) {
-                cardView.setNextFocusRightId(cardView.getId());
-            } else {
-                cardView.setNextFocusRightId(View.NO_ID);
-            }
+            // NOTE: No setNextFocusLeftId/RightId - HomeActivity.dispatchKeyEvent handles
+            // RTL navigation
         }
 
         public void updateSelectionState(boolean isSelected) {

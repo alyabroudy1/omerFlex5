@@ -85,6 +85,9 @@ public class PlayerActivity extends AppCompatActivity {
         playerView = findViewById(R.id.player_view);
         loadingIndicator = findViewById(R.id.loading_indicator);
 
+        // Stretch video to fill screen (removes black bars)
+        playerView.setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL);
+
         // Inject title into ExoPlayer's default bottom bar
         injectTitleIntoController();
     }
@@ -110,8 +113,14 @@ public class PlayerActivity extends AppCompatActivity {
             titleView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14);
             titleView.setTypeface(null, android.graphics.Typeface.BOLD);
             titleView.setSingleLine(true);
-            titleView.setEllipsize(android.text.TextUtils.TruncateAt.END);
-            titleView.setMaxWidth(400);
+
+            // Allow much wider text, use marquee for very long titles
+            titleView.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * 0.6)); // 60% of screen width
+            titleView.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
+            titleView.setMarqueeRepeatLimit(-1); // Infinite scroll
+            titleView.setSelected(true); // Required for marquee to work
+            titleView.setFocusable(true);
+            titleView.setFocusableInTouchMode(true);
 
             // Center it in the bottom bar
             android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(

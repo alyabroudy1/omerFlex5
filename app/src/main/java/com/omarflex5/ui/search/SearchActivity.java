@@ -100,6 +100,81 @@ public class SearchActivity extends AppCompatActivity {
         super.onBackPressed();
     }
 
+    /**
+     * Handle D-pad navigation for TV remote with RTL-aware grid navigation.
+     */
+    @Override
+    public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+        if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+            int keyCode = event.getKeyCode();
+            View focused = getCurrentFocus();
+
+            if (focused != null && recyclerResults != null) {
+                // Check if focus is in the RecyclerView
+                android.view.ViewParent parent = focused.getParent();
+                while (parent != null && parent != recyclerResults) {
+                    if (parent instanceof View) {
+                        parent = ((View) parent).getParent();
+                    } else {
+                        break;
+                    }
+                }
+
+                if (parent == recyclerResults) {
+                    // Find direct child of RecyclerView
+                    View focusedItem = focused;
+                    while (focusedItem.getParent() != recyclerResults) {
+                        focusedItem = (View) focusedItem.getParent();
+                    }
+
+                    int currentIndex = recyclerResults.indexOfChild(focusedItem);
+                    GridLayoutManager layoutManager = (GridLayoutManager) recyclerResults.getLayoutManager();
+                    int spanCount = layoutManager != null ? layoutManager.getSpanCount() : 4;
+                    int totalChildren = recyclerResults.getChildCount();
+
+                    int targetIndex = -1;
+
+                    // RTL-aware navigation:
+                    // LEFT = move to next item (higher index in RTL)
+                    // RIGHT = move to previous item (lower index in RTL)
+                    // UP/DOWN = move between rows
+                    if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT) {
+                        targetIndex = currentIndex + 1; // RTL: LEFT goes to next
+                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                        targetIndex = currentIndex - 1; // RTL: RIGHT goes to previous
+                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
+                        targetIndex = currentIndex + spanCount;
+                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
+                        targetIndex = currentIndex - spanCount;
+                        if (targetIndex < 0) {
+                            // Move focus to back button
+                            findViewById(R.id.btn_back).requestFocus();
+                            return true;
+                        }
+                    }
+
+                    if (targetIndex >= 0 && targetIndex < totalChildren) {
+                        View target = recyclerResults.getChildAt(targetIndex);
+                        if (target != null) {
+                            target.requestFocus();
+                            recyclerResults.smoothScrollToPosition(
+                                    recyclerResults.getChildAdapterPosition(target));
+                            return true;
+                        }
+                    }
+
+                    // Block navigation at edges
+                    if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                            keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT ||
+                            keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
     // ==================== VIEW MODEL ====================
 
     private void setupViewModel() {

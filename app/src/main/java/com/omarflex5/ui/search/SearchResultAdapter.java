@@ -75,6 +75,23 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
                     listener.onResultClick(results.get(pos));
                 }
             });
+
+            // Focus animation for TV remote navigation
+            itemView.setOnFocusChangeListener((v, hasFocus) -> {
+                if (hasFocus) {
+                    v.animate()
+                            .scaleX(1.05f)
+                            .scaleY(1.05f)
+                            .setDuration(150)
+                            .start();
+                } else {
+                    v.animate()
+                            .scaleX(1.0f)
+                            .scaleY(1.0f)
+                            .setDuration(150)
+                            .start();
+                }
+            });
         }
 
         void bind(UnifiedSearchService.SearchResult result) {

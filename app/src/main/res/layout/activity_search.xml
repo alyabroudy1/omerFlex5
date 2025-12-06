@@ -22,11 +22,15 @@
                 android:id="@+id/btn_back"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:background="?attr/selectableItemBackgroundBorderless"
+                android:background="@drawable/selector_button_focus"
                 android:src="@drawable/ic_arrow_back"
                 android:tint="#FFFFFF"
                 android:contentDescription="رجوع"
-                android:focusable="true" />
+                android:focusable="true"
+                android:focusableInTouchMode="false"
+                android:nextFocusDown="@id/recycler_results"
+                android:nextFocusUp="@id/btn_back"
+                android:nextFocusLeft="@id/btn_back" />
 
             <TextView
                 android:id="@+id/text_title"
@@ -58,7 +62,9 @@
             android:layout_height="0dp"
             android:layout_weight="1"
             android:padding="8dp"
-            android:clipToPadding="false" />
+            android:clipToPadding="false"
+            android:focusable="true"
+            android:descendantFocusability="afterDescendants" />
 
         <!-- Load More Button -->
         <Button
@@ -67,14 +73,16 @@
             android:layout_height="wrap_content"
             android:layout_gravity="center"
             android:layout_margin="16dp"
-            android:background="@drawable/badge_background"
+            android:background="@drawable/selector_button_focus"
             android:paddingHorizontal="24dp"
             android:paddingVertical="12dp"
             android:text="@string/load_more"
             android:textColor="#FFFFFF"
             android:textSize="14sp"
             android:visibility="gone"
-            android:focusable="true" />
+            android:focusable="true"
+            android:focusableInTouchMode="false"
+            android:nextFocusUp="@id/recycler_results" />
     </LinearLayout>
 
     <!-- Empty View -->

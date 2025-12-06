@@ -68,7 +68,30 @@ public class DetailsAdapter extends RecyclerView.Adapter<DetailsAdapter.ViewHold
         }
         holder.textInfo.setText(info);
 
+        // Click listener
         holder.itemView.setOnClickListener(v -> listener.onClick(item));
+
+        // Focus handling for TV remote/D-pad navigation
+        holder.itemView.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) {
+                v.animate()
+                        .scaleX(1.05f)
+                        .scaleY(1.05f)
+                        .setDuration(150)
+                        .start();
+            } else {
+                v.animate()
+                        .scaleX(1.0f)
+                        .scaleY(1.0f)
+                        .setDuration(150)
+                        .start();
+            }
+        });
+
+        // Request focus on first item for initial D-pad navigation
+        if (position == 0) {
+            holder.itemView.requestFocus();
+        }
     }
 
     @Override

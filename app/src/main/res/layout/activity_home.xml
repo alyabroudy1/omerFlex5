@@ -96,8 +96,8 @@
             android:src="@drawable/ic_volume_on"
             android:focusable="true"
             android:nextFocusUp="@id/btn_mute"
-            android:nextFocusLeft="@id/btn_mute"
-            android:nextFocusRight="@id/btn_fullscreen"
+            android:nextFocusLeft="@id/btn_fullscreen"
+            android:nextFocusRight="@id/btn_mute"
             android:nextFocusDown="@id/recycler_categories"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toStartOf="@+id/btn_fullscreen" />
@@ -113,8 +113,8 @@
             android:src="@drawable/ic_fullscreen"
             android:focusable="true"
             android:nextFocusUp="@id/btn_fullscreen"
-            android:nextFocusLeft="@id/btn_mute"
-            android:nextFocusRight="@id/btn_fullscreen"
+            android:nextFocusLeft="@id/btn_fullscreen"
+            android:nextFocusRight="@id/btn_mute"
             android:nextFocusDown="@id/recycler_categories"
             app:layout_constraintBottom_toBottomOf="parent"
             app:layout_constraintEnd_toEndOf="parent" />

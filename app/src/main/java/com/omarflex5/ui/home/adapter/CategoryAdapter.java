@@ -153,19 +153,8 @@ public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.Catego
 
             // Set selected state for visual styling (red background via selector)
             categoryText.setSelected(isSelected);
-
-            // Constrain left/right within row
-            if (position == 0) {
-                categoryText.setNextFocusLeftId(categoryText.getId());
-            } else {
-                categoryText.setNextFocusLeftId(View.NO_ID);
-            }
-
-            if (position == getItemCount() - 1) {
-                categoryText.setNextFocusRightId(categoryText.getId());
-            } else {
-                categoryText.setNextFocusRightId(View.NO_ID);
-            }
+            // NOTE: No setNextFocusLeftId/RightId calls - RecyclerView handles horizontal
+            // navigation
         }
     }
 }
