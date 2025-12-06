@@ -111,69 +111,93 @@ public class VideoSniffer {
         if (isDestroyed)
             return;
 
-        callback.onProgress("Initializing WebView...");
+        Log.d(TAG, "startSniffing called for: " + pageUrl);
+        callback.onProgress("Initializing...");
 
-        webView = new WebView(context);
-        webView.setLayoutParams(new ViewGroup.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT));
+        // Defer all WebView operations to prevent blocking
+        handler.post(() -> {
+            if (isDestroyed)
+                return;
 
-        // Configure Settings
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setJavaScriptCanOpenWindowsAutomatically(true);
-        settings.setSupportMultipleWindows(true); // Handle popups
-        settings.setUserAgentString(USER_AGENT);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+            try {
+                Log.d(TAG, "Creating WebView...");
+                webView = new WebView(context);
+                webView.setLayoutParams(new ViewGroup.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        ViewGroup.LayoutParams.MATCH_PARENT));
 
-        // Viewport Settings
-        settings.setUseWideViewPort(true);
-        settings.setLoadWithOverviewMode(true);
-        settings.setBuiltInZoomControls(true);
-        settings.setDisplayZoomControls(false);
+                // Configure Settings
+                Log.d(TAG, "Configuring WebView settings...");
+                WebSettings settings = webView.getSettings();
+                settings.setJavaScriptEnabled(true);
+                settings.setDomStorageEnabled(true);
+                settings.setMediaPlaybackRequiresUserGesture(false);
+                settings.setJavaScriptCanOpenWindowsAutomatically(true);
+                settings.setSupportMultipleWindows(true);
+                settings.setUserAgentString(USER_AGENT);
+                settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
 
-        // Add JS Interface
-        webView.addJavascriptInterface(new SnifferWebAppInterface(), "SnifferAndroid");
+                // Viewport Settings
+                settings.setUseWideViewPort(true);
+                settings.setLoadWithOverviewMode(true);
+                settings.setBuiltInZoomControls(true);
+                settings.setDisplayZoomControls(false);
 
-        // Set Client
-        webView.setWebViewClient(new SmartClient());
-        webView.setWebChromeClient(new WebChromeClient()); // Required for JS and videos
+                // Add JS Interface
+                webView.addJavascriptInterface(new SnifferWebAppInterface(), "SnifferAndroid");
 
-        // Attach to UI
-        container.removeAllViews();
-        container.addView(webView);
+                // Set Client
+                webView.setWebViewClient(new SmartClient());
+                webView.setWebChromeClient(new WebChromeClient());
 
-        // Start Load
-        callback.onProgress("Loading: " + pageUrl);
-        webView.loadUrl(pageUrl);
+                // Attach to UI
+                Log.d(TAG, "Attaching WebView to container...");
+                container.removeAllViews();
+                container.addView(webView);
 
-        // Timeout
-        timeoutRunnable = () -> {
-            if (!isDestroyed && !videoFound) {
-                callback.onError("Sniffing timed out after " + (SNIFF_TIMEOUT_MS / 1000) + "s");
-                destroy();
+                // Start Load
+                Log.d(TAG, "Loading URL: " + pageUrl);
+                callback.onProgress("Loading page...");
+                webView.loadUrl(pageUrl);
+
+                // Timeout
+                timeoutRunnable = () -> {
+                    if (!isDestroyed && !videoFound) {
+                        callback.onError("Sniffing timed out after " + (SNIFF_TIMEOUT_MS / 1000) + "s");
+                        destroy();
+                    }
+                };
+                handler.postDelayed(timeoutRunnable, SNIFF_TIMEOUT_MS);
+
+            } catch (Exception e) {
+                Log.e(TAG, "Error in startSniffing", e);
+                callback.onError("WebView Error: " + e.getMessage());
             }
-        };
-        handler.postDelayed(timeoutRunnable, SNIFF_TIMEOUT_MS);
+        });
     }
 
     public void destroy() {
+        if (isDestroyed)
+            return; // Prevent double destroy
         isDestroyed = true;
         videoFound = true; // Stop callbacks
         handler.removeCallbacksAndMessages(null);
-        if (webView != null) {
-            webView.loadUrl("about:blank");
-            webView.stopLoading();
-            webView.setWebViewClient(null);
-            webView.setWebChromeClient(null);
-            webView.destroy();
-            webView = null;
-        }
-        if (container != null) {
-            container.removeAllViews();
-        }
+
+        // Run WebView cleanup on main thread but without blocking operations
+        handler.post(() -> {
+            try {
+                if (webView != null) {
+                    webView.stopLoading();
+                    webView.setWebViewClient(null);
+                    webView.setWebChromeClient(null);
+                    container.removeView(webView);
+                    webView.destroy();
+                    webView = null;
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error destroying WebView", e);
+            }
+        });
     }
 
     private class SmartClient extends WebViewClient {

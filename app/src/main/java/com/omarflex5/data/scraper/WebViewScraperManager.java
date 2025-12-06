@@ -12,6 +12,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import com.google.gson.Gson;
+import com.google.gson.reflect.TypeToken;
 import com.omarflex5.data.local.entity.ServerEntity;
 import com.omarflex5.data.repository.ServerRepository;
 
@@ -23,7 +24,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Manages WebView scraping for Cloudflare-protected servers.
- * 
+ *
  * Flow:
  * 1. Load server URL in hidden WebView
  * 2. Wait for CF challenge to complete
@@ -77,6 +78,16 @@ public class WebViewScraperManager {
                 Log.d(TAG, "WebView initialized");
             }
         });
+    }
+
+    private void configureWebView(WebView webView) {
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setUserAgentString(
+                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+        settings.setBlockNetworkImage(true); // Save bandwidth
+        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
     }
 
     /**
@@ -180,9 +191,9 @@ public class WebViewScraperManager {
     /**
      * Search a server using WebView (for CF-protected searches).
      */
-    public void search(ServerEntity server, String query, ScraperCallback callback) {
+    public void search(ServerEntity server, String query, boolean allowWebViewFallback, ScraperCallback callback) {
         String searchUrl = buildSearchUrl(server, query);
-        loadHybrid(server, searchUrl, callback);
+        loadHybrid(server, searchUrl, allowWebViewFallback, callback);
     }
 
     /**
@@ -204,145 +215,67 @@ public class WebViewScraperManager {
         return server.getBaseUrl() + pattern.replace("{query}", encodedQuery);
     }
 
-    /**
-     * Configure WebView for scraping.
-     */
-    private void configureWebView(WebView webView) {
-        WebSettings settings = webView.getSettings();
+    // ==================== HELPER METHODS ====================
 
-        // Essential settings
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true);
-
-        // Act like a real browser
-        settings.setUserAgentString(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
-                        "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-
-        // Performance
-        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
-        settings.setLoadsImagesAutomatically(false); // Faster loading
-        settings.setBlockNetworkImage(true);
-
-        // Cookies
-        CookieManager cookieManager = CookieManager.getInstance();
-        cookieManager.setAcceptCookie(true);
-        cookieManager.setAcceptThirdPartyCookies(webView, true);
-    }
-
-    /**
-     * Parse cookie string into map.
-     */
     private Map<String, String> parseCookies(String cookieString) {
         Map<String, String> cookies = new HashMap<>();
-        if (cookieString != null && !cookieString.isEmpty()) {
-            String[] pairs = cookieString.split("; ");
-            for (String pair : pairs) {
-                int idx = pair.indexOf('=');
-                if (idx > 0) {
-                    String name = pair.substring(0, idx);
-                    String value = idx < pair.length() - 1 ? pair.substring(idx + 1) : "";
-                    cookies.put(name, value);
-                }
+        if (cookieString == null || cookieString.isEmpty())
+            return cookies;
+
+        String[] parts = cookieString.split(";");
+        for (String part : parts) {
+            String[] kv = part.trim().split("=", 2);
+            if (kv.length == 2) {
+                cookies.put(kv[0], kv[1]);
             }
         }
         return cookies;
     }
 
-    /**
-     * Unescape JavaScript string.
-     */
-    private String unescapeJsString(String js) {
-        if (js == null)
+    private String unescapeJsString(String jsString) {
+        if (jsString == null)
             return null;
-
-        // Remove surrounding quotes
-        if (js.startsWith("\"") && js.endsWith("\"")) {
-            js = js.substring(1, js.length() - 1);
+        // Remove surrounding quotes if present
+        if (jsString.startsWith("\"") && jsString.endsWith("\"")) {
+            jsString = jsString.substring(1, jsString.length() - 1);
         }
-
-        // Unescape common sequences
-        return js.replace("\\\"", "\"")
+        return jsString.replace("\\u003C", "<")
+                .replace("\\\"", "\"")
                 .replace("\\n", "\n")
-                .replace("\\r", "\r")
                 .replace("\\t", "\t")
-                .replace("\\/", "/")
-                .replace("\\\\", "\\")
-                .replace("\\u003C", "<")
-                .replace("\\u003c", "<")
-                .replace("\\u003E", ">")
-                .replace("\\u003e", ">");
+                .replace("\\\\", "\\");
     }
 
-    /**
-     * Get saved cookies for OkHttp requests.
-     */
-    public Map<String, String> getSavedCookies(ServerEntity server) {
-        String cookiesJson = server.getCfCookiesJson();
-        if (cookiesJson != null && !cookiesJson.isEmpty()) {
+    private void checkAndHandleRedirect(ServerEntity server, String currentUrl) {
+        if (currentUrl == null || server == null)
+            return;
+        String base = server.getBaseUrl();
+        // Simple check: if current URL domain differs from base URL domain
+        try {
+            Uri currentUri = Uri.parse(currentUrl);
+            Uri baseUri = Uri.parse(base);
+            if (!currentUri.getHost().equals(baseUri.getHost())) {
+                // It's a redirect!
+                Log.i(TAG, "Redirect detected: " + base + " -> " + currentUrl);
+                // We could update the DB here if we wanted to be proactive
+                // serverRepository.updateBaseUrl(server.getName(), currentUri.getScheme() +
+                // "://" + currentUri.getHost());
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "Error checking redirect: " + e.getMessage());
+        }
+    }
+
+    private Map<String, String> getSavedCookies(ServerEntity server) {
+        if (server.getCfCookiesJson() != null && !server.getCfCookiesJson().isEmpty()) { // FIXED: getCfCookiesJson
             try {
-                // noinspection unchecked
-                return gson.fromJson(cookiesJson, Map.class);
+                return gson.fromJson(server.getCfCookiesJson(), new TypeToken<Map<String, String>>() {
+                }.getType());
             } catch (Exception e) {
-                Log.e(TAG, "Failed to parse cookies: " + e.getMessage());
+                Log.e(TAG, "Error parsing saved cookies: " + e.getMessage());
             }
         }
         return new HashMap<>();
-    }
-
-    /**
-     * Release WebView resources.
-     */
-    public void release() {
-        mainHandler.post(() -> {
-            if (webView != null) {
-                webView.stopLoading();
-                webView.destroy();
-                webView = null;
-                isWebViewReady = false;
-                Log.d(TAG, "WebView released");
-            }
-        });
-    }
-
-    /**
-     * Check if the final URL is different from the server's base URL (redirect).
-     * If so, update the database with the new base URL.
-     */
-    private void checkAndHandleRedirect(ServerEntity server, String currentUrl) {
-        try {
-            Uri currentUri = Uri.parse(currentUrl);
-            Uri baseUri = Uri.parse(server.getBaseUrl());
-
-            String currentHost = currentUri.getHost();
-            String baseHost = baseUri.getHost();
-
-            // Simple check: if hosts differ
-            if (currentHost != null && baseHost != null && !currentHost.equalsIgnoreCase(baseHost)) {
-                // Construct new Base URL (scheme + host)
-                String newBaseUrl = currentUri.getScheme() + "://" + currentHost;
-
-                Log.i(TAG,
-                        "Detected redirect for " + server.getName() + ": " + server.getBaseUrl() + " -> " + newBaseUrl);
-
-                // Update Base URL
-                serverRepository.updateBaseUrl(server.getName(), newBaseUrl);
-
-                // Special handling for FaselHD: Update search pattern if moving to .biz (or
-                // similar)
-                // The pattern /?s={query} works on .biz, while .care used /search?s={query} (or
-                // similar)
-                if (server.getName().equalsIgnoreCase("faselhd")) {
-                    // Start of robust logic: if using .biz, force the known working pattern
-                    if (currentHost.contains("faselhds.biz")) {
-                        serverRepository.updateSearchUrlPattern(server.getName(), "/?s={query}");
-                    }
-                }
-            }
-        } catch (Exception e) {
-            Log.e(TAG, "Error handling redirect check: " + e.getMessage());
-        }
     }
 
     // ==================== HYBRID REQUEST LOGIC ====================
@@ -357,7 +290,7 @@ public class WebViewScraperManager {
     /**
      * Try direct request first. If CF detected, fallback to WebView.
      */
-    public void loadHybrid(ServerEntity server, String url, ScraperCallback callback) {
+    public void loadHybrid(ServerEntity server, String url, boolean allowWebViewFallback, ScraperCallback callback) {
         new Thread(() -> {
             try {
                 // 1. Prepare Direct Request
@@ -388,19 +321,23 @@ public class WebViewScraperManager {
                 boolean isCf = code == 403 || code == 503;
                 if (isCf && (body.contains("Just a moment") || body.contains("Cloudflare")
                         || body.contains("Checking your browser"))) {
-                    // Failover to WebView
-                    Log.d(TAG, "Direct request hit Cloudflare (" + code + "). Falling back to WebView.");
-                    mainHandler.post(() -> loadWithCfBypass(server, url, callback));
+
+                    if (allowWebViewFallback) {
+                        // Failover to WebView
+                        Log.d(TAG, "Direct request hit Cloudflare (" + code + "). Falling back to WebView.");
+                        mainHandler.post(() -> loadWithCfBypass(server, url, callback));
+                    } else {
+                        // Strict Fast Mode: Fail immediately so caller can queue it
+                        Log.d(TAG, "Direct request hit Cloudflare (" + code + "). Reporting CLOUDFLARE_DETECTED.");
+                        mainHandler.post(() -> callback.onError("CLOUDFLARE_DETECTED"));
+                    }
+
                 } else if (code >= 200 && code < 400 && !body.isEmpty()) {
                     // Success
                     Log.d(TAG, "Direct request success (" + code + ").");
                     checkAndHandleRedirect(server, response.request().url().toString());
                     mainHandler.post(() -> callback.onSuccess(body, cookies));
                 } else {
-                    // Other error (404, etc) - generic callback error or successful parse of error
-                    // page?
-                    // Usually treat as success if body exists so parser can decide, unless it's
-                    // empty
                     if (!body.isEmpty()) {
                         mainHandler.post(() -> callback.onSuccess(body, cookies));
                     } else {
@@ -410,11 +347,11 @@ public class WebViewScraperManager {
 
             } catch (Exception e) {
                 Log.e(TAG, "Direct request failed: " + e.getMessage());
-                // Fallback to WebView on connection error too?
-                // User said "if it fails for cloudflare", but connection error might be solved
-                // by WebView if it's protocol related?
-                // Let's fallback to WebView to be safe.
-                mainHandler.post(() -> loadWithCfBypass(server, url, callback));
+                if (allowWebViewFallback) {
+                    mainHandler.post(() -> loadWithCfBypass(server, url, callback));
+                } else {
+                    mainHandler.post(() -> callback.onError("CONNECTION_ERROR"));
+                }
             }
         }).start();
     }

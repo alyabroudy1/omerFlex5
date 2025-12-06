@@ -110,4 +110,11 @@
         android:layout_gravity="center"
         android:indeterminateTint="#E50914"
         android:visibility="gone" />
+
+    <!-- Resolution Selection Overlay -->
+    <include layout="@layout/overlay_resolution_selection" />
+
+    <!-- Video Sniffer Overlay -->
+    <include layout="@layout/overlay_sniffer" />
+
 </FrameLayout>

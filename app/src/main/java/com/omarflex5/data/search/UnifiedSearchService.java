@@ -55,6 +55,9 @@ public class UnifiedSearchService {
     private final MutableLiveData<SearchState> searchState = new MutableLiveData<>(SearchState.idle());
     private String currentQuery = null;
 
+    // Track servers that failed Direct Search due to Cloudflare
+    private final List<ServerEntity> lastFailedCfServers = new ArrayList<>();
+
     private UnifiedSearchService(Context context) {
         this.context = context.getApplicationContext();
         this.serverRepository = ServerRepository.getInstance(context);
@@ -93,8 +96,10 @@ public class UnifiedSearchService {
     /**
      * Perform a unified search across all enabled servers.
      * 
-     * Fast Phase: Query servers with valid cookies in parallel
-     * Queued Phase: CF servers needing WebView are queued for user action
+     * Hybrid Strategy:
+     * 1. Try ALL servers via Direct HTTP (Fast Mode).
+     * 2. If any fail with Cloudflare, mark them for Queue.
+     * 3. If Fast Mode yields 0 results, Auto-Trigger Queue for failed servers.
      */
     public void search(String query) {
         if (query == null || query.trim().isEmpty()) {
@@ -104,6 +109,7 @@ public class UnifiedSearchService {
 
         currentQuery = query.trim();
         searchState.postValue(SearchState.loading(currentQuery));
+        lastFailedCfServers.clear(); // Clear previous session failures
 
         Log.d(TAG, "Starting search: " + currentQuery);
 
@@ -116,111 +122,58 @@ public class UnifiedSearchService {
                         return;
                     }
 
-                    // Partition servers
-                    List<ServerEntity> fastServers = new ArrayList<>();
-                    List<ServerEntity> queuedServers = new ArrayList<>();
-
+                    // Strict Production Filter (Fasel Only) & Active Servers Check
+                    List<ServerEntity> activeServers = new ArrayList<>();
                     for (ServerEntity server : servers) {
-                        if (!server.isRequiresWebView() || !server.needsCookieRefresh()) {
-                            // Can query directly (no CF or has valid cookies)
-                            fastServers.add(server);
-                        } else {
-                            // Needs WebView for CF bypass
-                            queuedServers.add(server);
+                        // Strict Production Filter
+                        if (!server.getName().equals("faselhd")) {
+                            if (server.isEnabled()) {
+                                Log.i(TAG, "Skipping and Disabling non-production server: " + server.getName());
+                                serverRepository.setServerEnabled(server.getId(), false);
+                            }
+                            continue; // Skip this server for current search
+                        }
+
+                        // Double check enabled state
+                        if (server.isEnabled()) {
+                            activeServers.add(server);
                         }
                     }
 
-                    Log.d(TAG, "Fast servers: " + fastServers.size() +
-                            ", Queued servers: " + queuedServers.size());
+                    Log.d(TAG, "Starting Hybrid Search on " + activeServers.size() + " servers.");
 
-                    // Execute fast search
-                    List<SearchResult> allResults = new ArrayList<>();
-
-                    if (!fastServers.isEmpty()) {
-                        List<SearchResult> fastResults = searchFastServers(fastServers, currentQuery);
-                        allResults.addAll(fastResults);
-                    }
+                    // Execute Fast Search (Strict Mode: allowFallback=false)
+                    // This puts all active servers into the "Fast" pool first.
+                    List<SearchResult> allResults = searchFastServers(activeServers, currentQuery);
 
                     // Deduplicate results
                     List<SearchResult> deduped = deduplicateResults(allResults);
 
-                    // Post results
-                    if (queuedServers.isEmpty()) {
-                        searchState.postValue(SearchState.complete(currentQuery, deduped));
+                    // Decision Time
+                    if (deduped.isEmpty() && !lastFailedCfServers.isEmpty()) {
+                        Log.i(TAG, "Fast search empty. Auto-triggering queue for " + lastFailedCfServers.size()
+                                + " servers.");
+
+                        // Copy list to avoid concurrent modification issues
+                        List<ServerEntity> toQueue = new ArrayList<>();
+                        synchronized (lastFailedCfServers) {
+                            toQueue.addAll(lastFailedCfServers);
+                        }
+
+                        // Auto-queue logic
+                        processNextQueuedServer(toQueue, 0, deduped, new ArrayList<>());
+
+                    } else if (!lastFailedCfServers.isEmpty()) {
+                        // We have results, but some servers failed. Allow "Load More".
+                        searchState.postValue(SearchState.partial(currentQuery, deduped, lastFailedCfServers.size()));
                     } else {
-                        searchState.postValue(SearchState.partial(currentQuery, deduped, queuedServers.size()));
+                        // All good (or all failed with non-CF errors)
+                        searchState.postValue(SearchState.complete(currentQuery, deduped));
                     }
                 });
             } catch (Exception e) {
                 Log.e(TAG, "Search error: " + e.getMessage());
                 searchState.postValue(SearchState.error(currentQuery, e.getMessage()));
-            }
-        });
-    }
-
-    /**
-     * Process queued CF servers (triggered by user clicking "Load More").
-     */
-    public void processQueuedServers() {
-        if (currentQuery == null)
-            return;
-
-        searchState.postValue(SearchState.loadingMore(currentQuery, getCurrentResults()));
-
-        serverRepository.getSearchableServers(servers -> {
-            List<ServerEntity> queuedServers = new ArrayList<>();
-            for (ServerEntity server : servers) {
-                if (server.isRequiresWebView() && server.needsCookieRefresh()) {
-                    queuedServers.add(server);
-                }
-            }
-
-            if (queuedServers.isEmpty()) {
-                return;
-            }
-
-            // Process each queued server sequentially via WebView
-            processNextQueuedServer(queuedServers, 0, new ArrayList<>());
-        });
-    }
-
-    private void processNextQueuedServer(List<ServerEntity> servers, int index,
-            List<SearchResult> accumulated) {
-        if (index >= servers.size()) {
-            // All done - merge with existing results
-            List<SearchResult> current = getCurrentResults();
-            current.addAll(accumulated);
-            List<SearchResult> deduped = deduplicateResults(current);
-            searchState.postValue(SearchState.complete(currentQuery, deduped));
-            return;
-        }
-
-        ServerEntity server = servers.get(index);
-        Log.d(TAG, "Processing queued server: " + server.getName());
-
-        scraperManager.search(server, currentQuery, new WebViewScraperManager.ScraperCallback() {
-            @Override
-            public void onSuccess(String html, Map<String, String> cookies) {
-                List<SearchResult> results = parseResults(server, html);
-                accumulated.addAll(results);
-
-                // Update progress
-                int remaining = servers.size() - index - 1;
-                List<SearchResult> current = getCurrentResults();
-                current.addAll(accumulated);
-                searchState.postValue(SearchState.partial(currentQuery,
-                        deduplicateResults(current), remaining));
-
-                // Process next
-                processNextQueuedServer(servers, index + 1, accumulated);
-            }
-
-            @Override
-            public void onError(String message) {
-                Log.e(TAG, "Server " + server.getName() + " failed: " + message);
-                serverRepository.recordFailure(server);
-                // Continue with next server
-                processNextQueuedServer(servers, index + 1, accumulated);
             }
         });
     }
@@ -236,13 +189,14 @@ public class UnifiedSearchService {
         for (ServerEntity server : servers) {
             executor.execute(() -> {
                 try {
-                    List<SearchResult> results = searchSingleServer(server, query);
+                    // Try to search FAST (allowFallback = false)
+                    // This will fail with CLOUDFLARE_DETECTED if needed
+                    List<SearchResult> results = searchSingleServer(server, query, false);
                     synchronized (lock) {
                         allResults.addAll(results);
                     }
                 } catch (Exception e) {
-                    Log.e(TAG, "Error searching " + server.getName() + ": " + e.getMessage());
-                    serverRepository.recordFailure(server);
+                    Log.e(TAG, "Fast Search Ex: " + e.getMessage());
                 } finally {
                     latch.countDown();
                 }
@@ -261,11 +215,11 @@ public class UnifiedSearchService {
     /**
      * Search a single server using WebView scraper.
      */
-    private List<SearchResult> searchSingleServer(ServerEntity server, String query) {
+    private List<SearchResult> searchSingleServer(ServerEntity server, String query, boolean allowFallback) {
         List<SearchResult> results = new ArrayList<>();
         CountDownLatch latch = new CountDownLatch(1);
 
-        scraperManager.search(server, query, new WebViewScraperManager.ScraperCallback() {
+        scraperManager.search(server, query, allowFallback, new WebViewScraperManager.ScraperCallback() {
             @Override
             public void onSuccess(String html, Map<String, String> cookies) {
                 results.addAll(parseResults(server, html));
@@ -275,7 +229,15 @@ public class UnifiedSearchService {
 
             @Override
             public void onError(String message) {
-                Log.e(TAG, "Search failed on " + server.getName() + ": " + message);
+                if ("CLOUDFLARE_DETECTED".equals(message)) {
+                    Log.w(TAG, "Capturing CF Failure for: " + server.getName());
+                    synchronized (lastFailedCfServers) {
+                        lastFailedCfServers.add(server);
+                    }
+                } else {
+                    Log.e(TAG, "Search failed on " + server.getName() + ": " + message);
+                    serverRepository.recordFailure(server);
+                }
                 latch.countDown();
             }
         });
@@ -287,6 +249,91 @@ public class UnifiedSearchService {
         }
 
         return results;
+    }
+
+    /**
+     * Process queued CF servers (triggered by user clicking "Load More").
+     */
+    public void processQueuedServers() {
+        if (currentQuery == null)
+            return;
+
+        // Snapshot current results (from Fast phase) to use as base
+        List<SearchResult> baseResults = getCurrentResults();
+        searchState.postValue(SearchState.loadingMore(currentQuery, baseResults));
+
+        // Use cached failed servers if available
+        List<ServerEntity> toProcess = new ArrayList<>();
+        synchronized (lastFailedCfServers) {
+            if (!lastFailedCfServers.isEmpty()) {
+                toProcess.addAll(lastFailedCfServers);
+            }
+        }
+
+        if (!toProcess.isEmpty()) {
+            Log.d(TAG, "Processing cached failed servers: " + toProcess.size());
+            processNextQueuedServer(toProcess, 0, baseResults, new ArrayList<>());
+        } else {
+            // Fallback (edge case)
+            serverRepository.getSearchableServers(servers -> {
+                List<ServerEntity> fallbackQueue = new ArrayList<>();
+                for (ServerEntity server : servers) {
+                    if (server.isEnabled() && server.isRequiresWebView()) {
+                        fallbackQueue.add(server);
+                    }
+                }
+                if (fallbackQueue.isEmpty()) {
+                    searchState.postValue(SearchState.complete(currentQuery, baseResults));
+                } else {
+                    processNextQueuedServer(fallbackQueue, 0, baseResults, new ArrayList<>());
+                }
+            });
+        }
+    }
+
+    private void processNextQueuedServer(List<ServerEntity> servers, int index,
+            List<SearchResult> baseResults, List<SearchResult> accumulated) {
+
+        if (index >= servers.size()) {
+            // All done - merge final results
+            List<SearchResult> finalResults = new ArrayList<>(baseResults);
+            finalResults.addAll(accumulated);
+            List<SearchResult> deduped = deduplicateResults(finalResults);
+            searchState.postValue(SearchState.complete(currentQuery, deduped));
+            return;
+        }
+
+        ServerEntity server = servers.get(index);
+        Log.d(TAG, "Processing QUEUED server: " + server.getName());
+
+        // IN THE QUEUE: Allow Fallback = TRUE
+        scraperManager.search(server, currentQuery, true, new WebViewScraperManager.ScraperCallback() {
+            @Override
+            public void onSuccess(String html, Map<String, String> cookies) {
+                List<SearchResult> results = parseResults(server, html);
+                accumulated.addAll(results);
+
+                // Update progress
+                int remaining = servers.size() - index - 1;
+
+                // Construct current display list: Base + Accumulated So Far
+                List<SearchResult> currentDisplay = new ArrayList<>(baseResults);
+                currentDisplay.addAll(accumulated);
+
+                searchState.postValue(SearchState.partial(currentQuery,
+                        deduplicateResults(currentDisplay), remaining));
+
+                // Process next
+                processNextQueuedServer(servers, index + 1, baseResults, accumulated);
+            }
+
+            @Override
+            public void onError(String message) {
+                Log.e(TAG, "Queued Server " + server.getName() + " failed: " + message);
+                // Continue with next server
+                processNextQueuedServer(servers, index + 1, baseResults, accumulated);
+            }
+        });
     }
 
     /**

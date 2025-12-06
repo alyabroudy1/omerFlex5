@@ -35,35 +35,18 @@ public class MovieDBServer {
     }
 
     public void getCategories(DataSourceCallback<List<Category>> callback) {
+        // Return just 2 categories: Films and TV Series
         List<Category> categories = new ArrayList<>();
-        categories.add(new Category("trending", "Trending Now", new ArrayList<>()));
-        categories.add(new Category("popular", "Popular", new ArrayList<>()));
+        categories.add(new Category("films", "أفلام", new ArrayList<>())); // Films - Arabic
+        categories.add(new Category("tv", "مسلسلات", new ArrayList<>())); // TV Series - Arabic
 
-        api.getGenres().enqueue(new Callback<TmdbGenreResponse>() {
-            @Override
-            public void onResponse(Call<TmdbGenreResponse> call, Response<TmdbGenreResponse> response) {
-                if (response.isSuccessful() && response.body() != null) {
-                    categories.addAll(TmdbMapper.mapToCategories(response.body().getGenres()));
-                    callback.onSuccess(categories);
-                } else {
-                    callback.onError(new Exception("Failed to fetch genres: " + response.message()));
-                }
-            }
-
-            @Override
-            public void onFailure(Call<TmdbGenreResponse> call, Throwable t) {
-                if (!categories.isEmpty()) {
-                    callback.onSuccess(categories);
-                } else {
-                    callback.onError(t);
-                }
-            }
-        });
+        callback.onSuccess(categories);
     }
 
     public void getMoviesByCategory(String categoryId, DataSourceCallback<List<Movie>> callback) {
-        // Try cache first for trending/popular (most common)
-        if ("trending".equals(categoryId) || "popular".equals(categoryId)) {
+        // Try cache first for main categories
+        if ("films".equals(categoryId) || "tv".equals(categoryId) ||
+                "trending".equals(categoryId) || "popular".equals(categoryId)) {
             String cacheKey = "category_" + categoryId;
 
             cacheService.getSearchResults(cacheKey, new TmdbCacheService.CacheCallback<Map<String, Object>>() {
@@ -99,8 +82,10 @@ public class MovieDBServer {
     private void fetchMoviesFromApi(String categoryId, DataSourceCallback<List<Movie>> callback) {
         Call<TmdbMovieResponse> call;
 
-        if ("trending".equals(categoryId)) {
+        if ("films".equals(categoryId) || "trending".equals(categoryId)) {
             call = api.getTrendingMovies();
+        } else if ("tv".equals(categoryId)) {
+            call = api.getTrendingTVSeries();
         } else if ("popular".equals(categoryId)) {
             call = api.getPopularMovies();
         } else {

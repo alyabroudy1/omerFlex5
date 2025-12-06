@@ -12,36 +12,44 @@ import retrofit2.http.Path;
 import retrofit2.http.Query;
 
 public interface TmdbApi {
-    @GET("trending/movie/week")
-    Call<TmdbMovieResponse> getTrendingMovies();
 
-    @GET("movie/popular")
-    Call<TmdbMovieResponse> getPopularMovies();
+        // ========== Films ==========
+        @GET("trending/movie/week")
+        Call<TmdbMovieResponse> getTrendingMovies();
 
-    @GET("discover/movie")
-    Call<TmdbMovieResponse> getMoviesByGenre(@Query("with_genres") String genreId);
+        @GET("movie/popular")
+        Call<TmdbMovieResponse> getPopularMovies();
 
-    @GET("genre/movie/list")
-    Call<TmdbGenreResponse> getGenres();
+        @GET("discover/movie")
+        Call<TmdbMovieResponse> getMoviesByGenre(@Query("with_genres") String genreId);
 
-    @GET("movie/{movie_id}/videos")
-    Call<TmdbVideoResponse> getMovieVideos(
-            @Path("movie_id") int movieId,
-            @Query("language") String language);
+        @GET("genre/movie/list")
+        Call<TmdbGenreResponse> getGenres();
 
-    // ========== NEW: For cache-first strategy ==========
+        @GET("movie/{movie_id}/videos")
+        Call<TmdbVideoResponse> getMovieVideos(
+                        @Path("movie_id") int movieId,
+                        @Query("language") String language);
 
-    @GET("movie/{movie_id}")
-    Call<Map<String, Object>> getMovieDetails(@Path("movie_id") int movieId);
+        // ========== TV Series ==========
+        @GET("trending/tv/week")
+        Call<TmdbMovieResponse> getTrendingTVSeries();
 
-    @GET("tv/{tv_id}")
-    Call<Map<String, Object>> getTvShowDetails(@Path("tv_id") int tvId);
+        @GET("tv/popular")
+        Call<TmdbMovieResponse> getPopularTVSeries();
 
-    @GET("search/multi")
-    Call<Map<String, Object>> searchMulti(@Query("query") String query);
+        // ========== Details (For cache-first strategy) ==========
+        @GET("movie/{movie_id}")
+        Call<Map<String, Object>> getMovieDetails(@Path("movie_id") int movieId);
 
-    @GET("tv/{tv_id}/season/{season_number}")
-    Call<Map<String, Object>> getTvSeasonDetails(
-            @Path("tv_id") int tvId,
-            @Path("season_number") int seasonNumber);
+        @GET("tv/{tv_id}")
+        Call<Map<String, Object>> getTvShowDetails(@Path("tv_id") int tvId);
+
+        @GET("search/multi")
+        Call<Map<String, Object>> searchMulti(@Query("query") String query);
+
+        @GET("tv/{tv_id}/season/{season_number}")
+        Call<Map<String, Object>> getTvSeasonDetails(
+                        @Path("tv_id") int tvId,
+                        @Path("season_number") int seasonNumber);
 }

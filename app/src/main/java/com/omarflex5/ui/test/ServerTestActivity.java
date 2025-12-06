@@ -107,7 +107,7 @@ public class ServerTestActivity extends AppCompatActivity {
     private void startScraping(ServerEntity server, String query) {
         log("--- SEARCHING ---");
 
-        scraperManager.search(server, query, new WebViewScraperManager.ScraperCallback() {
+        scraperManager.search(server, query, true, new WebViewScraperManager.ScraperCallback() {
             @Override
             public void onSuccess(String html, Map<String, String> cookies) {
                 log("--- SEARCH SUCCESS ---");
@@ -173,7 +173,7 @@ public class ServerTestActivity extends AppCompatActivity {
                         .setCancelable(false)
                         .show();
 
-                scraperManager.loadHybrid(server, finalUrl, new WebViewScraperManager.ScraperCallback() {
+                scraperManager.loadHybrid(server, finalUrl, true, new WebViewScraperManager.ScraperCallback() {
                     @Override
                     public void onSuccess(String html, Map<String, String> cookies) {
                         loadingDialog.dismiss();

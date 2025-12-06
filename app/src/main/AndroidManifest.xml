@@ -63,6 +63,13 @@
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.OmarFlex5" />
 
+        <activity
+            android:name=".ui.browser.BrowserActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:hardwareAccelerated="true"
+            android:theme="@style/Theme.OmarFlex5.Fullscreen" />
+
     </application>
 
 </manifest>

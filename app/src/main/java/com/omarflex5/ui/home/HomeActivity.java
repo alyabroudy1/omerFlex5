@@ -112,13 +112,7 @@ public class HomeActivity extends AppCompatActivity {
         observeViewModel();
 
         // TODO: TEST MODE - Auto Search FaselHD
-        // TODO: TEST MODE - Auto Search FaselHD
-        new Handler().postDelayed(() -> {
-            android.content.Intent intent = new android.content.Intent(this,
-                    com.omarflex5.ui.test.ServerTestActivity.class);
-            // intent.putExtra("extra_query", "Tron"); // Not customized yet
-            startActivity(intent);
-        }, 1500); // 1.5s delay to allow services to init
+
     }
 
     private void initViews() {
