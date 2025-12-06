@@ -10,6 +10,12 @@ public class TmdbMovie {
     @SerializedName("title")
     private String title;
 
+    @SerializedName("name")
+    private String name;
+
+    @SerializedName("original_name")
+    private String originalName;
+
     @SerializedName("original_title")
     private String originalTitle;
 
@@ -30,11 +36,12 @@ public class TmdbMovie {
     }
 
     public String getTitle() {
-        return title;
+        return title != null ? title : name;
     }
 
     public String getOriginalTitle() {
-        return originalTitle != null ? originalTitle : title;
+        String original = originalTitle != null ? originalTitle : originalName;
+        return original != null ? original : getTitle();
     }
 
     public String getOverview() {

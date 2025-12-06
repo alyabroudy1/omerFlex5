@@ -58,7 +58,7 @@ public class MovieDBServer {
                         if (results instanceof List) {
                             @SuppressWarnings("unchecked")
                             List<Map<String, Object>> movieList = (List<Map<String, Object>>) results;
-                            List<Movie> movies = parseMoviesFromCache(movieList);
+                            List<Movie> movies = parseMoviesFromCache(movieList, "tv".equals(categoryId));
                             callback.onSuccess(movies);
                             return;
                         }
@@ -81,6 +81,7 @@ public class MovieDBServer {
 
     private void fetchMoviesFromApi(String categoryId, DataSourceCallback<List<Movie>> callback) {
         Call<TmdbMovieResponse> call;
+        boolean isTvShow = "tv".equals(categoryId);
 
         if ("films".equals(categoryId) || "trending".equals(categoryId)) {
             call = api.getTrendingMovies();
@@ -96,10 +97,11 @@ public class MovieDBServer {
             @Override
             public void onResponse(Call<TmdbMovieResponse> call, Response<TmdbMovieResponse> response) {
                 if (response.isSuccessful() && response.body() != null) {
-                    List<Movie> movies = TmdbMapper.mapToMovies(response.body().getResults());
+                    List<Movie> movies = TmdbMapper.mapToMovies(response.body().getResults(), isTvShow);
 
                     // Cache trending/popular results
-                    if ("trending".equals(categoryId) || "popular".equals(categoryId)) {
+                    if ("trending".equals(categoryId) || "popular".equals(categoryId) ||
+                            "films".equals(categoryId) || "tv".equals(categoryId)) {
                         cacheMovieResults(categoryId, response.body());
                     }
 
@@ -139,7 +141,7 @@ public class MovieDBServer {
         }
     }
 
-    private List<Movie> parseMoviesFromCache(List<Map<String, Object>> movieList) {
+    private List<Movie> parseMoviesFromCache(List<Map<String, Object>> movieList, boolean isTvShow) {
         List<Movie> movies = new ArrayList<>();
         for (Map<String, Object> map : movieList) {
             Number id = (Number) map.get("id");
@@ -158,18 +160,24 @@ public class MovieDBServer {
             String rating = ratingNum != null ? String.format("%.1f", ratingNum.doubleValue()) : "";
 
             Movie movie = new Movie(movieId, title, originalTitle, description, backdropUrl, posterUrl,
-                    null, null, "", rating, MovieActionType.EXOPLAYER);
+                    null, null, "", rating, MovieActionType.EXOPLAYER, isTvShow);
             movies.add(movie);
         }
         return movies;
     }
 
     /**
-     * Fetch trailer URL for a specific movie (called on selection)
-     * Note: We use en-US for videos since Arabic trailers are rarely available
+     * Fetch trailer URL using isTvShow flag to select correct endpoint
      */
-    public void getMovieTrailer(int movieId, DataSourceCallback<String> callback) {
-        api.getMovieVideos(movieId, "en-US").enqueue(new Callback<TmdbVideoResponse>() {
+    public void getMovieTrailer(int movieId, boolean isTvShow, DataSourceCallback<String> callback) {
+        Call<TmdbVideoResponse> call;
+        if (isTvShow) {
+            call = api.getTvVideos(movieId, "en-US");
+        } else {
+            call = api.getMovieVideos(movieId, "en-US");
+        }
+
+        call.enqueue(new Callback<TmdbVideoResponse>() {
             @Override
             public void onResponse(Call<TmdbVideoResponse> call, Response<TmdbVideoResponse> response) {
                 if (response.isSuccessful() && response.body() != null) {
@@ -185,6 +193,13 @@ public class MovieDBServer {
                 callback.onSuccess(null);
             }
         });
+    }
+
+    /**
+     * Legacy method for backward compatibility - assumes Movie
+     */
+    public void getMovieTrailer(int movieId, DataSourceCallback<String> callback) {
+        getMovieTrailer(movieId, false, callback);
     }
 
     private String findBestTrailer(List<TmdbVideo> videos) {

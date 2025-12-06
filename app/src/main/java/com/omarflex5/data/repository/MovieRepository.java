@@ -36,6 +36,10 @@ public class MovieRepository {
     }
 
     public void getMovieTrailer(int movieId, DataSourceCallback<String> callback) {
-        remoteDataSource.getMovieTrailer(movieId, callback);
+        remoteDataSource.getMovieTrailer(movieId, false, callback);
+    }
+
+    public void getMovieTrailer(int movieId, boolean isTvShow, DataSourceCallback<String> callback) {
+        remoteDataSource.getMovieTrailer(movieId, isTvShow, callback);
     }
 }

@@ -163,6 +163,8 @@ public class FaselHdParser extends BaseHtmlParser {
                     }
                 }
 
+                url = fixUrl(url); // FIX: Resolve relative URL
+
                 ParsedItem seasonItem = new ParsedItem()
                         .setTitle(sTitle)
                         .setPageUrl(url)
@@ -179,6 +181,32 @@ public class FaselHdParser extends BaseHtmlParser {
         }
     }
 
+    private String fixUrl(String url) {
+        if (url == null || url.isEmpty())
+            return "";
+        if (url.startsWith("http"))
+            return url;
+
+        String domain = "https://www.faselhds.biz"; // Fallback
+
+        // Try to extract domain from BaseHtmlParser.pageUrl
+        String currentUrl = getPageUrl();
+        if (currentUrl != null && currentUrl.startsWith("http")) {
+            try {
+                java.net.URI uri = new java.net.URI(currentUrl);
+                domain = uri.getScheme() + "://" + uri.getHost();
+            } catch (Exception e) {
+                // Ignore, use fallback
+            }
+        }
+
+        if (url.startsWith("/")) {
+            return domain + url;
+        } else {
+            return domain + "/" + url;
+        }
+    }
+
     private void parseSeason(Document doc, ParsedItem result) {
         Element epContainer = doc.selectFirst("#epAll");
         if (epContainer != null) {
@@ -186,6 +214,8 @@ public class FaselHdParser extends BaseHtmlParser {
             for (Element ep : episodes) {
                 String eTitle = ep.text();
                 String eLink = ep.attr("href");
+
+                eLink = fixUrl(eLink); // FIX: Resolve relative URL
 
                 ParsedItem epItem = new ParsedItem()
                         .setTitle(eTitle)
@@ -197,7 +227,37 @@ public class FaselHdParser extends BaseHtmlParser {
     }
 
     private void parsePlayableContent(Document doc, ParsedItem result) {
-        // Player/Resolutions
+        // 1. Try Servers First (Requested Flow: Episode -> Servers -> Resolutions)
+        Elements watchTabs = doc.select(".signleWatch li");
+        if (!watchTabs.isEmpty()) {
+            for (Element tab : watchTabs) {
+                String tTitle = tab.text();
+                String tOnclick = tab.attr("onclick");
+                String tLink = "";
+                if (tOnclick != null && tOnclick.contains("player_iframe")) {
+                    tLink = tOnclick.replace("player_iframe.location.href =", "")
+                            .replace("'", "")
+                            .replace(";", "")
+                            .trim();
+                }
+
+                tLink = fixUrl(tLink); // FIX: Resolve relative URL
+
+                if (isValidUrl(tLink)) {
+                    ParsedItem serverItem = new ParsedItem()
+                            .setTitle(tTitle)
+                            .setPageUrl(tLink)
+                            .setType(MediaType.FILM);
+                    result.addSubItem(serverItem);
+                }
+            }
+            if (!result.getSubItems().isEmpty()) {
+                Collections.reverse(result.getSubItems());
+                return; // Return servers list
+            }
+        }
+
+        // 2. Player/Resolutions (Fallback or Leaf Node)
         boolean isPlayer = false;
         Elements qualityButtons = doc.select("div.quality_change button");
         if (!qualityButtons.isEmpty())
@@ -212,31 +272,6 @@ public class FaselHdParser extends BaseHtmlParser {
                 return;
             }
         }
-
-        // Servers
-        Elements watchTabs = doc.select(".signleWatch li");
-        if (!watchTabs.isEmpty()) {
-            for (Element tab : watchTabs) {
-                String tTitle = tab.text();
-                String tOnclick = tab.attr("onclick");
-                String tLink = "";
-                if (tOnclick != null && tOnclick.contains("player_iframe")) {
-                    tLink = tOnclick.replace("player_iframe.location.href =", "")
-                            .replace("'", "")
-                            .replace(";", "")
-                            .trim();
-                }
-
-                if (isValidUrl(tLink)) {
-                    ParsedItem serverItem = new ParsedItem()
-                            .setTitle(tTitle)
-                            .setPageUrl(tLink)
-                            .setType(MediaType.FILM);
-                    result.addSubItem(serverItem);
-                }
-            }
-            Collections.reverse(result.getSubItems());
-        }
     }
 
     private List<ParsedItem> extractResolutions(Document doc) {
@@ -247,6 +282,8 @@ public class FaselHdParser extends BaseHtmlParser {
             String url = btn.attr("data-url");
             if (url.isEmpty())
                 url = btn.attr("data-href");
+
+            url = fixUrl(url); // FIX: Resolve relative URL
 
             if (isValidUrl(url)) {
                 resolutions.add(new ParsedItem().setTitle(txt).setPageUrl(url).setQuality(txt));

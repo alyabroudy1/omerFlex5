@@ -11,17 +11,21 @@ public class TmdbMapper {
     private static final String IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w780";
     private static final String BACKDROP_BASE_URL = "https://image.tmdb.org/t/p/w1280";
 
-    public static Movie mapToMovie(TmdbMovie tmdbMovie) {
-        return mapToMovie(tmdbMovie, null);
+    public static Movie mapToMovie(TmdbMovie tmdbMovie, boolean isTvShow) {
+        return mapToMovie(tmdbMovie, null, isTvShow);
     }
 
-    public static Movie mapToMovie(TmdbMovie tmdbMovie, String trailerUrl) {
+    public static Movie mapToMovie(TmdbMovie tmdbMovie) {
+        return mapToMovie(tmdbMovie, null, false);
+    }
+
+    public static Movie mapToMovie(TmdbMovie tmdbMovie, String trailerUrl, boolean isTvShow) {
         String id = String.valueOf(tmdbMovie.getId());
         String title = tmdbMovie.getTitle();
         String originalTitle = tmdbMovie.getOriginalTitle();
         String description = tmdbMovie.getOverview();
         if (description == null || description.isEmpty()) {
-            description = "لا يتوفر وصف لهذا الفيلم حالياً."; // "No description available for this movie currently."
+            description = "لا يتوفر وصف لهذا المحتوى حالياً.";
         }
         String posterUrl = IMAGE_BASE_URL + tmdbMovie.getPosterPath();
         String backgroundUrl = BACKDROP_BASE_URL + tmdbMovie.getBackdropPath();
@@ -34,16 +38,20 @@ public class TmdbMapper {
         String rating = String.valueOf(tmdbMovie.getVoteAverage());
 
         return new Movie(id, title, originalTitle, description, backgroundUrl, posterUrl,
-                trailerUrl, trailerUrl, year, rating, MovieActionType.EXOPLAYER);
+                trailerUrl, trailerUrl, year, rating, MovieActionType.EXOPLAYER, isTvShow);
     }
 
     public static List<Movie> mapToMovies(List<TmdbMovie> tmdbMovies) {
+        return mapToMovies(tmdbMovies, false);
+    }
+
+    public static List<Movie> mapToMovies(List<TmdbMovie> tmdbMovies, boolean isTvShow) {
         List<Movie> movies = new ArrayList<>();
         if (tmdbMovies != null) {
             for (TmdbMovie tmdbMovie : tmdbMovies) {
                 // Filter out movies without images
                 if (tmdbMovie.getPosterPath() != null && tmdbMovie.getBackdropPath() != null) {
-                    movies.add(mapToMovie(tmdbMovie));
+                    movies.add(mapToMovie(tmdbMovie, isTvShow));
                 }
             }
         }

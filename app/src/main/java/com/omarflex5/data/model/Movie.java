@@ -14,10 +14,11 @@ public class Movie {
     private final String year;
     private final String rating;
     private final MovieActionType actionType;
+    private final boolean isTvShow;
 
     public Movie(String id, String title, String originalTitle, String description,
             String backgroundUrl, String posterUrl, String trailerUrl, String videoUrl,
-            String year, String rating, MovieActionType actionType) {
+            String year, String rating, MovieActionType actionType, boolean isTvShow) {
         this.id = id;
         this.title = title;
         this.originalTitle = originalTitle != null ? originalTitle : title;
@@ -29,21 +30,21 @@ public class Movie {
         this.year = year;
         this.rating = rating;
         this.actionType = actionType;
+        this.isTvShow = isTvShow;
     }
 
-    // Legacy constructor for backward compatibility (no originalTitle)
+    // Legacy constructor for backward compatibility
     public Movie(String id, String title, String description, String backgroundUrl, String posterUrl,
             String trailerUrl, String year, String rating) {
         this(id, title, title, description, backgroundUrl, posterUrl, trailerUrl, trailerUrl,
-                year, rating, MovieActionType.EXOPLAYER);
+                year, rating, MovieActionType.EXOPLAYER, false);
     }
 
-    // Legacy 10-arg constructor with videoUrl and actionType (for
-    // DummyDataProvider)
+    // Legacy 10-arg constructor
     public Movie(String id, String title, String description, String backgroundUrl, String posterUrl,
             String trailerUrl, String videoUrl, String year, String rating, MovieActionType actionType) {
         this(id, title, title, description, backgroundUrl, posterUrl, trailerUrl, videoUrl,
-                year, rating, actionType);
+                year, rating, actionType, false);
     }
 
     public String getId() {
@@ -98,6 +99,10 @@ public class Movie {
 
     public MovieActionType getActionType() {
         return actionType;
+    }
+
+    public boolean isTvShow() {
+        return isTvShow;
     }
 
     @Override

@@ -120,7 +120,7 @@ public class HomeViewModel extends ViewModel {
         // Fetch trailer for selected movie
         try {
             int movieId = Integer.parseInt(movie.getId());
-            repository.getMovieTrailer(movieId, new DataSourceCallback<String>() {
+            repository.getMovieTrailer(movieId, movie.isTvShow(), new DataSourceCallback<String>() {
                 @Override
                 public void onSuccess(String result) {
                     trailerUrl.setValue(result);

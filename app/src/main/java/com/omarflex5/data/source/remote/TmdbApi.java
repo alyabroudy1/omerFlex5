@@ -38,6 +38,11 @@ public interface TmdbApi {
         @GET("tv/popular")
         Call<TmdbMovieResponse> getPopularTVSeries();
 
+        @GET("tv/{tv_id}/videos")
+        Call<TmdbVideoResponse> getTvVideos(
+                        @Path("tv_id") int tvId,
+                        @Query("language") String language);
+
         // ========== Details (For cache-first strategy) ==========
         @GET("movie/{movie_id}")
         Call<Map<String, Object>> getMovieDetails(@Path("movie_id") int movieId);
