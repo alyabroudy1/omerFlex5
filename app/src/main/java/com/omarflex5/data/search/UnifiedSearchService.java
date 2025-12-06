@@ -65,6 +65,18 @@ public class UnifiedSearchService {
 
         // Initialize WebView
         scraperManager.initialize();
+
+        // Fix FaselHD URL and Pattern if needed (Migration for existing users)
+        serverRepository.getServerByName("faselhd", server -> {
+            if (server != null && server.getBaseUrl().contains("faselhds.care")) {
+                serverRepository.updateBaseUrl("faselhd", "https://www.faselhds.biz");
+                serverRepository.updateSearchUrlPattern("faselhd", "/?s={query}");
+                Log.i(TAG, "Migrated FaselHD to .biz domain");
+            }
+        });
+
+        // Sync with Firebase
+        serverRepository.fetchRemoteConfigs();
     }
 
     public static UnifiedSearchService getInstance(Context context) {
@@ -284,7 +296,7 @@ public class UnifiedSearchService {
         List<SearchResult> results = new ArrayList<>();
 
         try {
-            BaseHtmlParser parser = ParserFactory.getParser(server.getName(), html);
+            BaseHtmlParser parser = ParserFactory.getParser(server.getName(), html, server.getBaseUrl());
             List<BaseHtmlParser.ParsedItem> items = parser.parseSearchResults();
 
             for (BaseHtmlParser.ParsedItem item : items) {

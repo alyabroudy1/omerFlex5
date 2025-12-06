@@ -54,6 +54,9 @@ public interface ServerDao {
     @Query("UPDATE servers SET baseUrl = :baseUrl, updatedAt = :timestamp WHERE name = :name")
     void updateBaseUrl(String name, String baseUrl, long timestamp);
 
+    @Query("UPDATE servers SET searchUrlPattern = :pattern, updatedAt = :timestamp WHERE name = :name")
+    void updateSearchUrlPattern(String name, String pattern, long timestamp);
+
     @Query("UPDATE servers SET cfCookiesJson = :cookies, cfCookiesExpireAt = :expireAt, updatedAt = :timestamp WHERE id = :id")
     void updateCookies(long id, String cookies, long expireAt, long timestamp);
 

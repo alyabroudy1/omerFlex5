@@ -10,26 +10,31 @@ public class ParserFactory {
     /**
      * Get the appropriate parser for a server.
      */
-    public static BaseHtmlParser getParser(String serverName, String html) {
+    public static BaseHtmlParser getParser(String serverName, String html, String url) {
+        BaseHtmlParser parser;
         if (serverName == null) {
-            return new GenericParser(html);
+            parser = new GenericParser(html);
+            parser.setPageUrl(url);
+            return parser;
         }
 
         switch (serverName.toLowerCase()) {
             case "mycima":
-                return new MyCimaParser(html);
-            // TODO: Add more parsers as needed
-            // case "faselhd":
-            // return new FaselHdParser(html);
-            // case "arabseed":
-            // return new ArabSeedParser(html);
-            // case "cimanow":
-            // return new CimaNowParser(html);
-            // case "akwam":
-            // return new AkwamParser(html);
+                parser = new MyCimaParser(html);
+                break;
+            case "faselhd":
+                parser = new com.omarflex5.data.scraper.parsers.FaselHdParser(html);
+                break;
+            case "arabseed":
+                parser = new com.omarflex5.data.scraper.parsers.ArabSeedParser(html);
+                break;
             default:
-                return new GenericParser(html);
+                parser = new GenericParser(html);
+                break;
         }
+
+        parser.setPageUrl(url);
+        return parser;
     }
 
     /**

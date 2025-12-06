@@ -66,4 +66,7 @@ dependencies {
 
     // Gson for JSON serialization
     implementation("com.google.code.gson:gson:2.10.1")
+    
+    // Jsoup for HTML parsing
+    implementation("org.jsoup:jsoup:1.17.2")
 }

@@ -129,9 +129,17 @@ public class PlayerActivity extends AppCompatActivity {
         String mediaUrl = parsedMedia.getUrl();
         Map<String, String> headers = parsedMedia.getHeaders();
 
+        // Add headers from Intent if present
+        if (getIntent().hasExtra("EXTRA_USER_AGENT")) {
+            headers.put("User-Agent", getIntent().getStringExtra("EXTRA_USER_AGENT"));
+        }
+        if (getIntent().hasExtra("EXTRA_REFERER")) {
+            headers.put("Referer", getIntent().getStringExtra("EXTRA_REFERER"));
+        }
+
         // Create data source factory with headers
         DefaultHttpDataSource.Factory dataSourceFactory = new DefaultHttpDataSource.Factory();
-        if (parsedMedia.hasHeaders()) {
+        if (!headers.isEmpty()) {
             dataSourceFactory.setDefaultRequestProperties(headers);
         }
 

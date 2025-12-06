@@ -14,9 +14,18 @@ import java.util.regex.Pattern;
 public abstract class BaseHtmlParser {
 
     protected final String html;
+    protected String pageUrl; // The URL of the page being parsed
 
     public BaseHtmlParser(String html) {
         this.html = html;
+    }
+
+    public void setPageUrl(String pageUrl) {
+        this.pageUrl = pageUrl;
+    }
+
+    public String getPageUrl() {
+        return pageUrl;
     }
 
     /**
@@ -174,6 +183,8 @@ public abstract class BaseHtmlParser {
         private String quality;
         private String matchKey;
 
+        private List<ParsedItem> subItems = new ArrayList<>();
+
         // Builder pattern
         public ParsedItem setTitle(String title) {
             this.title = title;
@@ -230,6 +241,18 @@ public abstract class BaseHtmlParser {
             return this;
         }
 
+        public ParsedItem setSubItems(List<ParsedItem> subItems) {
+            this.subItems = subItems;
+            return this;
+        }
+
+        public ParsedItem addSubItem(ParsedItem item) {
+            if (this.subItems == null)
+                this.subItems = new ArrayList<>();
+            this.subItems.add(item);
+            return this;
+        }
+
         // Getters
         public String getTitle() {
             return title;
@@ -273,6 +296,10 @@ public abstract class BaseHtmlParser {
 
         public String getMatchKey() {
             return matchKey;
+        }
+
+        public List<ParsedItem> getSubItems() {
+            return subItems;
         }
     }
 }

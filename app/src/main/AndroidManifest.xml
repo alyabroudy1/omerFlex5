@@ -56,6 +56,13 @@
             android:screenOrientation="landscape"
             android:theme="@style/Theme.OmarFlex5" />
 
+        <activity
+            android:name=".ui.test.ServerTestActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustResize"
+            android:theme="@style/Theme.OmarFlex5" />
+
     </application>
 
 </manifest>

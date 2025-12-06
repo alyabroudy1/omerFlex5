@@ -152,6 +152,16 @@ public class ServerRepository {
     }
 
     /**
+     * Update search URL pattern (e.g., from generic /?s= to /search?s=).
+     */
+    public void updateSearchUrlPattern(String serverName, String pattern) {
+        executor.execute(() -> {
+            serverDao.updateSearchUrlPattern(serverName, pattern, System.currentTimeMillis());
+            Log.d(TAG, "Updated search pattern for " + serverName + " to " + pattern);
+        });
+    }
+
+    /**
      * Enable or disable a server.
      */
     public void setServerEnabled(long serverId, boolean enabled) {
@@ -174,16 +184,68 @@ public class ServerRepository {
             if (local != null) {
                 // Only update configurable fields, preserve local state
                 local.setBaseUrl(remoteConfig.getBaseUrl());
-                local.setSearchUrlPattern(remoteConfig.getSearchUrlPattern());
+
+                String searchPattern = remoteConfig.getSearchUrlPattern();
+                if (searchPattern != null && !searchPattern.isEmpty()) {
+                    local.setSearchUrlPattern(searchPattern);
+                }
+
                 local.setRequiresWebView(remoteConfig.isRequiresWebView());
-                local.setUserAgent(remoteConfig.getUserAgent());
+
+                // Only update user agent if provided
+                if (remoteConfig.getUserAgent() != null && !remoteConfig.getUserAgent().isEmpty()) {
+                    local.setUserAgent(remoteConfig.getUserAgent());
+                }
+
                 local.setLastSyncedAt(System.currentTimeMillis());
                 local.setRemoteConfigVersion(remoteConfig.getRemoteConfigVersion());
                 local.setUpdatedAt(System.currentTimeMillis());
+
                 serverDao.update(local);
                 Log.d(TAG, "Updated server config from remote: " + local.getName());
             }
         });
+    }
+
+    /**
+     * Fetch and sync server configurations from Firebase Firestore.
+     */
+    public void fetchRemoteConfigs() {
+        com.google.firebase.firestore.FirebaseFirestore db = com.google.firebase.firestore.FirebaseFirestore
+                .getInstance();
+        db.collection("server_configs")
+                .get()
+                .addOnSuccessListener(queryDocumentSnapshots -> {
+                    if (queryDocumentSnapshots == null)
+                        return;
+
+                    for (com.google.firebase.firestore.QueryDocumentSnapshot document : queryDocumentSnapshots) {
+                        try {
+                            // Map manually or use POJO if fields match exactly
+                            String name = document.getId();
+                            String baseUrl = document.getString("baseUrl");
+                            String searchPattern = document.getString("searchUrlPattern");
+                            Boolean requiresWebView = document.getBoolean("requiresWebView");
+                            Long version = document.getLong("version");
+
+                            if (baseUrl != null) {
+                                ServerEntity config = new ServerEntity();
+                                config.setName(name);
+                                config.setBaseUrl(baseUrl);
+                                config.setSearchUrlPattern(searchPattern);
+                                config.setRequiresWebView(requiresWebView != null ? requiresWebView : true);
+                                config.setRemoteConfigVersion(version != null ? String.valueOf(version) : "1");
+
+                                updateServerFromRemote(config);
+                            }
+                        } catch (Exception e) {
+                            Log.e(TAG,
+                                    "Error parsing remote config for doc: " + document.getId() + ", " + e.getMessage());
+                        }
+                    }
+                    Log.d(TAG, "Remote config sync completed");
+                })
+                .addOnFailureListener(e -> Log.e(TAG, "Failed to fetch remote configs: " + e.getMessage()));
     }
 
     // ==================== CALLBACK INTERFACE ====================
