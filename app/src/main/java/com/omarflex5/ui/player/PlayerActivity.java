@@ -608,6 +608,9 @@ public class PlayerActivity extends AppCompatActivity {
         player = new ExoPlayer.Builder(this).build();
         playerView.setPlayer(player);
 
+        // check DLNA Session
+        checkDlnaAutoCast();
+
         // Show loading indicator while buffering
         player.addListener(new Player.Listener() {
             @Override
@@ -702,6 +705,69 @@ public class PlayerActivity extends AppCompatActivity {
                 });
             }
         }).start();
+    }
+
+    private void checkDlnaAutoCast() {
+        com.omarflex5.cast.dlna.DlnaSessionManager sessionManager = com.omarflex5.cast.dlna.DlnaSessionManager
+                .getInstance(this);
+
+        if (sessionManager.isConnected()) {
+            com.omarflex5.cast.dlna.SsdpDiscoverer.DlnaDevice device = sessionManager.getCurrentDevice();
+
+            // Validate local IP before casting
+            String localIp = com.omarflex5.util.NetworkUtils.getLocalIpAddress();
+            if (localIp == null || localIp.equals("0.0.0.0")) {
+                Toast.makeText(this, "Connect to Wi-Fi to resume DLNA Cast", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            // Update UI
+            castDeviceIndicator.setText("Casting to " + device.friendlyName);
+            castDeviceIndicator.setVisibility(View.VISIBLE);
+
+            // Start process
+            startDlnaCast(device);
+        }
+    }
+
+    private void startDlnaCast(com.omarflex5.cast.dlna.SsdpDiscoverer.DlnaDevice device) {
+        // Prepare headers (reuse logic from initPlayer)
+        MediaUtils.ParsedMedia parsed = MediaUtils.parseUrlWithHeaders(videoUrl);
+        Map<String, String> headers = parsed.getHeaders();
+        if (getIntent().hasExtra("EXTRA_USER_AGENT")) {
+            headers.put("User-Agent", getIntent().getStringExtra("EXTRA_USER_AGENT"));
+        }
+        if (getIntent().hasExtra("EXTRA_REFERER")) {
+            headers.put("Referer", getIntent().getStringExtra("EXTRA_REFERER"));
+        }
+
+        String proxyUrl = com.omarflex5.cast.server.MediaServer.getInstance().startServer(videoUrl, headers);
+        if (proxyUrl == null) {
+            Toast.makeText(this, "Failed to resume DLNA Cast", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        com.omarflex5.cast.dlna.DlnaCaster.castToDevice(
+                device.location,
+                proxyUrl,
+                videoTitle != null ? videoTitle : "OmarFlex Video",
+                new com.omarflex5.cast.dlna.DlnaCaster.CastListener() {
+                    @Override
+                    public void onCastSuccess() {
+                        runOnUiThread(() -> {
+                            Toast.makeText(PlayerActivity.this, "Resuming on TV...", Toast.LENGTH_SHORT).show();
+                        });
+                    }
+
+                    @Override
+                    public void onCastError(String error) {
+                        runOnUiThread(() -> {
+                            Toast.makeText(PlayerActivity.this, "Auto-Cast failed: " + error, Toast.LENGTH_LONG).show();
+                            com.omarflex5.cast.server.MediaServer.getInstance().stopServer();
+                            castDeviceIndicator.setVisibility(View.GONE);
+                        });
+                    }
+                });
     }
 
 }

@@ -109,7 +109,7 @@
         android:layout_height="1dp"
         android:background="#33FFFFFF" />
 
-    <!-- DLNA (Disabled) -->
+    <!-- DLNA (Enabled) -->
     <LinearLayout
         android:id="@+id/option_dlna"
         android:layout_width="match_parent"
@@ -118,7 +118,6 @@
         android:clickable="true"
         android:focusable="true"
         android:gravity="center_vertical"
-        android:alpha="0.5"
         android:orientation="horizontal"
         android:paddingVertical="12dp">
 
@@ -136,16 +135,17 @@
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/text_dlna"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Search for DLNA Devices"
+                android:text="DLNA Cast"
                 android:textColor="#FFFFFF"
                 android:textSize="16sp" />
 
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Coming Soon"
+                android:text="Search for Smart TVs &amp; Media Players"
                 android:textColor="#AAAAAA"
                 android:textSize="12sp" />
         </LinearLayout>

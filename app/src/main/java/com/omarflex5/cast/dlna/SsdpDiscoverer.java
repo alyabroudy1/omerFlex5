@@ -44,36 +44,67 @@ public class SsdpDiscoverer {
         void onError(String error);
     }
 
-    public static void discoverDevices(DiscoveryListener listener) {
+    public static void discoverDevices(android.content.Context context, DiscoveryListener listener) {
         new Thread(() -> {
             List<DlnaDevice> devices = new ArrayList<>();
             Set<String> foundLocations = new HashSet<>();
             DatagramSocket socket = null;
+            android.net.wifi.WifiManager.MulticastLock multicastLock = null;
 
             try {
-                socket = new DatagramSocket();
+                // 1. Acquire Multicast Lock (CRITICAL for receiving UDP packets)
+                android.net.wifi.WifiManager wifiManager = (android.net.wifi.WifiManager) context
+                        .getApplicationContext().getSystemService(android.content.Context.WIFI_SERVICE);
+                if (wifiManager != null) {
+                    multicastLock = wifiManager.createMulticastLock("SsdpDiscoveryLock");
+                    multicastLock.setReferenceCounted(true);
+                    multicastLock.acquire();
+                }
+
+                // 2. Find correct local IP (using same logic as MediaServer)
+                java.net.InetAddress localAddress = null;
+                String localIp = com.omarflex5.util.NetworkUtils.getLocalIpAddress();
+                if (localIp != null) {
+                    localAddress = java.net.InetAddress.getByName(localIp);
+                }
+
+                if (localAddress == null) {
+                    listener.onError("No valid Wi-Fi connection found");
+                    return;
+                }
+
+                // 3. Use MulticastSocket for robust discovery
+                // Bind to the specific local IP to ensure we use certain interface
+                socket = new java.net.MulticastSocket(new java.net.InetSocketAddress(localAddress, 0));
+                // Optional: Join the group to ensure routing is correct (though we send TO it)
+                // ((java.net.MulticastSocket)socket).setNetworkInterface(java.net.NetworkInterface.getByInetAddress(localAddress));
+
                 socket.setSoTimeout(TIMEOUT_MS);
 
+                Log.d(TAG, "Starting SSDP Search from " + localAddress + " port " + socket.getLocalPort());
+
                 // SSDP M-SEARCH Packet
+                // Search for ssdp:all to debug visibility
                 String searchMessage = "M-SEARCH * HTTP/1.1\r\n" +
                         "HOST: " + SSDP_IP + ":" + SSDP_PORT + "\r\n" +
                         "MAN: \"ssdp:discover\"\r\n" +
                         "MX: 3\r\n" +
-                        "ST: urn:schemas-upnp-org:service:AVTransport:1\r\n" + // Look for Media Renderers
+                        "ST: ssdp:all\r\n" +
                         "\r\n";
 
                 byte[] sendData = searchMessage.getBytes();
                 DatagramPacket sendPacket = new DatagramPacket(sendData, sendData.length,
                         InetAddress.getByName(SSDP_IP), SSDP_PORT);
 
-                // Send multiple times to ensure delivery over UDP
+                // Send 3 times
                 for (int i = 0; i < 3; i++) {
+                    Log.d(TAG, "Sending M-SEARCH packet " + (i + 1));
                     socket.send(sendPacket);
-                    Thread.sleep(100);
+                    Thread.sleep(200);
                 }
 
-                long endTime = System.currentTimeMillis() + 4000; // Listen for 4 seconds
-                byte[] receiveData = new byte[2048];
+                long endTime = System.currentTimeMillis() + 5000;
+                byte[] receiveData = new byte[4096]; // Larger buffer
 
                 while (System.currentTimeMillis() < endTime) {
                     try {
@@ -81,24 +112,36 @@ public class SsdpDiscoverer {
                         socket.receive(receivePacket);
                         String response = new String(receivePacket.getData(), 0, receivePacket.getLength());
 
+                        Log.d(TAG, "Received SSDP Response from " + receivePacket.getAddress() + ":\n" + response);
+
                         String location = parseHeaderValue(response, "LOCATION");
                         if (location != null && !foundLocations.contains(location)) {
                             foundLocations.add(location);
+
+                            // Basic filter: must be some kind of media device or service
+                            // Since we scan "ssdp:all", we might get routers/gateways.
+                            // Let's indiscriminately show all but prefer "AVTransport" ones.
+
                             DlnaDevice device = new DlnaDevice();
                             device.location = location;
                             device.server = parseHeaderValue(response, "SERVER");
                             device.usn = parseHeaderValue(response, "USN");
 
-                            // Fetch friendly name from XML description (could be slow, maybe do async?)
-                            // For this MVP, let's keep it simple: if server name exists, use it, else
-                            // generic
-                            device.friendlyName = device.server != null ? device.server : "DLNA Device";
+                            // 4. Determine Name immediately (Don't block for XML fetch!)
+                            device.friendlyName = "Unknown Device";
+                            if (device.server != null && !device.server.isEmpty()) {
+                                // Clean up server string (e.g., "Linux/..., UPnP/1.0, Chromecast/..." ->
+                                // "Chromecast")
+                                device.friendlyName = simplifyServerName(device.server);
+                            } else {
+                                device.friendlyName = "Device (" + receivePacket.getAddress().getHostAddress() + ")";
+                            }
 
-                            // Better: Fetch the XML to get the real FriendlyName
-                            String name = fetchFriendlyName(location);
-                            if (name != null)
-                                device.friendlyName = name;
+                            // Optional: If we really want the fancy name, we should fire a background task
+                            // here
+                            // But for now, speed is priority.
 
+                            Log.d(TAG, "Found Device: " + device.friendlyName + " at " + location);
                             devices.add(device);
                             listener.onDeviceFound(device); // Notify immediately
                         }
@@ -115,8 +158,26 @@ public class SsdpDiscoverer {
             } finally {
                 if (socket != null)
                     socket.close();
+                if (multicastLock != null && multicastLock.isHeld()) {
+                    multicastLock.release();
+                }
             }
         }).start();
+    }
+
+    // Helper to make "Linux/.., UPnP/.., Model/.." look human readable
+    private static String simplifyServerName(String server) {
+        if (server.contains("Chromecast"))
+            return "Chromecast";
+        if (server.contains("EShare"))
+            return "Smart TV (EShare)";
+        if (server.contains("Samsung"))
+            return "Samsung TV";
+        if (server.contains("LG"))
+            return "LG TV";
+        if (server.contains("FRITZ!Box"))
+            return "FRITZ!Box Media";
+        return server; // Fallback to full string
     }
 
     private static String parseHeaderValue(String content, String headerName) {

@@ -159,8 +159,12 @@ public class MediaServer extends NanoHTTPD {
         try {
             URL url = new URL(remoteUrl);
             connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("GET");
-            connection.setConnectTimeout(15000); // 15s timeout
+
+            // Handle HEAD requests separately
+            boolean isHead = Method.HEAD.equals(session.getMethod());
+            connection.setRequestMethod(isHead ? "HEAD" : "GET");
+
+            connection.setConnectTimeout(15000);
             connection.setReadTimeout(15000);
             connection.setInstanceFollowRedirects(true);
 
@@ -182,38 +186,55 @@ public class MediaServer extends NanoHTTPD {
             // Handle Content
             InputStream inputStream = (responseCode >= 400) ? connection.getErrorStream() : connection.getInputStream();
             String contentType = connection.getContentType();
+            long contentLength = connection.getContentLengthLong();
 
-            // Rewrite HLS Manifests
-            if (contentType != null && (contentType.contains("mpegurl") || remoteUrl.endsWith(".m3u8"))) {
+            // 1. Force valid MIME type for DLNA
+            if (contentType == null || contentType.equals("application/octet-stream")) {
+                if (remoteUrl.contains(".m3u8"))
+                    contentType = "application/vnd.apple.mpegurl";
+                else
+                    contentType = "video/mp4"; // robust default
+            }
+
+            // 2. Rewrite HLS Manifests (only on GET)
+            if (!isHead && (contentType.contains("mpegurl") || remoteUrl.endsWith(".m3u8"))) {
                 String manifest = readStreamToString(inputStream);
                 String processedManifest = rewriteHlsManifest(manifest, remoteUrl);
                 return createCorsResponse(Response.Status.OK, "application/vnd.apple.mpegurl", processedManifest);
             }
 
-            // Update content type mappings for specific containers to help dumb TVs
-            if (remoteUrl.endsWith(".ts"))
-                contentType = "video/mp2t";
-            else if (remoteUrl.endsWith(".mp4"))
-                contentType = "video/mp4";
-            else if (contentType == null)
-                contentType = "application/octet-stream";
-
-            // Stream response
-            Response response = newChunkedResponse(
-                    Response.Status.lookup(responseCode),
-                    contentType,
-                    inputStream);
-
-            // Forward headers (Accept-Ranges is critical)
-            Map<String, List<String>> headers = connection.getHeaderFields();
-            if (headers.get("Content-Length") != null && !headers.get("Content-Length").isEmpty()) {
-                // Let NanoHTTPD handle content-length for chunked, but if we weren't chunked
-                // we'd set it.
+            // 3. Serve Content (HEAD or GET)
+            Response response;
+            if (isHead) {
+                response = newFixedLengthResponse(Response.Status.lookup(responseCode), contentType, "");
+            } else {
+                if (contentLength > 0) {
+                    // Use fixed length if known (better for seeking)
+                    response = newFixedLengthResponse(Response.Status.lookup(responseCode), contentType, inputStream,
+                            contentLength);
+                } else {
+                    // Fallback to chunked
+                    response = newChunkedResponse(Response.Status.lookup(responseCode), contentType, inputStream);
+                }
             }
-            if (headers.get("Content-Range") != null)
-                response.addHeader("Content-Range", headers.get("Content-Range").get(0));
-            if (headers.get("Accept-Ranges") != null)
+
+            // Forward critical headers
+            if (contentLength > 0) {
+                response.addHeader("Content-Length", String.valueOf(contentLength));
+            }
+
+            String contentRange = connection.getHeaderField("Content-Range");
+            if (contentRange != null) {
+                response.addHeader("Content-Range", contentRange);
+            }
+
+            String acceptRanges = connection.getHeaderField("Accept-Ranges");
+            if (acceptRanges != null) {
+                response.addHeader("Accept-Ranges", acceptRanges);
+            } else {
+                // DLNA often needs this to try seeking
                 response.addHeader("Accept-Ranges", "bytes");
+            }
 
             return addCorsHeaders(response);
 

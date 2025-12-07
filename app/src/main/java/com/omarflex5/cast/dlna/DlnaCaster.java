@@ -108,6 +108,14 @@ public class DlnaCaster {
     }
 
     private static boolean sendSetAvTransportUri(String controlURL, String videoUrl, String title) {
+        String mimeType = "video/mp4";
+        String protocolInfo = "http-get:*:video/mp4:*";
+
+        if (videoUrl.contains(".m3u8")) {
+            mimeType = "application/vnd.apple.mpegurl";
+            protocolInfo = "http-get:*:application/vnd.apple.mpegurl:*";
+        }
+
         String soapBody = "<?xml version=\"1.0\" encoding=\"utf-8\"?>" +
                 "<s:Envelope xmlns:s=\"http://schemas.xmlsoap.org/soap/envelope/\" s:encodingStyle=\"http://schemas.xmlsoap.org/soap/encoding/\">"
                 +
@@ -117,7 +125,8 @@ public class DlnaCaster {
                 "<CurrentURI>" + escapeXml(videoUrl) + "</CurrentURI>" +
                 "<CurrentURIMetaData>&lt;DIDL-Lite xmlns=&quot;urn:schemas-upnp-org:metadata-1-0/DIDL-Lite/&quot; xmlns:dc=&quot;http://purl.org/dc/elements/1.1/&quot; xmlns:upnp=&quot;urn:schemas-upnp-org:metadata-1-0/upnp/&quot;&gt;&lt;item id=&quot;1&quot; parentID=&quot;-1&quot; restricted=&quot;0&quot;&gt;&lt;dc:title&gt;"
                 + escapeXml(title)
-                + "&lt;/dc:title&gt;&lt;upnp:class&gt;object.item.videoItem&lt;/upnp:class&gt;&lt;res protocolInfo=&quot;http-get:*:video/*:*&quot;&gt;"
+                + "&lt;/dc:title&gt;&lt;upnp:class&gt;object.item.videoItem&lt;/upnp:class&gt;&lt;res protocolInfo=&quot;"
+                + protocolInfo + "&quot;&gt;"
                 + escapeXml(videoUrl) + "&lt;/res&gt;&lt;/item&gt;&lt;/DIDL-Lite&gt;</CurrentURIMetaData>" +
                 "</u:SetAVTransportURI>" +
                 "</s:Body>" +
