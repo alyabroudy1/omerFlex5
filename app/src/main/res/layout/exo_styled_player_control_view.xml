@@ -47,6 +47,18 @@
             android:shadowDy="1"
             android:shadowRadius="3" />
 
+        <!-- Cast button -->
+        <ImageButton
+            android:id="@+id/btn_cast"
+            android:layout_width="44dp"
+            android:layout_height="44dp"
+            android:background="@drawable/selector_exo_button_circle"
+            android:focusable="true"
+            android:scaleType="centerInside"
+            android:src="@drawable/ic_cast"
+            android:contentDescription="Cast"
+            app:tint="#FFFFFF" />
+
         <!-- Settings button -->
         <ImageButton
             android:id="@+id/exo_settings"
@@ -130,6 +142,7 @@
             android:focusable="true"
             android:scaleType="centerInside"
             android:visibility="gone"
+            android:src="@drawable/ic_skip_previous"
             android:contentDescription="Previous"
             app:tint="#FFFFFF" />
 
@@ -179,6 +192,7 @@
             android:focusable="true"
             android:scaleType="centerInside"
             android:visibility="gone"
+            android:src="@drawable/ic_skip_next"
             android:contentDescription="Next"
             app:tint="#FFFFFF" />
     </LinearLayout>

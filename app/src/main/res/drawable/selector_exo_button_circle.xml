@@ -3,17 +3,21 @@
 <selector xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Focused state - red circle border -->
     <item android:state_focused="true">
-        <shape android:shape="oval">
-            <solid android:color="#33E50914" />
-            <stroke android:width="3dp" android:color="#E50914" />
-        </shape>
+        <inset android:inset="12dp">
+            <shape android:shape="oval">
+                <solid android:color="#33E50914" />
+                <stroke android:width="3dp" android:color="#E50914" />
+            </shape>
+        </inset>
     </item>
     <!-- Pressed state -->
     <item android:state_pressed="true">
-        <shape android:shape="oval">
-            <solid android:color="#55E50914" />
-            <stroke android:width="3dp" android:color="#E50914" />
-        </shape>
+        <inset android:inset="12dp">
+            <shape android:shape="oval">
+                <solid android:color="#55E50914" />
+                <stroke android:width="3dp" android:color="#E50914" />
+            </shape>
+        </inset>
     </item>
     <!-- Default state - fully transparent -->
     <item>
