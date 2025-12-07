@@ -43,41 +43,59 @@ public class NetworkUtils {
     }
 
     /**
-     * Get the local IP address of the device, prioritizing Wi-Fi over mobile data.
+     * Get the local IP address of the device, prioritizing standard home network
+     * ranges.
      */
     public static String getLocalIpAddress() {
         try {
             java.util.Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface
                     .getNetworkInterfaces();
 
-            String fallbackIp = null;
+            String bestIp = null;
+            int bestScore = 0; // 0=none, 1=10.x, 2=172.x, 3=192.168.x
 
             while (interfaces.hasMoreElements()) {
                 java.net.NetworkInterface networkInterface = interfaces.nextElement();
                 String interfaceName = networkInterface.getName();
+
+                // Skip unwanted interfaces
+                if (interfaceName == null ||
+                        interfaceName.startsWith("rmnet") ||
+                        interfaceName.startsWith("tun") ||
+                        interfaceName.startsWith("dummy") ||
+                        interfaceName.startsWith("p2p") ||
+                        interfaceName.startsWith("lo")) {
+                    continue;
+                }
 
                 java.util.Enumeration<java.net.InetAddress> addresses = networkInterface.getInetAddresses();
                 while (addresses.hasMoreElements()) {
                     java.net.InetAddress address = addresses.nextElement();
                     if (!address.isLoopbackAddress() && address instanceof java.net.Inet4Address) {
                         String ip = address.getHostAddress();
+                        int score = 1; // Default score for valid IP (e.g. 10.x.x.x)
 
-                        // Prioritize Wi-Fi (wlan0) over mobile data (rmnet_data*)
-                        if (interfaceName.startsWith("wlan")) {
-                            return ip; // Return Wi-Fi IP immediately
+                        if (ip.startsWith("192.168.")) {
+                            score = 3;
+                        } else if (ip.startsWith("172.")) {
+                            score = 2;
                         }
 
-                        // Skip mobile data interfaces
-                        if (!interfaceName.startsWith("rmnet")) {
-                            fallbackIp = ip; // Store as fallback (e.g., ethernet)
+                        // Bonus for wlan/eth to strictly prefer physical hardware interfaces
+                        if (interfaceName.startsWith("wlan") || interfaceName.startsWith("eth")) {
+                            score += 1;
+                        }
+
+                        if (score > bestScore) {
+                            bestScore = score;
+                            bestIp = ip;
                         }
                     }
                 }
             }
 
-            // Return fallback if no wlan0 found
-            if (fallbackIp != null) {
-                return fallbackIp;
+            if (bestIp != null) {
+                return bestIp;
             }
         } catch (Exception e) {
             e.printStackTrace();

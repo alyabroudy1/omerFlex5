@@ -114,6 +114,17 @@ public class HomeActivity extends AppCompatActivity {
         startActivity(testPlayerIntent);
         // ====== END TEMPORARY TEST ======
 
+        // Initialize OmarFlex Receiver Service if this is a TV
+        if (com.omarflex5.util.CastUtils.isTv(this)) {
+            android.content.Intent serviceIntent = new android.content.Intent(this,
+                    com.omarflex5.cast.receiver.ReceiverService.class);
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent);
+            } else {
+                startService(serviceIntent);
+            }
+        }
+
         initViews();
         initViewModel();
         setupAdapters();

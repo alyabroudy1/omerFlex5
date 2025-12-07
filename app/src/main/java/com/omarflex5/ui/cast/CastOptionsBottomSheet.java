@@ -62,10 +62,48 @@ public class CastOptionsBottomSheet extends BottomSheetDialogFragment {
             }
         });
 
-        // Option 2: OmarFlex TV (Placeholder)
-        view.findViewById(R.id.option_omarflex).setOnClickListener(v -> {
-            Toast.makeText(context, "Start OmarFlex on your TV to cast (Coming Soon)", Toast.LENGTH_SHORT).show();
-        });
+        // Option 2: OmarFlex TV
+        View omarFlexOption = view.findViewById(R.id.option_omarflex);
+        android.widget.TextView omarFlexText = view.findViewById(R.id.text_omarflex);
+        omarFlexOption.setEnabled(true);
+
+        com.omarflex5.cast.receiver.OmarFlexSessionManager omarSession = com.omarflex5.cast.receiver.OmarFlexSessionManager
+                .getInstance(context);
+
+        if (omarSession.isConnected()) {
+            omarFlexText.setText("Disconnect " + omarSession.getCurrentDevice().name);
+            omarFlexOption.setOnClickListener(v -> {
+                omarSession.disconnect();
+                Toast.makeText(context, "Disconnected from TV", Toast.LENGTH_SHORT).show();
+                dismiss();
+            });
+        } else {
+            com.omarflex5.cast.receiver.NsdDiscovery.OmarFlexDevice lastOmarDevice = omarSession.getLastUsedDevice();
+            if (lastOmarDevice != null) {
+                omarFlexOption.setOnClickListener(v -> {
+                    dismiss();
+                    // Show options: Reconnect or New Search
+                    new android.app.AlertDialog.Builder(context)
+                            .setTitle("OmarFlex Cast")
+                            .setItems(new String[] { "Reconnect to " + lastOmarDevice.name, "Search for new TV" },
+                                    (dialog, which) -> {
+                                        if (which == 0) {
+                                            startOmarFlexCast(context, lastOmarDevice);
+                                        } else {
+                                            showOmarFlexDiscoveryDialog(context);
+                                        }
+                                    })
+                            .show();
+                });
+            } else {
+                omarFlexOption.setOnClickListener(v -> {
+                    if (context == null)
+                        return;
+                    dismiss();
+                    showOmarFlexDiscoveryDialog(context);
+                });
+            }
+        }
 
         // Option 3: DLNA
         View dlnaOption = view.findViewById(R.id.option_dlna);
@@ -234,5 +272,121 @@ public class CastOptionsBottomSheet extends BottomSheetDialogFragment {
                         }
                     }
                 });
+    }
+
+    private void showOmarFlexDiscoveryDialog(Context context) {
+        android.app.AlertDialog progressDialog = new android.app.AlertDialog.Builder(context)
+                .setTitle("Searching for OmarFlex TV")
+                .setMessage("Make sure the app is open on your TV...")
+                .setNegativeButton("Cancel", (dialog, which) -> {
+                    // Logic to stop discovery
+                })
+                .show();
+
+        com.omarflex5.cast.receiver.NsdDiscovery discovery = new com.omarflex5.cast.receiver.NsdDiscovery(context,
+                new com.omarflex5.cast.receiver.NsdDiscovery.DiscoveryListener() {
+                    @Override
+                    public void onDeviceFound(com.omarflex5.cast.receiver.NsdDiscovery.OmarFlexDevice device) {
+                        if (context instanceof android.app.Activity) {
+                            ((android.app.Activity) context).runOnUiThread(() -> {
+                                progressDialog.dismiss();
+                                showOmarFlexDeviceSelection(context, device);
+                            });
+                        }
+                    }
+
+                    @Override
+                    public void onDiscoveryStopped() {
+                    }
+
+                    @Override
+                    public void onError(String error) {
+                        if (context instanceof android.app.Activity) {
+                            ((android.app.Activity) context).runOnUiThread(() -> {
+                                progressDialog.dismiss();
+                                Toast.makeText(context, "Search failed: " + error, Toast.LENGTH_SHORT).show();
+                            });
+                        }
+                    }
+                });
+
+        progressDialog.setOnDismissListener(dialog -> discovery.stopDiscovery());
+        discovery.startDiscovery();
+    }
+
+    private void showOmarFlexDeviceSelection(Context context,
+            com.omarflex5.cast.receiver.NsdDiscovery.OmarFlexDevice device) {
+        new android.app.AlertDialog.Builder(context)
+                .setTitle("Found Device")
+                .setMessage("Connect to " + device.name + "?")
+                .setPositiveButton("Connect", (dialog, which) -> {
+                    startOmarFlexCast(context, device);
+                })
+                .show();
+    }
+
+    private void startOmarFlexCast(Context context, com.omarflex5.cast.receiver.NsdDiscovery.OmarFlexDevice device) {
+        if (videoUrl == null)
+            return;
+
+        Toast.makeText(context, "Sending to " + device.name + "...", Toast.LENGTH_SHORT).show();
+
+        new Thread(() -> {
+            try {
+                // Build JSON Payload
+                org.json.JSONObject payload = new org.json.JSONObject();
+                payload.put("url", videoUrl);
+                payload.put("title", title != null ? title : "Casted Video");
+
+                // Send POST
+                java.net.URL url = new java.net.URL("http://" + device.host + ":" + device.port + "/cast");
+                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("POST");
+                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                conn.setDoOutput(true);
+                conn.setConnectTimeout(5000);
+
+                // Write body
+                try (java.io.OutputStream os = conn.getOutputStream()) {
+                    byte[] input = payload.toString().getBytes("utf-8");
+                    os.write(input, 0, input.length);
+                }
+
+                int code = conn.getResponseCode();
+                if (context instanceof android.app.Activity) {
+                    ((android.app.Activity) context).runOnUiThread(() -> {
+                        if (code == 200) {
+                            com.omarflex5.cast.receiver.OmarFlexSessionManager.getInstance(context).connect(device);
+                            Toast.makeText(context, "Playing on TV!", Toast.LENGTH_SHORT).show();
+                        } else {
+                            // Read error response if any
+                            String errorMsg = "";
+                            try {
+                                java.io.InputStream es = conn.getErrorStream();
+                                if (es != null) {
+                                    byte[] buffer = new byte[es.available()];
+                                    es.read(buffer);
+                                    errorMsg = new String(buffer);
+                                }
+                            } catch (Exception ex) {
+                            }
+
+                            Toast.makeText(context, "Failed: " + code + " " + errorMsg, Toast.LENGTH_LONG)
+                                    .show();
+                            android.util.Log.e("OmarFlexCast", "Server returned: " + code + " " + errorMsg);
+                        }
+                    });
+                }
+
+            } catch (Exception e) {
+                android.util.Log.e("OmarFlexCast", "Cast Exception", e);
+                if (context instanceof android.app.Activity) {
+                    ((android.app.Activity) context).runOnUiThread(() -> {
+                        Toast.makeText(context, "Err: " + e.getClass().getSimpleName() + ": " + e.getMessage(),
+                                Toast.LENGTH_LONG).show();
+                    });
+                }
+            }
+        }).start();
     }
 }

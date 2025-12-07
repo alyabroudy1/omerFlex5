@@ -62,7 +62,7 @@
         android:layout_height="1dp"
         android:background="#33FFFFFF" />
 
-    <!-- OmarFlex TV (Disabled) -->
+    <!-- OmarFlex TV (Enabled) -->
     <LinearLayout
         android:id="@+id/option_omarflex"
         android:layout_width="match_parent"
@@ -71,7 +71,6 @@
         android:clickable="true"
         android:focusable="true"
         android:gravity="center_vertical"
-        android:alpha="0.5"
         android:orientation="horizontal"
         android:paddingVertical="12dp">
 
@@ -89,6 +88,7 @@
             android:orientation="vertical">
 
             <TextView
+                android:id="@+id/text_omarflex"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:text="Cast to OmarFlex"
@@ -98,7 +98,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Coming Soon"
+                android:text="App-to-App Casting"
                 android:textColor="#AAAAAA"
                 android:textSize="12sp" />
         </LinearLayout>

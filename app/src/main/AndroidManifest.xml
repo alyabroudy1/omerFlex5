@@ -82,6 +82,12 @@
             android:hardwareAccelerated="true"
             android:theme="@style/Theme.OmarFlex5.Fullscreen" />
 
+        <service
+            android:name=".cast.receiver.ReceiverService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
     </application>
 
 </manifest>
