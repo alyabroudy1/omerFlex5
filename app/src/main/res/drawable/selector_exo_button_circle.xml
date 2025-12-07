@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Circular focus selector for ExoPlayer buttons - clean red circle on focus -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Focused state - red circle border -->
+    <item android:state_focused="true">
+        <shape android:shape="oval">
+            <solid android:color="#33E50914" />
+            <stroke android:width="3dp" android:color="#E50914" />
+        </shape>
+    </item>
+    <!-- Pressed state -->
+    <item android:state_pressed="true">
+        <shape android:shape="oval">
+            <solid android:color="#55E50914" />
+            <stroke android:width="3dp" android:color="#E50914" />
+        </shape>
+    </item>
+    <!-- Default state - fully transparent -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+</selector>

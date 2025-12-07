@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Play button background - Red circular button like Netflix -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Focused state -->
+    <item android:state_focused="true">
+        <shape android:shape="oval">
+            <solid android:color="#FF0A14" />
+            <stroke android:width="4dp" android:color="#FFEB3B" />
+        </shape>
+    </item>
+    <!-- Pressed state -->
+    <item android:state_pressed="true">
+        <shape android:shape="oval">
+            <solid android:color="#B20710" />
+        </shape>
+    </item>
+    <!-- Default state - Netflix red -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#E50914" />
+        </shape>
+    </item>
+</selector>

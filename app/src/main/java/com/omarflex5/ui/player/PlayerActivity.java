@@ -6,6 +6,14 @@ import android.view.WindowManager;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 import android.widget.Toast;
+import android.app.AlertDialog;
+import java.util.ArrayList;
+import java.util.List;
+import androidx.media3.common.Tracks;
+import androidx.media3.common.TrackSelectionOverride;
+import android.app.AlertDialog;
+import java.util.ArrayList;
+import java.util.List;
 
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
@@ -13,6 +21,10 @@ import androidx.media3.common.C;
 import androidx.media3.common.MediaItem;
 import androidx.media3.common.PlaybackException;
 import androidx.media3.common.Player;
+import androidx.media3.common.PlaybackException;
+import androidx.media3.common.Player;
+import androidx.media3.common.Tracks;
+import androidx.media3.common.TrackSelectionOverride;
 import androidx.media3.datasource.DefaultHttpDataSource;
 import androidx.media3.exoplayer.ExoPlayer;
 import androidx.media3.exoplayer.dash.DashMediaSource;
@@ -88,47 +100,193 @@ public class PlayerActivity extends AppCompatActivity {
         // Stretch video to fill screen (removes black bars)
         playerView.setResizeMode(androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL);
 
-        // Inject title into ExoPlayer's default bottom bar
-        injectTitleIntoController();
+        // Wait for layout to complete, then setup focus animations and title
+        playerView.post(() -> {
+            setupControllerFocusAnimations();
+            injectTitleIntoController();
+        });
     }
 
     /**
-     * Injects a title TextView into ExoPlayer's default controller bottom bar.
-     * This extends the default controller without replacing it.
+     * Adds scale animations to default controller buttons for better TV remote
+     * visibility.
+     */
+    private void setupControllerFocusAnimations() {
+        // Find all focusable buttons in the default ExoPlayer controller
+        int[] buttonIds = {
+                androidx.media3.ui.R.id.exo_play_pause,
+                androidx.media3.ui.R.id.exo_rew,
+                androidx.media3.ui.R.id.exo_ffwd,
+                androidx.media3.ui.R.id.exo_prev,
+                androidx.media3.ui.R.id.exo_next,
+                androidx.media3.ui.R.id.exo_settings,
+                androidx.media3.ui.R.id.exo_subtitle,
+                androidx.media3.ui.R.id.exo_fullscreen,
+                androidx.media3.ui.R.id.exo_vr
+        };
+
+        for (int buttonId : buttonIds) {
+            View button = playerView.findViewById(buttonId);
+            if (button != null) {
+                button.setOnFocusChangeListener((v, hasFocus) -> {
+                    if (hasFocus) {
+                        v.animate()
+                                .scaleX(1.4f)
+                                .scaleY(1.4f)
+                                .setDuration(200)
+                                .start();
+                    } else {
+                        v.animate()
+                                .scaleX(1.0f)
+                                .scaleY(1.0f)
+                                .setDuration(150)
+                                .start();
+                    }
+                });
+            }
+        }
+
+        // Add focus animation to progress bar (make it thicker)
+        View progressBar = playerView.findViewById(R.id.exo_progress);
+        if (progressBar != null) {
+            progressBar.setOnFocusChangeListener((v, hasFocus) -> {
+                if (hasFocus) {
+                    v.animate().scaleY(2.0f).setDuration(200).start();
+                } else {
+                    v.animate().scaleY(1.0f).setDuration(150).start();
+                }
+            });
+        }
+
+        // Setup custom buttons (back, settings)
+        setupCustomButtons();
+    }
+
+    /**
+     * Sets up click handlers for custom buttons in the controller.
+     */
+    private void setupCustomButtons() {
+        // Back button
+        View btnBack = playerView.findViewById(R.id.btn_back);
+        if (btnBack != null) {
+            btnBack.setOnClickListener(v -> finish());
+        }
+
+        // Settings button (opens settings dialog)
+        View btnSettings = playerView.findViewById(R.id.exo_settings);
+        if (btnSettings != null) {
+            btnSettings.setOnClickListener(v -> showSettingsDialog());
+        }
+    }
+
+    private void showSettingsDialog() {
+        String[] options = { "Audio Tracks", "Playback Speed" };
+        new AlertDialog.Builder(this)
+                .setTitle("Settings")
+                .setItems(options, (dialog, which) -> {
+                    if (which == 0) {
+                        showAudioSelectionDialog();
+                    } else if (which == 1) {
+                        showSpeedSelectionDialog();
+                    }
+                })
+                .show();
+    }
+
+    private void showSpeedSelectionDialog() {
+        String[] speeds = { "0.5x", "0.75x", "1.0x", "1.25x", "1.5x", "2.0x" };
+        float[] speedValues = { 0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f };
+
+        int currentSpeedIndex = 2; // Default 1.0x
+        if (player != null) {
+            float currentSpeed = player.getPlaybackParameters().speed;
+            for (int i = 0; i < speedValues.length; i++) {
+                if (Math.abs(currentSpeed - speedValues[i]) < 0.1f) {
+                    currentSpeedIndex = i;
+                    break;
+                }
+            }
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Playback Speed")
+                .setSingleChoiceItems(speeds, currentSpeedIndex, (dialog, which) -> {
+                    if (player != null) {
+                        player.setPlaybackSpeed(speedValues[which]);
+                    }
+                    dialog.dismiss();
+                })
+                .show();
+    }
+
+    private void showAudioSelectionDialog() {
+        if (player == null)
+            return;
+
+        Tracks tracks = player.getCurrentTracks();
+        List<String> audioTitles = new ArrayList<>();
+        List<TrackSelectionOverride> overrides = new ArrayList<>();
+
+        int selectedIndex = -1;
+        int trackCount = 0;
+
+        for (Tracks.Group group : tracks.getGroups()) {
+            if (group.getType() == C.TRACK_TYPE_AUDIO) {
+                for (int i = 0; i < group.length; i++) {
+                    if (group.isTrackSupported(i)) {
+                        String label = group.getTrackFormat(i).label;
+                        if (label == null || label.isEmpty()) {
+                            label = group.getTrackFormat(i).language;
+                        }
+                        if (label == null || label.isEmpty()) {
+                            label = "Audio Track " + (trackCount + 1);
+                        }
+
+                        audioTitles.add(label);
+                        overrides.add(new TrackSelectionOverride(group.getMediaTrackGroup(), i));
+
+                        if (group.isTrackSelected(i)) {
+                            selectedIndex = trackCount;
+                        }
+                        trackCount++;
+                    }
+                }
+            }
+        }
+
+        if (audioTitles.isEmpty()) {
+            Toast.makeText(this, "No audio tracks available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle("Audio Tracks")
+                .setSingleChoiceItems(audioTitles.toArray(new String[0]), selectedIndex, (dialog, which) -> {
+                    TrackSelectionOverride override = overrides.get(which);
+                    player.setTrackSelectionParameters(
+                            player.getTrackSelectionParameters()
+                                    .buildUpon()
+                                    .setOverrideForType(override)
+                                    .build());
+                    dialog.dismiss();
+                    Toast.makeText(this, "Selected: " + audioTitles.get(which), Toast.LENGTH_SHORT).show();
+                })
+                .show();
+    }
+
+    /**
+     * Sets the title in the custom controller layout.
      */
     private void injectTitleIntoController() {
         if (videoTitle == null || videoTitle.isEmpty()) {
             return;
         }
 
-        // Find the bottom bar in the default ExoPlayer controller
-        View bottomBar = playerView.findViewById(androidx.media3.ui.R.id.exo_bottom_bar);
-        if (bottomBar instanceof android.widget.FrameLayout) {
-            android.widget.FrameLayout bottomBarLayout = (android.widget.FrameLayout) bottomBar;
-
-            // Create title TextView
-            titleView = new TextView(this);
+        // Find title view in custom controller layout
+        titleView = playerView.findViewById(R.id.exo_title);
+        if (titleView != null) {
             titleView.setText(videoTitle);
-            titleView.setTextColor(getResources().getColor(android.R.color.white));
-            titleView.setTextSize(android.util.TypedValue.COMPLEX_UNIT_SP, 14);
-            titleView.setTypeface(null, android.graphics.Typeface.BOLD);
-            titleView.setSingleLine(true);
-
-            // Allow much wider text, use marquee for very long titles
-            titleView.setMaxWidth((int) (getResources().getDisplayMetrics().widthPixels * 0.6)); // 60% of screen width
-            titleView.setEllipsize(android.text.TextUtils.TruncateAt.MARQUEE);
-            titleView.setMarqueeRepeatLimit(-1); // Infinite scroll
             titleView.setSelected(true); // Required for marquee to work
-            titleView.setFocusable(true);
-            titleView.setFocusableInTouchMode(true);
-
-            // Center it in the bottom bar
-            android.widget.FrameLayout.LayoutParams params = new android.widget.FrameLayout.LayoutParams(
-                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT,
-                    android.widget.FrameLayout.LayoutParams.WRAP_CONTENT);
-            params.gravity = android.view.Gravity.CENTER;
-
-            bottomBarLayout.addView(titleView, params);
         }
     }
 

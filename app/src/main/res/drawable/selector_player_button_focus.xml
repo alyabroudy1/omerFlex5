@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Focus selector for player control buttons - red border on focus -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Focused state - Netflix red border -->
+    <item android:state_focused="true">
+        <shape android:shape="oval">
+            <solid android:color="#44FFFFFF" />
+            <stroke android:width="3dp" android:color="#E50914" />
+        </shape>
+    </item>
+    <!-- Pressed state -->
+    <item android:state_pressed="true">
+        <shape android:shape="oval">
+            <solid android:color="#66FFEB3B" />
+        </shape>
+    </item>
+    <!-- Default state - semi-transparent -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="#33FFFFFF" />
+        </shape>
+    </item>
+</selector>
