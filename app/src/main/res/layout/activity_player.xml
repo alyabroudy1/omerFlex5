@@ -24,4 +24,20 @@
         android:layout_gravity="center"
         android:visibility="gone" />
 
+    <!-- Cast Device Indicator -->
+    <TextView
+        android:id="@+id/cast_device_indicator"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|center_horizontal"
+        android:layout_marginTop="16dp"
+        android:background="#CC000000"
+        android:padding="8dp"
+        android:textColor="@android:color/white"
+        android:textSize="14sp"
+        android:drawablePadding="8dp"
+        android:drawableStart="@drawable/ic_cast_connected"
+        android:visibility="gone"
+        android:text="Casting to Device" />
+
 </FrameLayout>

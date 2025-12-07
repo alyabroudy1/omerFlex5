@@ -41,4 +41,47 @@ public class NetworkUtils {
             return networkInfo != null && networkInfo.isConnected();
         }
     }
+
+    /**
+     * Get the local IP address of the device, prioritizing Wi-Fi over mobile data.
+     */
+    public static String getLocalIpAddress() {
+        try {
+            java.util.Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface
+                    .getNetworkInterfaces();
+
+            String fallbackIp = null;
+
+            while (interfaces.hasMoreElements()) {
+                java.net.NetworkInterface networkInterface = interfaces.nextElement();
+                String interfaceName = networkInterface.getName();
+
+                java.util.Enumeration<java.net.InetAddress> addresses = networkInterface.getInetAddresses();
+                while (addresses.hasMoreElements()) {
+                    java.net.InetAddress address = addresses.nextElement();
+                    if (!address.isLoopbackAddress() && address instanceof java.net.Inet4Address) {
+                        String ip = address.getHostAddress();
+
+                        // Prioritize Wi-Fi (wlan0) over mobile data (rmnet_data*)
+                        if (interfaceName.startsWith("wlan")) {
+                            return ip; // Return Wi-Fi IP immediately
+                        }
+
+                        // Skip mobile data interfaces
+                        if (!interfaceName.startsWith("rmnet")) {
+                            fallbackIp = ip; // Store as fallback (e.g., ethernet)
+                        }
+                    }
+                }
+            }
+
+            // Return fallback if no wlan0 found
+            if (fallbackIp != null) {
+                return fallbackIp;
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+        return "0.0.0.0";
+    }
 }

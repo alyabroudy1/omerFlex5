@@ -46,6 +46,7 @@ dependencies {
     implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.exoplayer.dash)
     implementation(libs.media3.datasource)
+    implementation(libs.media3.cast)
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)
     androidTestImplementation(libs.espresso.core)
@@ -69,4 +70,10 @@ dependencies {
     
     // Jsoup for HTML parsing
     implementation("org.jsoup:jsoup:1.17.2")
+
+    // Google Cast
+    implementation("com.google.android.gms:play-services-cast-framework:21.4.0")
+
+    // Local Proxy Server
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
 }
