@@ -42,7 +42,7 @@ import java.util.Map;
  * Full-screen video player activity using ExoPlayer.
  * Supports HLS, DASH, and progressive media with custom HTTP headers.
  */
-public class PlayerActivity extends AppCompatActivity {
+public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
 
     public static final String EXTRA_VIDEO_URL = "extra_video_url";
     public static final String EXTRA_VIDEO_TITLE = "extra_video_title";
@@ -50,13 +50,26 @@ public class PlayerActivity extends AppCompatActivity {
     private PlayerView playerView;
     private ProgressBar loadingIndicator;
     private TextView titleView;
+    private TextView seekOverlayText;
     private TextView castDeviceIndicator;
     private ExoPlayer player;
+
+    // Swipe Seek
+    private androidx.core.view.GestureDetectorCompat gestureDetector;
+    private long swipeSeekStartWindow = -1;
+    private long swipeSeekCurrentWindow = -1;
+    private boolean isSwiping = false;
     private String videoUrl;
     private String videoTitle;
 
     // Cast Components
     private com.google.android.gms.cast.framework.CastContext castContext;
+
+    // Seek acceleration (YouTube-like behavior)
+    private long lastSeekTime = 0;
+    private int seekLevel = 0; // 0=15s, 1=30s, 2=1min, 3=3min, 4=5min
+    private static final long[] SEEK_AMOUNTS = { 15000, 30000, 60000, 180000, 300000 }; // 15s, 30s, 1min, 3min, 5min
+    private static final long SEEK_ACCELERATION_TIMEOUT = 800; // Reset after 800ms
     private com.google.android.gms.cast.framework.CastSession castSession;
     private androidx.media3.cast.CastPlayer castPlayer;
     private com.google.android.gms.cast.framework.SessionManagerListener<com.google.android.gms.cast.framework.CastSession> sessionManagerListener;
@@ -64,6 +77,37 @@ public class PlayerActivity extends AppCompatActivity {
     @Override
     protected void onCreate(@Nullable Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
+
+        // Custom Back Press Logic for Player
+        getOnBackPressedDispatcher().addCallback(this, new androidx.activity.OnBackPressedCallback(true) {
+            private long backPressedTime;
+            private Toast backToast;
+
+            @Override
+            public void handleOnBackPressed() {
+                boolean controllerWasVisible = playerView != null && playerView.isControllerFullyVisible();
+
+                if (controllerWasVisible) {
+                    playerView.hideController();
+                }
+
+                // Double back to exit (always check timing, but only show toast if controller
+                // wasn't visible)
+                if (backPressedTime + 1000 > System.currentTimeMillis()) {
+                    if (backToast != null) {
+                        backToast.cancel();
+                    }
+                    finish();
+                } else {
+                    // Only show toast if controller was NOT visible
+                    if (!controllerWasVisible) {
+                        backToast = Toast.makeText(PlayerActivity.this, "Press back again to exit", Toast.LENGTH_SHORT);
+                        backToast.show();
+                    }
+                }
+                backPressedTime = System.currentTimeMillis();
+            }
+        });
 
         // Full screen
         getWindow().setFlags(
@@ -94,6 +138,14 @@ public class PlayerActivity extends AppCompatActivity {
         }
 
         initViews();
+
+        // Setup Swipe Gesture
+        setupSwipeGestures();
+
+        // Auto-Cast Checks
+        checkDlnaAutoCast();
+        checkOmarFlexAutoCast();
+
         initPlayer();
         setupCastListener();
 
@@ -357,6 +409,7 @@ public class PlayerActivity extends AppCompatActivity {
     private void initViews() {
         playerView = findViewById(R.id.player_view);
         loadingIndicator = findViewById(R.id.loading_indicator);
+        seekOverlayText = findViewById(R.id.seek_overlay_text);
         castDeviceIndicator = findViewById(R.id.cast_device_indicator);
 
         // Stretch video to fill screen (removes black bars)
@@ -408,7 +461,7 @@ public class PlayerActivity extends AppCompatActivity {
             }
         }
 
-        // Add focus animation to progress bar (make it thicker)
+        // Configure progress bar focus listener
         View progressBar = playerView.findViewById(R.id.exo_progress);
         if (progressBar != null) {
             progressBar.setOnFocusChangeListener((v, hasFocus) -> {
@@ -438,6 +491,17 @@ public class PlayerActivity extends AppCompatActivity {
         View btnSettings = playerView.findViewById(R.id.exo_settings);
         if (btnSettings != null) {
             btnSettings.setOnClickListener(v -> showSettingsDialog());
+        }
+
+        // Custom accelerating seek for Rewind/Forward buttons
+        View btnRew = playerView.findViewById(androidx.media3.ui.R.id.exo_rew);
+        View btnFwd = playerView.findViewById(androidx.media3.ui.R.id.exo_ffwd);
+
+        if (btnRew != null) {
+            btnRew.setOnClickListener(v -> performAcceleratingSeek(false));
+        }
+        if (btnFwd != null) {
+            btnFwd.setOnClickListener(v -> performAcceleratingSeek(true));
         }
 
         // Cast button
@@ -768,6 +832,269 @@ public class PlayerActivity extends AppCompatActivity {
                         });
                     }
                 });
+    }
+
+    /**
+     * Handle D-pad navigation for TV remote.
+     * When controller is hidden: LEFT/RIGHT shows controller with timeline focused.
+     * ExoPlayer's DefaultTimeBar handles continuous seeking when focused.
+     */
+    @Override
+    public boolean dispatchKeyEvent(android.view.KeyEvent event) {
+        if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+            int keyCode = event.getKeyCode();
+
+            // Handle LEFT/RIGHT when controller is hidden OR progress bar is focused
+            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                    keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+
+                boolean controllerHidden = playerView == null || !playerView.isControllerFullyVisible();
+                View progressBar = playerView != null ? playerView.findViewById(R.id.exo_progress) : null;
+                boolean progressBarFocused = progressBar != null && progressBar.hasFocus();
+
+                if ((controllerHidden || progressBarFocused) && player != null && playerView != null) {
+                    // Show controller
+                    if (controllerHidden) {
+                        playerView.showController();
+                        if (progressBar != null) {
+                            progressBar.requestFocus();
+                        }
+                    }
+
+                    // Accelerating seek (YouTube-like)
+                    boolean forward = (keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT);
+                    performAcceleratingSeek(forward);
+                    return true; // Consumed
+                }
+            }
+
+            // Handle CENTER/ENTER to toggle play/pause when controller is hidden
+            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_CENTER ||
+                    keyCode == android.view.KeyEvent.KEYCODE_ENTER) {
+
+                boolean controllerHidden = playerView == null || !playerView.isControllerFullyVisible();
+
+                if (controllerHidden && player != null) {
+                    // Toggle play/pause
+                    if (player.isPlaying()) {
+                        player.pause();
+                    } else {
+                        player.play();
+                    }
+                    // Show controller briefly
+                    if (playerView != null) {
+                        playerView.showController();
+                    }
+                    return true;
+                }
+            }
+        }
+        return super.dispatchKeyEvent(event);
+    }
+
+    /**
+     * Performs accelerating seek logic.
+     * 
+     * @param forward true for forward, false for rewind.
+     */
+    private void performAcceleratingSeek(boolean forward) {
+        if (player == null)
+            return;
+
+        long now = System.currentTimeMillis();
+        if (now - lastSeekTime > SEEK_ACCELERATION_TIMEOUT) {
+            seekLevel = 0; // Reset acceleration
+        } else if (seekLevel < SEEK_AMOUNTS.length - 1) {
+            seekLevel++; // Increase seek amount
+        }
+        lastSeekTime = now;
+
+        long seekAmount = SEEK_AMOUNTS[seekLevel];
+        long currentPosition = player.getCurrentPosition();
+        long duration = player.getDuration();
+
+        if (forward) {
+            player.seekTo(Math.min(duration, currentPosition + seekAmount));
+        } else {
+            player.seekTo(Math.max(0, currentPosition - seekAmount));
+        }
+    }
+
+    /**
+     * Initializes swipe gestures for seeking.
+     */
+    private void setupSwipeGestures() {
+        if (playerView == null)
+            return;
+
+        gestureDetector = new androidx.core.view.GestureDetectorCompat(this,
+                new android.view.GestureDetector.SimpleOnGestureListener() {
+                    private float totalScrollDistance = 0f;
+
+                    @Override
+                    public boolean onSingleTapConfirmed(android.view.MotionEvent e) {
+                        // Toggle controller visibility
+                        if (playerView != null) {
+                            if (playerView.isControllerFullyVisible()) {
+                                playerView.hideController();
+                            } else {
+                                playerView.showController();
+                            }
+                        }
+                        return true;
+                    }
+
+                    @Override
+                    public boolean onDown(android.view.MotionEvent e) {
+                        // Reset on touch down
+                        totalScrollDistance = 0f;
+                        swipeSeekCurrentWindow = -1;
+                        isSwiping = false;
+                        if (player != null) {
+                            swipeSeekStartWindow = player.getCurrentPosition();
+                        }
+                        return true; // We consume the event to allow scroll tracking
+                    }
+
+                    @Override
+                    public boolean onScroll(android.view.MotionEvent e1, android.view.MotionEvent e2, float distanceX,
+                            float distanceY) {
+                        if (e1 == null || e2 == null || player == null)
+                            return false;
+
+                        // Only handle horizontal swipes significantly larger than vertical
+                        if (Math.abs(distanceX) > Math.abs(distanceY)) {
+                            isSwiping = true;
+                            totalScrollDistance -= distanceX; // distanceX is inverted (drag left gives positive
+                                                              // distanceX)
+
+                            // Show Overlay
+                            if (seekOverlayText != null) {
+                                seekOverlayText.setVisibility(View.VISIBLE);
+                            }
+
+                            // Calculate Seek using Accelerated Levels
+                            // Map distance to levels: 0-100px=Level 0, 100-300px=Level 1, etc.
+                            int width = playerView.getWidth();
+                            if (width == 0)
+                                return true;
+
+                            float fraction = Math.abs(totalScrollDistance) / (float) width;
+                            int level = 0;
+                            if (fraction > 0.6f)
+                                level = 4; // 5m
+                            else if (fraction > 0.45f)
+                                level = 3; // 3m
+                            else if (fraction > 0.3f)
+                                level = 2; // 1m
+                            else if (fraction > 0.15f)
+                                level = 1; // 30s
+                            else
+                                level = 0; // 15s (Default)
+
+                            long seekAmount = SEEK_AMOUNTS[Math.min(level, SEEK_AMOUNTS.length - 1)];
+                            long seekDelta = (totalScrollDistance > 0) ? seekAmount : -seekAmount;
+
+                            swipeSeekCurrentWindow = Math.max(0,
+                                    Math.min(player.getDuration(), swipeSeekStartWindow + seekDelta));
+
+                            // Update Text using formatTime
+                            long diff = swipeSeekCurrentWindow - swipeSeekStartWindow;
+                            String sign = diff > 0 ? "+" : "";
+                            String timeText = com.omarflex5.util.MediaUtils.formatTime(swipeSeekCurrentWindow);
+                            try {
+                                String overlayText = String.format("%s%ds (%s)", sign, Math.abs(diff / 1000), timeText);
+
+                                if (seekOverlayText != null) {
+                                    seekOverlayText.setText(overlayText);
+                                }
+                            } catch (Exception e) {
+                            }
+                            return true;
+                        }
+                        return false;
+                    }
+                });
+
+        playerView.setOnTouchListener((v, event) -> {
+            boolean handled = gestureDetector.onTouchEvent(event);
+
+            // Handle UP to commit seek
+            if (event.getAction() == android.view.MotionEvent.ACTION_UP && isSwiping) {
+                if (player != null && swipeSeekCurrentWindow != -1) {
+                    player.seekTo(swipeSeekCurrentWindow);
+                }
+
+                // Done swiping
+                if (seekOverlayText != null) {
+                    seekOverlayText.setVisibility(View.GONE);
+                }
+                isSwiping = false; // Reset
+            }
+            // If gesture didn't handle it (e.g. not a tap or scroll), let the view handle
+            // it ONLY if not swiping
+            // Actually, we want gestureDetector to handle tap. If it was handled, return
+            // true.
+            return handled;
+        });
+    }
+
+    private void checkOmarFlexAutoCast() {
+        com.omarflex5.cast.receiver.OmarFlexSessionManager session = com.omarflex5.cast.receiver.OmarFlexSessionManager
+                .getInstance(this);
+
+        if (session.isConnected()) {
+            com.omarflex5.cast.receiver.NsdDiscovery.OmarFlexDevice device = session.getCurrentDevice();
+            if (device != null) {
+                // Show indicator
+                if (castDeviceIndicator != null) {
+                    castDeviceIndicator.setText("Casting to " + device.name);
+                    castDeviceIndicator.setVisibility(View.VISIBLE);
+                }
+
+                // Perform Cast
+                new Thread(() -> {
+                    try {
+                        org.json.JSONObject payload = new org.json.JSONObject();
+                        payload.put("url", videoUrl);
+                        payload.put("title", videoTitle != null ? videoTitle : "Casted Video");
+
+                        java.net.URL url = new java.net.URL("http://" + device.host + ":" + device.port + "/cast");
+                        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
+                        conn.setRequestMethod("POST");
+                        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                        conn.setDoOutput(true);
+                        conn.setConnectTimeout(3000);
+
+                        try (java.io.OutputStream os = conn.getOutputStream()) {
+                            byte[] input = payload.toString().getBytes("utf-8");
+                            os.write(input, 0, input.length);
+                        }
+
+                        int code = conn.getResponseCode();
+                        runOnUiThread(() -> {
+                            if (code == 200) {
+                                Toast.makeText(PlayerActivity.this, "Resuming on TV...", Toast.LENGTH_SHORT).show();
+                            } else {
+                                // Cast failed
+                                Toast.makeText(PlayerActivity.this, "Auto-Cast failed: " + code, Toast.LENGTH_SHORT)
+                                        .show();
+                                if (castDeviceIndicator != null)
+                                    castDeviceIndicator.setVisibility(View.GONE);
+                            }
+                        });
+                    } catch (Exception e) {
+                        runOnUiThread(() -> {
+                            // Silent fail or toast? Toast for now to help user debug
+                            // Toast.makeText(PlayerActivity.this, "Auto-Cast Error: " + e.getMessage(),
+                            // Toast.LENGTH_SHORT).show();
+                            if (castDeviceIndicator != null)
+                                castDeviceIndicator.setVisibility(View.GONE);
+                        });
+                    }
+                }).start();
+            }
+        }
     }
 
 }
