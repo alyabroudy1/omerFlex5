@@ -5,15 +5,14 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@color/netflix_background"
-    android:orientation="vertical"
-    android:weightSum="10">
+    android:orientation="vertical">
 
     <!-- LAYER 1: Hero View (Weight 6 = 60%) - Can only go DOWN -->
     <androidx.constraintlayout.widget.ConstraintLayout
         android:id="@+id/hero_container"
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="6"
+        android:layout_weight="1"
         android:focusable="true"
         android:focusableInTouchMode="false"
         android:descendantFocusability="afterDescendants">
@@ -125,8 +124,9 @@
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler_categories"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:layout_marginBottom="8dp"
         android:clipToPadding="false"
         android:descendantFocusability="afterDescendants"
         android:focusable="true"
@@ -142,8 +142,8 @@
     <androidx.recyclerview.widget.RecyclerView
         android:id="@+id/recycler_movies"
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="3"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="16dp"
         android:clipToPadding="false"
         android:descendantFocusability="afterDescendants"
         android:focusable="true"

@@ -156,7 +156,7 @@
         android:layout_height="1dp"
         android:background="#33FFFFFF" />
 
-    <!-- External Player (Disabled) -->
+    <!-- External Player (Enabled) -->
     <LinearLayout
         android:id="@+id/option_external"
         android:layout_width="match_parent"
@@ -165,7 +165,6 @@
         android:clickable="true"
         android:focusable="true"
         android:gravity="center_vertical"
-        android:alpha="0.5"
         android:orientation="horizontal"
         android:paddingVertical="12dp">
 
@@ -192,7 +191,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Coming Soon"
+                android:text="VLC, MX Player, etc."
                 android:textColor="#AAAAAA"
                 android:textSize="12sp" />
         </LinearLayout>

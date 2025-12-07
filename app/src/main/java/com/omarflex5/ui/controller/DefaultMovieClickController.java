@@ -31,8 +31,12 @@ public class DefaultMovieClickController implements MovieClickController {
                 handleBrowserAction(context, movie);
                 break;
             case EXOPLAYER:
-                // Now triggers multi-server search instead of playing directly
-                handleSearchAction(context, movie);
+                // Smart Action: Play if URL exists, otherwise Search
+                if (movie.getVideoUrl() != null && !movie.getVideoUrl().isEmpty()) {
+                    handleExoPlayerAction(context, movie);
+                } else {
+                    handleSearchAction(context, movie);
+                }
                 break;
             case DETAILS:
                 handleDetailsAction(context, movie);

@@ -5,6 +5,7 @@ import android.os.Bundle;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.content.Intent;
 import android.widget.Toast;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -145,8 +146,39 @@ public class CastOptionsBottomSheet extends BottomSheetDialogFragment {
 
         // Option 4: External Player
         view.findViewById(R.id.option_external).setOnClickListener(v -> {
-            Toast.makeText(context, "External Player Support Coming Soon", Toast.LENGTH_SHORT).show();
+            startExternalPlayer(context);
         });
+    }
+
+    private void startExternalPlayer(Context context) {
+        if (videoUrl == null) {
+            Toast.makeText(context, "No video info available", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        try {
+            android.net.Uri uri = android.net.Uri.parse(videoUrl);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, "video/*");
+            intent.putExtra("title", title != null ? title : "Video");
+
+            // Try to pass headers if supported by players (e.g. MX Player)
+            if (headers != null && !headers.isEmpty()) {
+                String[] headersArray = new String[headers.size() * 2];
+                int i = 0;
+                for (Map.Entry<String, String> entry : headers.entrySet()) {
+                    headersArray[i] = entry.getKey();
+                    headersArray[i + 1] = entry.getValue();
+                    i += 2;
+                }
+                intent.putExtra("headers", headersArray);
+            }
+
+            dismiss();
+            context.startActivity(Intent.createChooser(intent, "Play with..."));
+        } catch (Exception e) {
+            Toast.makeText(context, "No external player found", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void showReconnectOrScanDialog(Context context,

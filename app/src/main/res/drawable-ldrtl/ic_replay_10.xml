@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Replay 10 seconds icon (RTL Version: CW Arrow) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24"
+    android:tint="#FFFFFF">
+    <!-- Arrow from ic_forward_10 (CW) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M18,13c0,3.31 -2.69,6 -6,6s-6,-2.69 -6,-6s2.69,-6 6,-6v4l5,-5l-5,-5v4c-4.42,0 -8,3.58 -8,8c0,4.42 3.58,8 8,8s8,-3.58 8,-8H18z"/>
+    <!-- Text "10" (Standard) -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M10.8,16H10v-3.3L9,13v-0.7l1.8,-0.6h0.1V16z"/>
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M14.3,13.4c0,-0.4 0.1,-0.7 0.2,-1c0.1,-0.3 0.3,-0.5 0.5,-0.6c0.2,-0.2 0.5,-0.2 0.8,-0.2c0.3,0 0.6,0.1 0.8,0.2c0.2,0.1 0.4,0.4 0.5,0.6c0.1,0.3 0.2,0.6 0.2,1v0.6c0,0.4 -0.1,0.7 -0.2,1c-0.1,0.3 -0.3,0.5 -0.5,0.6c-0.2,0.1 -0.5,0.2 -0.8,0.2c-0.3,0 -0.6,-0.1 -0.8,-0.2c-0.2,-0.1 -0.4,-0.4 -0.5,-0.6c-0.1,-0.3 -0.2,-0.6 -0.2,-1V13.4zM15.1,14.1c0,0.4 0,0.6 0.1,0.8c0.1,0.2 0.2,0.3 0.4,0.3c0.2,0 0.3,-0.1 0.4,-0.3c0.1,-0.2 0.1,-0.4 0.1,-0.8v-0.7c0,-0.4 0,-0.6 -0.1,-0.8c-0.1,-0.2 -0.2,-0.3 -0.4,-0.3c-0.2,0 -0.3,0.1 -0.4,0.3c-0.1,0.2 -0.1,0.4 -0.1,0.8V14.1z"/>
+</vector>

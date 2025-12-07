@@ -104,16 +104,6 @@ public class HomeActivity extends AppCompatActivity {
 
         setContentView(R.layout.activity_home);
 
-        // ====== TEMPORARY TEST: Launch player directly ======
-        android.content.Intent testPlayerIntent = new android.content.Intent(this,
-                com.omarflex5.ui.player.PlayerActivity.class);
-        testPlayerIntent.putExtra(com.omarflex5.ui.player.PlayerActivity.EXTRA_VIDEO_URL,
-                "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4");
-        testPlayerIntent.putExtra(com.omarflex5.ui.player.PlayerActivity.EXTRA_VIDEO_TITLE,
-                "Big Buck Bunny - Test Video للاختبار");
-        startActivity(testPlayerIntent);
-        // ====== END TEMPORARY TEST ======
-
         // Initialize OmarFlex Receiver Service if this is a TV
         if (com.omarflex5.util.CastUtils.isTv(this)) {
             android.content.Intent serviceIntent = new android.content.Intent(this,

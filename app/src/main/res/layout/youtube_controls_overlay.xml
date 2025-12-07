@@ -25,9 +25,7 @@
             android:contentDescription="Quality"
             android:src="@drawable/ic_settings"
             android:focusable="true"
-            android:nextFocusDown="@id/btn_play_pause"
-            android:nextFocusLeft="@id/btn_quality"
-            android:nextFocusRight="@id/btn_speed" />
+            android:nextFocusDown="@id/btn_play_pause" />
 
         <ImageButton
             android:id="@+id/btn_speed"
@@ -38,9 +36,7 @@
             android:contentDescription="Speed"
             android:src="@drawable/ic_speed"
             android:focusable="true"
-            android:nextFocusDown="@id/btn_play_pause"
-            android:nextFocusLeft="@id/btn_quality"
-            android:nextFocusRight="@id/btn_captions" />
+            android:nextFocusDown="@id/btn_play_pause" />
 
         <ImageButton
             android:id="@+id/btn_captions"
@@ -51,9 +47,7 @@
             android:contentDescription="Captions"
             android:src="@drawable/ic_closed_caption"
             android:focusable="true"
-            android:nextFocusDown="@id/btn_play_pause"
-            android:nextFocusLeft="@id/btn_speed"
-            android:nextFocusRight="@id/btn_exit_fullscreen" />
+            android:nextFocusDown="@id/btn_play_pause" />
 
         <ImageButton
             android:id="@+id/btn_exit_fullscreen"
@@ -63,9 +57,7 @@
             android:contentDescription="Exit Fullscreen"
             android:src="@drawable/ic_fullscreen_exit"
             android:focusable="true"
-            android:nextFocusDown="@id/btn_play_pause"
-            android:nextFocusLeft="@id/btn_captions"
-            android:nextFocusRight="@id/btn_exit_fullscreen" />
+            android:nextFocusDown="@id/btn_play_pause" />
 
     </LinearLayout>
 
@@ -89,9 +81,7 @@
             android:scaleType="centerInside"
             android:focusable="true"
             android:nextFocusUp="@id/btn_quality"
-            android:nextFocusDown="@id/seek_bar"
-            android:nextFocusLeft="@id/btn_rewind"
-            android:nextFocusRight="@id/btn_play_pause" />
+            android:nextFocusDown="@id/seek_bar" />
 
         <ImageButton
             android:id="@+id/btn_play_pause"
@@ -104,9 +94,7 @@
             android:scaleType="centerInside"
             android:focusable="true"
             android:nextFocusUp="@id/btn_speed"
-            android:nextFocusDown="@id/seek_bar"
-            android:nextFocusLeft="@id/btn_rewind"
-            android:nextFocusRight="@id/btn_forward" />
+            android:nextFocusDown="@id/seek_bar" />
 
         <ImageButton
             android:id="@+id/btn_forward"
@@ -118,9 +106,7 @@
             android:scaleType="centerInside"
             android:focusable="true"
             android:nextFocusUp="@id/btn_exit_fullscreen"
-            android:nextFocusDown="@id/seek_bar"
-            android:nextFocusLeft="@id/btn_play_pause"
-            android:nextFocusRight="@id/btn_forward" />
+            android:nextFocusDown="@id/seek_bar" />
 
     </LinearLayout>
 
