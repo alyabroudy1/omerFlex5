@@ -310,25 +310,35 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
             currentHeaders.put("Referer", getIntent().getStringExtra("EXTRA_REFERER"));
         }
 
-        // 2. Start Local Proxy
-        String localIp = com.omarflex5.util.NetworkUtils.getLocalIpAddress();
-        if (localIp == null || localIp.equals("0.0.0.0")) {
-            Toast.makeText(this, "Connect to Wi-Fi to Cast", Toast.LENGTH_SHORT).show();
-            return;
+        // 2. Check Proxy Preference
+        boolean useProxy = getSharedPreferences("cast_prefs", android.content.Context.MODE_PRIVATE)
+                .getBoolean("use_proxy", false);
+        String castUrl = videoUrl;
+
+        if (useProxy) {
+            String localIp = com.omarflex5.util.NetworkUtils.getLocalIpAddress();
+            if (localIp == null || localIp.equals("0.0.0.0")) {
+                Toast.makeText(this, "Connect to Wi-Fi to Cast with Proxy", Toast.LENGTH_SHORT).show();
+                return;
+            }
+
+            String proxyUrl = com.omarflex5.cast.server.MediaServer.getInstance().startServer(videoUrl, currentHeaders);
+            if (proxyUrl == null) {
+                Toast.makeText(this, "Failed to start proxy", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            castUrl = proxyUrl;
+
+            // Self-test: verify server is reachable from the phone itself
+            testServerReachability(proxyUrl);
+        } else {
+            // Stop server if not used
+            stopLocalProxy();
         }
 
-        String proxyUrl = com.omarflex5.cast.server.MediaServer.getInstance().startServer(videoUrl, currentHeaders);
-        if (proxyUrl == null) {
-            Toast.makeText(this, "Failed to start proxy", Toast.LENGTH_SHORT).show();
-            return;
-        }
-
-        // Self-test: verify server is reachable from the phone itself
-        testServerReachability(proxyUrl);
-
-        // 3. Create Media3 MediaItem - matches reference implementation
+        // 3. Create Media3 MediaItem
         androidx.media3.common.MediaItem.Builder mediaItemBuilder = new androidx.media3.common.MediaItem.Builder()
-                .setUri(proxyUrl);
+                .setUri(castUrl);
 
         // CRITICAL: Set MIME type based on ORIGINAL video URL, not proxy URL
         String mimeType = androidx.media3.common.MimeTypes.VIDEO_MP4; // default
@@ -338,7 +348,7 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
             mimeType = androidx.media3.common.MimeTypes.APPLICATION_MPD;
         }
 
-        android.util.Log.d("CastDebug", "Setting MediaItem with MIME: " + mimeType + " for URL: " + proxyUrl);
+        android.util.Log.d("CastDebug", "Setting MediaItem with MIME: " + mimeType + " for URL: " + castUrl);
         mediaItemBuilder.setMimeType(mimeType);
 
         // Add metadata
@@ -805,15 +815,25 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
             headers.put("Referer", getIntent().getStringExtra("EXTRA_REFERER"));
         }
 
-        String proxyUrl = com.omarflex5.cast.server.MediaServer.getInstance().startServer(videoUrl, headers);
-        if (proxyUrl == null) {
-            Toast.makeText(this, "Failed to resume DLNA Cast", Toast.LENGTH_SHORT).show();
-            return;
+        boolean useProxy = getSharedPreferences("cast_prefs", android.content.Context.MODE_PRIVATE)
+                .getBoolean("use_proxy", false);
+        String castUrl = videoUrl;
+
+        if (useProxy) {
+            String proxyUrl = com.omarflex5.cast.server.MediaServer.getInstance().startServer(videoUrl, headers);
+            if (proxyUrl == null) {
+                Toast.makeText(this, "Failed to resume DLNA Cast", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            castUrl = proxyUrl;
+        } else {
+            // Stop server
+            stopLocalProxy();
         }
 
         com.omarflex5.cast.dlna.DlnaCaster.castToDevice(
                 device.location,
-                proxyUrl,
+                castUrl,
                 videoTitle != null ? videoTitle : "OmarFlex Video",
                 new com.omarflex5.cast.dlna.DlnaCaster.CastListener() {
                     @Override
