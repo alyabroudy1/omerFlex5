@@ -40,6 +40,82 @@ public class CastOptionsBottomSheet extends BottomSheetDialogFragment {
         super.onViewCreated(view, savedInstanceState);
 
         Context context = getContext();
+        android.content.SharedPreferences prefs = context.getSharedPreferences("cast_prefs", Context.MODE_PRIVATE);
+
+        android.widget.CheckBox proxyCheck = view.findViewById(R.id.checkbox_proxy);
+        proxyCheck.setChecked(prefs.getBoolean("use_proxy", false)); // Default off? Or on?
+
+        proxyCheck.setOnClickListener(v -> {
+            boolean isChecked = proxyCheck.isChecked();
+            prefs.edit().putBoolean("use_proxy", isChecked).apply();
+
+            if (isChecked) {
+                // Check if battery optimizations are ignored
+                android.os.PowerManager pm = (android.os.PowerManager) context.getSystemService(Context.POWER_SERVICE);
+                if (pm != null && !pm.isIgnoringBatteryOptimizations(context.getPackageName())) {
+                    new android.app.AlertDialog.Builder(context)
+                            .setTitle("Background Usage Required")
+                            .setMessage(
+                                    "Using the proxy requires the app to run in the background. Android may kill it to save battery.\n\n"
+                                            +
+                                            "Click OK to allow background usage (Unrestricted) in settings.\n\n" +
+                                            "If you Cancel, casting may stop unexpectedly.")
+                            .setPositiveButton("OK", (dialog, which) -> {
+                                try {
+                                    Intent intent = new Intent(
+                                            android.provider.Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                                    intent.setData(android.net.Uri.parse("package:" + context.getPackageName()));
+                                    startActivity(intent);
+                                } catch (Exception e) {
+                                    // Fallback to generic settings if specific intent fails
+                                    try {
+                                        Intent intent = new Intent(
+                                                android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS);
+                                        startActivity(intent);
+                                    } catch (Exception ex) {
+                                    }
+                                }
+                            })
+                            .setNegativeButton("Risk it", null)
+                            .show();
+                }
+            }
+
+            // Check for active sessions and prompt restart
+            com.omarflex5.cast.receiver.OmarFlexSessionManager omarSession = com.omarflex5.cast.receiver.OmarFlexSessionManager
+                    .getInstance(context);
+            if (omarSession.isConnected()) {
+                com.omarflex5.cast.receiver.NsdDiscovery.OmarFlexDevice device = omarSession.getCurrentDevice();
+                new android.app.AlertDialog.Builder(context)
+                        .setTitle("Restart Casting?")
+                        .setMessage("Reconnect to " + device.name + " to apply changes?")
+                        .setPositiveButton("Restart", (dialog, which) -> {
+                            dismiss();
+                            omarSession.disconnect();
+                            startOmarFlexCast(context, device);
+                        })
+                        .setNegativeButton("Later", null)
+                        .show();
+            }
+
+            com.omarflex5.cast.dlna.DlnaSessionManager dlnaSession = com.omarflex5.cast.dlna.DlnaSessionManager
+                    .getInstance(context);
+            if (dlnaSession.isConnected()) {
+                com.omarflex5.cast.dlna.SsdpDiscoverer.DlnaDevice device = dlnaSession.getCurrentDevice();
+                new android.app.AlertDialog.Builder(context)
+                        .setTitle("Restart Casting?")
+                        .setMessage("Reconnect to " + device.friendlyName + " to apply changes?")
+                        .setPositiveButton("Restart", (dialog, which) -> {
+                            dismiss();
+                            dlnaSession.disconnect();
+                            // Stop server to ensure clean restart with new settings
+                            com.omarflex5.cast.server.MediaServer.getInstance().stopServer();
+                            startDlnaCast(context, device);
+                        })
+                        .setNegativeButton("Later", null)
+                        .show();
+            }
+        });
 
         // Option 1: Google Cast
         view.findViewById(R.id.option_chromecast).setOnClickListener(v -> {
@@ -157,7 +233,23 @@ public class CastOptionsBottomSheet extends BottomSheetDialogFragment {
         }
 
         try {
-            android.net.Uri uri = android.net.Uri.parse(videoUrl);
+
+            android.net.Uri uri;
+            boolean useProxy = context.getSharedPreferences("cast_prefs", Context.MODE_PRIVATE).getBoolean("use_proxy",
+                    false);
+
+            if (useProxy) {
+                String proxyUrl = com.omarflex5.cast.server.MediaServer.getInstance().startServer(videoUrl, headers);
+                if (proxyUrl != null) {
+                    uri = android.net.Uri.parse(proxyUrl);
+                    Toast.makeText(context, "Using Local Proxy", Toast.LENGTH_SHORT).show();
+                } else {
+                    uri = android.net.Uri.parse(videoUrl);
+                }
+            } else {
+                uri = android.net.Uri.parse(videoUrl);
+            }
+
             Intent intent = new Intent(Intent.ACTION_VIEW);
             intent.setDataAndType(uri, "video/*");
             intent.putExtra("title", title != null ? title : "Video");
@@ -271,11 +363,21 @@ public class CastOptionsBottomSheet extends BottomSheetDialogFragment {
         // 1. Mark as Connected (Session Logic)
         com.omarflex5.cast.dlna.DlnaSessionManager.getInstance(context).connect(device);
 
-        // 2. Start Local Proxy
-        String proxyUrl = com.omarflex5.cast.server.MediaServer.getInstance().startServer(videoUrl, headers);
-        if (proxyUrl == null) {
-            Toast.makeText(context, "Failed to start local server", Toast.LENGTH_SHORT).show();
-            return;
+        // 2. Check Proxy Preference
+        boolean useProxy = context.getSharedPreferences("cast_prefs", Context.MODE_PRIVATE).getBoolean("use_proxy",
+                false);
+        String castUrl = videoUrl;
+
+        if (useProxy) {
+            String proxyUrl = com.omarflex5.cast.server.MediaServer.getInstance().startServer(videoUrl, headers);
+            if (proxyUrl == null) {
+                Toast.makeText(context, "Failed to start local server", Toast.LENGTH_SHORT).show();
+                return;
+            }
+            castUrl = proxyUrl;
+        } else {
+            // Ensure server is stopped if we aren't using it
+            com.omarflex5.cast.server.MediaServer.getInstance().stopServer();
         }
 
         Toast.makeText(context, "Casting to " + device.friendlyName + "...", Toast.LENGTH_SHORT).show();
@@ -283,7 +385,7 @@ public class CastOptionsBottomSheet extends BottomSheetDialogFragment {
         // 3. Send to Device
         com.omarflex5.cast.dlna.DlnaCaster.castToDevice(
                 device.location,
-                proxyUrl,
+                castUrl,
                 title != null ? title : "OmarFlex Video",
                 new com.omarflex5.cast.dlna.DlnaCaster.CastListener() {
                     @Override
@@ -365,9 +467,26 @@ public class CastOptionsBottomSheet extends BottomSheetDialogFragment {
 
         new Thread(() -> {
             try {
+                // Check Proxy Preference
+                boolean useProxy = context.getSharedPreferences("cast_prefs", Context.MODE_PRIVATE)
+                        .getBoolean("use_proxy", false);
+                String castUrl = videoUrl;
+
+                if (useProxy) {
+                    String proxyUrl = com.omarflex5.cast.server.MediaServer.getInstance().startServer(videoUrl,
+                            headers);
+                    if (proxyUrl != null) {
+                        castUrl = proxyUrl;
+                        android.util.Log.d("OmarFlexCast", "Using Proxy URL: " + castUrl);
+                    }
+                } else {
+                    // Ensure server is stopped if we aren't using it (save resources)
+                    com.omarflex5.cast.server.MediaServer.getInstance().stopServer();
+                }
+
                 // Build JSON Payload
                 org.json.JSONObject payload = new org.json.JSONObject();
-                payload.put("url", videoUrl);
+                payload.put("url", castUrl);
                 payload.put("title", title != null ? title : "Casted Video");
 
                 // Send POST

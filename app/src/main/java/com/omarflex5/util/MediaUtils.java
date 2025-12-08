@@ -190,4 +190,25 @@ public class MediaUtils {
 
         return sb.toString();
     }
+
+    /**
+     * Formats time in milliseconds to HH:MM:SS or MM:SS string.
+     */
+    public static String formatTime(long timeMs) {
+        if (timeMs < 0) {
+            return "00:00";
+        }
+        long totalSeconds = (timeMs + 500) / 1000;
+        long seconds = totalSeconds % 60;
+        long minutes = (totalSeconds / 60) % 60;
+        long hours = totalSeconds / 3600;
+
+        java.lang.StringBuilder sb = new java.lang.StringBuilder();
+        java.util.Formatter formatter = new java.util.Formatter(sb, java.util.Locale.getDefault());
+        if (hours > 0) {
+            return formatter.format("%d:%02d:%02d", hours, minutes, seconds).toString();
+        } else {
+            return formatter.format("%02d:%02d", minutes, seconds).toString();
+        }
+    }
 }

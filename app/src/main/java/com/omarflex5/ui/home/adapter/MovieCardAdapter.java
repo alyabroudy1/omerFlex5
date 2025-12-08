@@ -7,6 +7,8 @@ import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
+import android.widget.TextView;
 
 import androidx.annotation.NonNull;
 import androidx.cardview.widget.CardView;
@@ -92,6 +94,8 @@ public class MovieCardAdapter extends RecyclerView.Adapter<MovieCardAdapter.Movi
 
     class MovieViewHolder extends RecyclerView.ViewHolder {
         ImageView posterImage;
+        TextView titleText, yearText, ratingText, serverBadge;
+        LinearLayout categoriesLayout;
         CardView cardView;
         AnimatorSet pulseAnimator;
 
@@ -99,6 +103,11 @@ public class MovieCardAdapter extends RecyclerView.Adapter<MovieCardAdapter.Movi
             super(itemView);
             cardView = (CardView) itemView;
             posterImage = itemView.findViewById(R.id.image_poster);
+            titleText = itemView.findViewById(R.id.text_title);
+            yearText = itemView.findViewById(R.id.text_year);
+            ratingText = itemView.findViewById(R.id.text_rating);
+            categoriesLayout = itemView.findViewById(R.id.layout_categories_badge);
+            serverBadge = itemView.findViewById(R.id.text_server_badge);
 
             // Focus change - only visual animation (scale + pulse)
             cardView.setOnFocusChangeListener((v, hasFocus) -> {
@@ -198,6 +207,70 @@ public class MovieCardAdapter extends RecyclerView.Adapter<MovieCardAdapter.Movi
                     .load(movie.getPosterUrl())
                     .centerCrop()
                     .into(posterImage);
+
+            if (titleText != null)
+                titleText.setText(movie.getTitle());
+
+            if (yearText != null) {
+                String meta = movie.getYear();
+                String type = movie.isTvShow() ? "Series" : "Film";
+                if (meta != null && !meta.isEmpty()) {
+                    meta += " • " + type;
+                } else {
+                    meta = type;
+                }
+                yearText.setText(meta);
+            }
+
+            if (ratingText != null && movie.getRating() != null && !movie.getRating().isEmpty()) {
+                ratingText.setText("★ " + movie.getRating());
+                ratingText.setVisibility(View.VISIBLE);
+            } else if (ratingText != null) {
+                ratingText.setVisibility(View.GONE);
+            }
+
+            if (categoriesLayout != null) {
+                categoriesLayout.removeAllViews();
+                if (movie.getCategories() != null && !movie.getCategories().isEmpty()) {
+                    categoriesLayout.setVisibility(View.VISIBLE);
+                    // Add max 2 categories to avoid overflow
+                    int count = 0;
+                    for (String cat : movie.getCategories()) {
+                        if (count >= 2)
+                            break;
+
+                        TextView badge = new TextView(itemView.getContext());
+                        badge.setText(cat);
+                        badge.setTextSize(8); // 8sp
+                        badge.setTextColor(0xFFFFFFFF); // White
+                        badge.setTypeface(null, android.graphics.Typeface.BOLD);
+                        badge.setBackgroundResource(R.drawable.badge_background);
+                        badge.setPadding(8, 2, 8, 2); // px
+                        badge.setMaxLines(1);
+                        badge.setEllipsize(android.text.TextUtils.TruncateAt.END);
+
+                        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.WRAP_CONTENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT);
+                        params.setMargins(0, 0, 0, 4); // Bottom margin for stack
+                        badge.setLayoutParams(params);
+
+                        categoriesLayout.addView(badge);
+                        count++;
+                    }
+                } else {
+                    categoriesLayout.setVisibility(View.GONE);
+                }
+            }
+
+            if (serverBadge != null) {
+                if (movie.getSourceName() != null) {
+                    serverBadge.setText(movie.getSourceName());
+                    serverBadge.setVisibility(View.VISIBLE);
+                } else {
+                    serverBadge.setVisibility(View.GONE);
+                }
+            }
 
             // Set selected state for visual styling (red border via selector)
             cardView.setSelected(isSelected);

@@ -21,7 +21,7 @@ import com.omarflex5.ui.details.DetailsActivity;
  * Activity that displays multi-server search results.
  * Uses BrowserActivity for video sniffing when needed.
  */
-public class SearchActivity extends AppCompatActivity {
+public class SearchActivity extends com.omarflex5.ui.base.BaseActivity {
 
     private static final String TAG = "SearchActivity";
     private static final int REQUEST_VIDEO_BROWSER = 1001; // This constant is no longer used but kept for consistency

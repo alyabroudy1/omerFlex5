@@ -41,7 +41,7 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
     @Override
     public ResultViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
         View view = LayoutInflater.from(parent.getContext())
-                .inflate(R.layout.item_search_result, parent, false);
+                .inflate(R.layout.item_movie_card, parent, false);
         return new ResultViewHolder(view);
     }
 
@@ -59,14 +59,18 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
     class ResultViewHolder extends RecyclerView.ViewHolder {
         private final ImageView poster;
         private final TextView title;
-        private final TextView metadata;
+        private final TextView yearText;
+        private final TextView ratingText;
+        private final android.widget.LinearLayout categoriesLayout;
         private final TextView serverBadge;
 
         ResultViewHolder(@NonNull View itemView) {
             super(itemView);
             poster = itemView.findViewById(R.id.image_poster);
             title = itemView.findViewById(R.id.text_title);
-            metadata = itemView.findViewById(R.id.text_metadata);
+            yearText = itemView.findViewById(R.id.text_year);
+            ratingText = itemView.findViewById(R.id.text_rating);
+            categoriesLayout = itemView.findViewById(R.id.layout_categories_badge);
             serverBadge = itemView.findViewById(R.id.text_server_badge);
 
             itemView.setOnClickListener(v -> {
@@ -80,16 +84,18 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
             itemView.setOnFocusChangeListener((v, hasFocus) -> {
                 if (hasFocus) {
                     v.animate()
-                            .scaleX(1.05f)
-                            .scaleY(1.05f)
+                            .scaleX(1.10f)
+                            .scaleY(1.10f)
                             .setDuration(150)
                             .start();
+                    v.setElevation(16f);
                 } else {
                     v.animate()
                             .scaleX(1.0f)
                             .scaleY(1.0f)
                             .setDuration(150)
                             .start();
+                    v.setElevation(4f);
                 }
             });
         }
@@ -98,19 +104,43 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
             // Title
             title.setText(result.title);
 
-            // Metadata: Type + Year + Sources count
+            // Metadata: Year + Type
             StringBuilder meta = new StringBuilder();
-            meta.append("SERIES".equals(result.type) ? "مسلسل" : "فيلم");
-            if (result.year != null) {
-                meta.append(" • ").append(result.year);
+            if (result.year != null && result.year > 0) {
+                meta.append(result.year);
             }
+
+            String typeLabel = "SERIES".equalsIgnoreCase(result.type) || "TV".equalsIgnoreCase(result.type) ? "مسلسل"
+                    : "فيلم";
+            if (meta.length() > 0) {
+                meta.append(" • ").append(typeLabel);
+            } else {
+                meta.append(typeLabel);
+            }
+
             if (result.alternativeSources != null && !result.alternativeSources.isEmpty()) {
-                meta.append(" • ").append(result.alternativeSources.size() + 1).append(" مصادر");
+                meta.append(" • +").append(result.alternativeSources.size());
             }
-            metadata.setText(meta.toString());
+
+            yearText.setText(meta.toString());
+            yearText.setVisibility(View.VISIBLE);
+
+            // Rating - Not available in search result usually
+            ratingText.setVisibility(View.GONE);
+
+            // Categories
+            if (categoriesLayout != null) {
+                categoriesLayout.removeAllViews();
+                categoriesLayout.setVisibility(View.GONE);
+            }
 
             // Server badge
-            serverBadge.setText(result.serverLabel);
+            if (result.serverLabel != null) {
+                serverBadge.setText(result.serverLabel);
+                serverBadge.setVisibility(View.VISIBLE);
+            } else {
+                serverBadge.setVisibility(View.GONE);
+            }
 
             // Poster
             if (result.posterUrl != null && !result.posterUrl.isEmpty()) {

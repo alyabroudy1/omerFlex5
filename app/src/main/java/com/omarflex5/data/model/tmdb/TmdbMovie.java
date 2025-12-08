@@ -56,6 +56,27 @@ public class TmdbMovie {
         return backdropPath;
     }
 
+    @SerializedName("release_date")
+    private String releaseDate;
+
+    @SerializedName("first_air_date")
+    private String firstAirDate;
+
+    @SerializedName("genre_ids")
+    private List<Integer> genreIds;
+
+    public String getReleaseDate() {
+        return releaseDate;
+    }
+
+    public String getFirstAirDate() {
+        return firstAirDate;
+    }
+
+    public List<Integer> getGenreIds() {
+        return genreIds;
+    }
+
     public double getVoteAverage() {
         return voteAverage;
     }

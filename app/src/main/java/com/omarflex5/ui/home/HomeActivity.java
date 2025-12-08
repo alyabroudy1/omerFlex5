@@ -37,7 +37,7 @@ import com.omarflex5.ui.controller.MovieClickController;
 import com.omarflex5.ui.home.adapter.CategoryAdapter;
 import com.omarflex5.ui.home.adapter.MovieCardAdapter;
 
-public class HomeActivity extends AppCompatActivity {
+public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
 
     private static final String TAG = "HomeActivity";
     private HomeViewModel viewModel;

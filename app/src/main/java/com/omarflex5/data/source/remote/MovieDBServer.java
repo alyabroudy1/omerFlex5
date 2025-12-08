@@ -130,6 +130,9 @@ public class MovieDBServer {
                 map.put("backdrop_path", movie.getBackdropPath());
                 map.put("overview", movie.getOverview());
                 map.put("vote_average", movie.getVoteAverage());
+                map.put("release_date", movie.getReleaseDate());
+                map.put("first_air_date", movie.getFirstAirDate());
+                map.put("genre_ids", movie.getGenreIds());
                 movieMaps.add(map);
             }
 
@@ -159,8 +162,29 @@ public class MovieDBServer {
             Number ratingNum = (Number) map.get("vote_average");
             String rating = ratingNum != null ? String.format("%.1f", ratingNum.doubleValue()) : "";
 
+            // Parse Year from Cache
+            String dateStr = isTvShow ? (String) map.get("first_air_date") : (String) map.get("release_date");
+            String year = "";
+            if (dateStr != null && dateStr.length() >= 4) {
+                year = dateStr.substring(0, 4);
+            }
+
+            // Parse Genres from Cache
+            List<String> categories = new ArrayList<>();
+            Object genreIdsObj = map.get("genre_ids");
+            if (genreIdsObj instanceof List) {
+                List<Double> genreIds = (List<Double>) genreIdsObj; // Gson often decodes numbers as Double
+                for (Number gIdNum : genreIds) {
+                    int gId = gIdNum.intValue();
+                    String gName = TmdbMapper.GENRE_MAP.get(gId);
+                    if (gName != null) {
+                        categories.add(gName);
+                    }
+                }
+            }
+
             Movie movie = new Movie(movieId, title, originalTitle, description, backdropUrl, posterUrl,
-                    null, null, "", rating, MovieActionType.EXOPLAYER, isTvShow);
+                    null, null, year, rating, MovieActionType.EXOPLAYER, isTvShow, categories, "TMDB");
             movies.add(movie);
         }
         return movies;

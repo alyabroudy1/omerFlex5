@@ -27,7 +27,7 @@ import com.omarflex5.ui.player.PlayerActivity;
 import java.util.List;
 import java.util.Map;
 
-public class DetailsActivity extends AppCompatActivity {
+public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
 
     public static final String EXTRA_URL = "extra_url";
     public static final String EXTRA_TITLE = "extra_title";

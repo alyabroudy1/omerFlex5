@@ -26,6 +26,13 @@ public class DefaultMovieClickController implements MovieClickController {
             actionType = MovieActionType.EXOPLAYER; // Default
         }
 
+        // Special handling for TMDB items - Always search/details first
+        // This avoids playing dummy trailers for main listings
+        if ("TMDB".equalsIgnoreCase(movie.getSourceName())) {
+            handleSearchAction(context, movie);
+            return;
+        }
+
         switch (actionType) {
             case BROWSER:
                 handleBrowserAction(context, movie);

@@ -40,4 +40,17 @@
         android:visibility="gone"
         android:text="Casting to Device" />
 
+    <!-- Seek Overlay Text (e.g. +30s) -->
+    <TextView
+        android:id="@+id/seek_overlay_text"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="#99000000"
+        android:padding="16dp"
+        android:textColor="#FFFFFF"
+        android:textSize="24sp"
+        android:textStyle="bold"
+        android:visibility="gone" />
+
 </FrameLayout>

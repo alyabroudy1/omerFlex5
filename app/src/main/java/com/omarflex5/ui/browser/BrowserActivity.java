@@ -47,7 +47,7 @@ import java.util.regex.Pattern;
  * String userAgent = data.getStringExtra(EXTRA_USER_AGENT);
  * }
  */
-public class BrowserActivity extends AppCompatActivity {
+public class BrowserActivity extends com.omarflex5.ui.base.BaseActivity {
 
     private static final String TAG = "BrowserActivity";
 

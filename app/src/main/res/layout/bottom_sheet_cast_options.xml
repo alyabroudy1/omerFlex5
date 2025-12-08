@@ -10,11 +10,20 @@
     <TextView
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_marginBottom="16dp"
         android:text="Cast to..."
         android:textColor="#FFFFFF"
         android:textSize="20sp"
         android:textStyle="bold" />
+
+    <CheckBox
+        android:id="@+id/checkbox_proxy"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginBottom="8dp"
+        android:text="Route through phone (Proxy)"
+        android:textColor="#FFFFFF"
+        android:buttonTint="#FF0000"
+        android:textSize="14sp" />
 
     <!-- Google Cast / Chromecast -->
     <LinearLayout

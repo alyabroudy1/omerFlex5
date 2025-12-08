@@ -74,10 +74,12 @@ public class ReceiverService extends Service {
             // Try fixed port 8090 first for session persistence
             int localPort = 8090;
             try {
-                ServerSocket socket = new ServerSocket(localPort);
+                ServerSocket socket = new ServerSocket();
+                socket.setReuseAddress(true);
+                socket.bind(new java.net.InetSocketAddress(localPort));
                 socket.close();
             } catch (IOException e) {
-                // Port 8090 in use, fallback to random
+                // If 8090 is truly occupied by another app, fallback to random
                 ServerSocket socket = new ServerSocket(0);
                 localPort = socket.getLocalPort();
                 socket.close();
