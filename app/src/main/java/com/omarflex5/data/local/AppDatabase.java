@@ -15,12 +15,14 @@ import com.omarflex5.data.local.dao.MediaSourceDao;
 import com.omarflex5.data.local.dao.SearchQueueDao;
 import com.omarflex5.data.local.dao.SeasonDao;
 import com.omarflex5.data.local.dao.ServerDao;
+import com.omarflex5.data.local.dao.UserMediaStateDao;
 import com.omarflex5.data.local.entity.EpisodeEntity;
 import com.omarflex5.data.local.entity.MediaEntity;
 import com.omarflex5.data.local.entity.MediaSourceEntity;
 import com.omarflex5.data.local.entity.SearchQueueEntity;
 import com.omarflex5.data.local.entity.SeasonEntity;
 import com.omarflex5.data.local.entity.ServerEntity;
+import com.omarflex5.data.local.entity.UserMediaStateEntity;
 
 import java.util.concurrent.Executors;
 
@@ -30,8 +32,9 @@ import java.util.concurrent.Executors;
         EpisodeEntity.class,
         ServerEntity.class,
         MediaSourceEntity.class,
-        SearchQueueEntity.class
-}, version = 1, exportSchema = true)
+        SearchQueueEntity.class,
+        UserMediaStateEntity.class
+}, version = 2, exportSchema = true)
 @TypeConverters({ Converters.class })
 public abstract class AppDatabase extends RoomDatabase {
 
@@ -51,6 +54,8 @@ public abstract class AppDatabase extends RoomDatabase {
 
     public abstract SearchQueueDao searchQueueDao();
 
+    public abstract UserMediaStateDao userMediaStateDao();
+
     public static AppDatabase getInstance(Context context) {
         if (INSTANCE == null) {
             synchronized (AppDatabase.class) {
@@ -60,6 +65,7 @@ public abstract class AppDatabase extends RoomDatabase {
                             AppDatabase.class,
                             DATABASE_NAME)
                             .addCallback(new PrepopulateCallback())
+                            .fallbackToDestructiveMigration() // For development changes
                             .build();
                 }
             }

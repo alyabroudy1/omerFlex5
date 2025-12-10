@@ -79,4 +79,7 @@ dependencies {
 
     // Local Broadcast Manager
     implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
+
+    // WorkManager
+    implementation("androidx.work:work-runtime:2.9.0")
 }

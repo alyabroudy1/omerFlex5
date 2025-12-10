@@ -37,6 +37,15 @@ public interface MediaDao {
     @Query("SELECT * FROM media WHERE tmdbId = :tmdbId")
     MediaEntity getByTmdbId(int tmdbId);
 
+    @Query("SELECT * FROM media WHERE tmdbId = :tmdbId")
+    LiveData<MediaEntity> getMediaByTmdbId(int tmdbId);
+
+    @Query("SELECT MAX(tmdbId) FROM media")
+    Integer getMaxTmdbId();
+
+    @Query("SELECT * FROM media ORDER BY updatedAt DESC")
+    LiveData<List<MediaEntity>> getAllMedia();
+
     @Query("SELECT * FROM media WHERE type = :type ORDER BY updatedAt DESC")
     LiveData<List<MediaEntity>> getAllByType(MediaType type);
 

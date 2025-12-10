@@ -13,7 +13,8 @@ import androidx.room.PrimaryKey;
 @Entity(tableName = "media", indices = {
         @Index(value = "tmdbId", unique = true),
         @Index(value = "type"),
-        @Index(value = "title")
+        @Index(value = "title"),
+        @Index(value = "updatedAt") // Key for Delta Sync
 })
 public class MediaEntity {
 
