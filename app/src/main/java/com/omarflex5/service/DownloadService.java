@@ -84,12 +84,6 @@ public class DownloadService extends Service {
 
             try {
                 Response response = client.newCall(requestBuilder.build()).execute();
-                // LOGGING FOR DEBUGGING
-                android.util.Log.d("DownloadService", "Response URL: " + response.request().url());
-                android.util.Log.d("DownloadService", "Content-Type: " + response.header("Content-Type"));
-                android.util.Log.d("DownloadService", "Content-Length: " + response.header("Content-Length"));
-                android.util.Log.d("DownloadService", "Response Code: " + response.code());
-
                 if (!response.isSuccessful()) {
                     // If Range not satisfiable (e.g. file changed or completed), retry from scratch
                     if (response.code() == 416) {
