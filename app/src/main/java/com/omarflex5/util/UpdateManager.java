@@ -13,6 +13,7 @@ import androidx.core.content.FileProvider;
 import com.omarflex5.data.model.UpdateInfo;
 import com.omarflex5.service.DownloadService;
 import com.google.gson.Gson;
+import android.util.Log;
 import java.io.File;
 import java.io.IOException;
 import okhttp3.Call;
@@ -23,9 +24,13 @@ import okhttp3.Response;
 
 public class UpdateManager {
 
+    private static final String TAG = "UpdateManager";
     private static UpdateManager instance;
-    private static final String UPDATE_JSON_URL = "https://raw.githubusercontent.com/alyabroudy1/omerFlex5/refs/heads/main/app/src/main/java/com/omarflex5/data/update.json"; // TODO: Replace with actual
-                                                                                         // URL
+    private static final String UPDATE_JSON_URL = "https://raw.githubusercontent.com/alyabroudy1/omerFlex5/refs/heads/main/app/src/main/java/com/omarflex5/data/update.json"; // TODO:
+                                                                                                                                                                              // Replace
+                                                                                                                                                                              // with
+                                                                                                                                                                              // actual
+    // URL
     private OkHttpClient client;
     private Gson gson;
 
@@ -50,6 +55,7 @@ public class UpdateManager {
     }
 
     public void checkForUpdate(Context context, UpdateCheckCallback callback) {
+        Log.d(TAG, "checkForUpdate: Checking for updates from " + UPDATE_JSON_URL);
         Request request = new Request.Builder()
                 .url(UPDATE_JSON_URL)
                 .build();
@@ -57,27 +63,34 @@ public class UpdateManager {
         client.newCall(request).enqueue(new Callback() {
             @Override
             public void onFailure(Call call, IOException e) {
+                Log.e(TAG, "checkForUpdate: Request failed", e);
                 new Handler(Looper.getMainLooper()).post(() -> callback.onError(e.getMessage()));
             }
 
             @Override
             public void onResponse(Call call, Response response) throws IOException {
+                Log.d(TAG, "checkForUpdate: Response received, code=" + response.code());
                 if (!response.isSuccessful()) {
+                    Log.e(TAG, "checkForUpdate: Unsuccessful response: " + response.code());
                     new Handler(Looper.getMainLooper()).post(() -> callback.onError("Failed to fetch update info"));
                     return;
                 }
 
                 try {
                     String json = response.body().string();
+                    Log.d(TAG, "checkForUpdate: JSON received: " + json);
                     UpdateInfo updateInfo = gson.fromJson(json, UpdateInfo.class);
 
                     if (isUpdateAvailable(context, updateInfo)) {
+                        Log.d(TAG, "checkForUpdate: Update available");
                         new Handler(Looper.getMainLooper()).post(() -> callback.onUpdateAvailable(updateInfo));
                     } else {
+                        Log.d(TAG, "checkForUpdate: No update available");
                         new Handler(Looper.getMainLooper()).post(callback::onNoUpdate);
                     }
 
                 } catch (Exception e) {
+                    Log.e(TAG, "checkForUpdate: JSON parsing or processing error", e);
                     new Handler(Looper.getMainLooper()).post(() -> callback.onError("Invalid update data"));
                 }
             }
@@ -88,6 +101,7 @@ public class UpdateManager {
         try {
             PackageInfo pInfo = context.getPackageManager().getPackageInfo(context.getPackageName(), 0);
             int currentVersionCode = pInfo.versionCode;
+            Log.d(TAG, "isUpdateAvailable: Local=" + currentVersionCode + ", Remote=" + updateInfo.getVersionCode());
             return updateInfo.getVersionCode() > currentVersionCode;
         } catch (PackageManager.NameNotFoundException e) {
             e.printStackTrace();

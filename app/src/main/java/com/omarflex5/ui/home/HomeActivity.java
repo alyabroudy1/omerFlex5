@@ -128,23 +128,30 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
     }
 
     private void checkForUpdates() {
+        Log.d(TAG, "checkForUpdates: Starting update check...");
         com.omarflex5.util.UpdateManager.getInstance().checkForUpdate(this,
                 new com.omarflex5.util.UpdateManager.UpdateCheckCallback() {
                     @Override
                     public void onUpdateAvailable(com.omarflex5.data.model.UpdateInfo updateInfo) {
-                        com.omarflex5.ui.dialog.UpdateDialog dialog = com.omarflex5.ui.dialog.UpdateDialog
-                                .newInstance(updateInfo);
-                        dialog.show(getSupportFragmentManager(), "UpdateDialog");
+                        Log.d(TAG, "checkForUpdates: Update available (" + updateInfo.getVersionName()
+                                + "). Showing dialog.");
+                        try {
+                            com.omarflex5.ui.dialog.UpdateDialog dialog = com.omarflex5.ui.dialog.UpdateDialog
+                                    .newInstance(updateInfo);
+                            dialog.show(getSupportFragmentManager(), "UpdateDialog");
+                        } catch (Exception e) {
+                            Log.e(TAG, "checkForUpdates: Error showing dialog", e);
+                        }
                     }
 
                     @Override
                     public void onNoUpdate() {
-                        // Do nothing
+                        Log.d(TAG, "checkForUpdates: No update available callback received.");
                     }
 
                     @Override
                     public void onError(String error) {
-                        Log.e(TAG, "Update check failed: " + error);
+                        Log.e(TAG, "checkForUpdates: Update check failed with error: " + error);
                     }
                 });
     }
