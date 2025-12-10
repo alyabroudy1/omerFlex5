@@ -58,38 +58,51 @@ public class ContentDiscoveryWorker extends Worker {
             // it.
             // For now, illustrating the logic loop:
 
-            /*
-             * TmdbApi api = NetworkUtils.getTmdbApi(); // Hypothetical accessor
-             * for (int i = 1; i <= 20; i++) {
-             * int targetId = latestId + i;
-             * try {
-             * // Try fetch as Movie
-             * retrofit2.Response<java.util.Map<String, Object>> response =
-             * api.getMovieDetails(targetId).execute();
-             * if (response.isSuccessful() && response.body() != null) {
-             * MediaEntity entity =
-             * com.omarflex5.util.TmdbMapper.mapToEntity(response.body(),
-             * com.omarflex5.data.local.entity.MediaType.FILM);
-             * if (entity != null) {
-             * newContent.add(entity);
-             * }
-             * }
-             * } catch (Exception e) {
-             * // Ignore 404s (deleted/invalid IDs)
-             * }
-             * }
-             */
+            TmdbApi api = com.omarflex5.data.source.remote.BaseServer.getClient().create(TmdbApi.class);
+
+            com.omarflex5.data.local.dao.MediaDao mediaDao = AppDatabase.getInstance(getApplicationContext())
+                    .mediaDao();
+
+            // Loop for batch of 100
+            for (int i = 1; i <= 100; i++) {
+                int targetId = latestId + i;
+                try {
+                    Log.d(TAG, "Fetching TMDB ID: " + targetId);
+
+                    // Try fetch as Movie
+                    retrofit2.Response<java.util.Map<String, Object>> response = api.getMovieDetails(targetId)
+                            .execute();
+                    if (response.isSuccessful() && response.body() != null) {
+                        MediaEntity entity = com.omarflex5.util.TmdbMapper.mapToEntity(response.body(),
+                                com.omarflex5.data.local.entity.MediaType.FILM);
+                        if (entity != null) {
+                            newContent.add(entity);
+                            // INCREMENTAL INSERT: Save to Local DB immediately so UI updates live!
+                            mediaDao.insert(entity);
+                            Log.d(TAG, "Found & Saved Movie: " + entity.getTitle());
+                        }
+                    } else if (response.code() == 404) {
+                        Log.d(TAG, "ID " + targetId + " not found (404).");
+                    } else {
+                        Log.w(TAG, "Failed to fetch " + targetId + ": " + response.code());
+                    }
+
+                } catch (Exception e) {
+                    Log.e(TAG, "Error processing ID " + targetId, e);
+                }
+            }
 
             if (newContent.isEmpty()) {
                 Log.d(TAG, "doWork: No new content found in this batch.");
                 return Result.success();
             }
 
-            // 3. Push to Firestore (Crowdsource)
-            firestoreManager.pushBatch(newContent);
-
-            // 4. Save Locally (Delta Sync cache)
-            AppDatabase.getInstance(getApplicationContext()).mediaDao().insertAll(newContent);
+            // 3. Push to Firestore (Crowdsource) - Done in batch at the end (less urgency)
+            try {
+                firestoreManager.pushBatch(newContent);
+            } catch (Exception e) {
+                Log.e(TAG, "doWork: Failed to push to Firestore (skipping)", e);
+            }
 
             Log.d(TAG, "doWork: Daily Feeder Completed. Added " + newContent.size() + " items.");
             return Result.success();

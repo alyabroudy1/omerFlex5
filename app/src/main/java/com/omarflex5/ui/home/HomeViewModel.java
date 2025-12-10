@@ -1,30 +1,103 @@
 package com.omarflex5.ui.home;
 
+import androidx.lifecycle.AndroidViewModel;
 import androidx.lifecycle.LiveData;
 import androidx.lifecycle.MutableLiveData;
-import androidx.lifecycle.ViewModel;
 
+import com.omarflex5.data.local.entity.MediaEntity;
 import com.omarflex5.data.model.Category;
 import com.omarflex5.data.model.Movie;
-import com.omarflex5.data.repository.MovieRepository;
+import com.omarflex5.data.repository.MediaRepository;
 import com.omarflex5.data.source.DataSourceCallback;
 
 import java.net.UnknownHostException;
 import java.util.List;
 
-public class HomeViewModel extends ViewModel {
+public class HomeViewModel extends AndroidViewModel {
 
-    private final MovieRepository repository;
+    private final MediaRepository repository;
+    // Categories are now static or fetched differently, for MVP assuming fixed or
+    // type-based
     private final MutableLiveData<List<Category>> categories = new MutableLiveData<>();
+
+    // We observe the DB directly now
+    private LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> allMedia;
+
+    // UI mapping for legacy support (until we refactor generic UI)
     private final MutableLiveData<List<Movie>> movies = new MutableLiveData<>();
+
     private final MutableLiveData<Movie> selectedMovie = new MutableLiveData<>();
     private final MutableLiveData<String> trailerUrl = new MutableLiveData<>();
     private final MutableLiveData<String> error = new MutableLiveData<>();
     private final MutableLiveData<UiState> uiState = new MutableLiveData<>(UiState.loading());
     private boolean isInitialLoad = true;
 
-    public HomeViewModel(MovieRepository repository) {
-        this.repository = repository;
+    // Use Factory to pass Context
+    public HomeViewModel(android.app.Application application) {
+        super(application);
+        this.repository = MediaRepository.getInstance(application);
+
+        // Trigger Background Sync
+        repository.syncFromGlobal();
+
+        // Observe Local DB
+        allMedia = repository.getAllMedia();
+
+        // Transform Entity -> Legacy Movie Model for UI
+        allMedia.observeForever(mediaItems -> {
+            if (mediaItems != null) {
+                java.util.List<Movie> mappedMovies = new java.util.ArrayList<>();
+
+                for (com.omarflex5.data.local.model.MediaWithUserState item : mediaItems) {
+                    boolean isFav = item.userState != null && item.userState.isFavorite();
+                    boolean isWatched = item.userState != null && item.userState.isWatched();
+
+                    MediaEntity entity = item.media;
+                    if (entity == null)
+                        continue;
+
+                    // Parse categories from JSON
+                    java.util.List<String> categories = new java.util.ArrayList<>();
+                    if (entity.getCategoriesJson() != null) {
+                        try {
+                            org.json.JSONArray jsonArray = new org.json.JSONArray(entity.getCategoriesJson());
+                            for (int i = 0; i < jsonArray.length(); i++) {
+                                categories.add(jsonArray.getString(i));
+                            }
+                        } catch (Exception e) {
+                            // ignore parse error
+                        }
+                    }
+
+                    // Map Entity to Movie Model
+                    Movie movie = new Movie(
+                            String.valueOf(entity.getId()), // ID
+                            entity.getTitle(), // Title
+                            entity.getTitle(), // Original Title (fallback)
+                            entity.getDescription(), // Desc
+                            entity.getBackdropUrl(), // Background
+                            entity.getPosterUrl(), // Poster
+                            null, // Trailer (fetched on demand)
+                            null, // Video URL
+                            String.valueOf(entity.getYear()), // Year
+                            String.valueOf(entity.getRating()), // Rating
+                            com.omarflex5.data.model.MovieActionType.EXOPLAYER,
+                            entity.getType() == com.omarflex5.data.local.entity.MediaType.SERIES,
+                            categories, // Categories (Parsed)
+                            "TMDB", // Source
+                            isFav, // Favorite
+                            isWatched // Watched
+                    );
+                    mappedMovies.add(movie);
+                }
+
+                movies.setValue(mappedMovies);
+                uiState.setValue(UiState.success());
+            } else {
+                uiState.setValue(UiState.success()); // Empty but successful
+            }
+        });
+
         loadCategories();
     }
 
@@ -32,12 +105,9 @@ public class HomeViewModel extends ViewModel {
         return uiState;
     }
 
-    /**
-     * Retry loading data after an error.
-     */
     public void retry() {
         isInitialLoad = true;
-        loadCategories();
+        repository.syncFromGlobal();
     }
 
     public LiveData<List<Category>> getCategories() {
@@ -60,79 +130,37 @@ public class HomeViewModel extends ViewModel {
         return error;
     }
 
-    private void loadCategories() {
-        uiState.setValue(UiState.loading());
-        repository.getCategories(new DataSourceCallback<List<Category>>() {
-            @Override
-            public void onSuccess(List<Category> result) {
-                categories.setValue(result);
-                if (!result.isEmpty()) {
-                    selectCategory(result.get(0));
-                } else {
-                    uiState.setValue(UiState.success());
-                }
-            }
+    // User Action: Toggle Favorite
+    public void toggleFavorite(Movie movie) {
+        // Find entity ID by mapping back or parsing ID
+        if (movie == null)
+            return;
+        try {
+            long mediaId = Long.parseLong(movie.getId());
+            boolean currentFav = movie.isFavorite();
+            repository.setFavorite(mediaId, !currentFav);
+        } catch (NumberFormatException e) {
+            e.printStackTrace();
+        }
+    }
 
-            @Override
-            public void onError(Throwable t) {
-                error.setValue(t.getMessage());
-                // Check error type for user-friendly message
-                if (t instanceof UnknownHostException ||
-                        t.getMessage() != null && t.getMessage().contains("Unable to resolve host")) {
-                    uiState.setValue(UiState.networkError());
-                } else {
-                    uiState.setValue(UiState.serverError(t.getMessage()));
-                }
-            }
-        });
+    private void loadCategories() {
+        // Mock categories for now as the DB structure changed
+        // In the future, Category can be an Entity too
+        java.util.List<Category> catList = new java.util.ArrayList<>();
+        catList.add(new Category("1", "Movies", new java.util.ArrayList<>()));
+        catList.add(new Category("2", "Series", new java.util.ArrayList<>()));
+        categories.setValue(catList);
     }
 
     public void selectCategory(Category category) {
-        repository.getMoviesByCategory(category.getId(), new DataSourceCallback<List<Movie>>() {
-            @Override
-            public void onSuccess(List<Movie> result) {
-                movies.setValue(result);
-                // Set success state when movies are loaded
-                uiState.setValue(UiState.success());
-                // Auto-select first movie only on initial app load
-                if (isInitialLoad && !result.isEmpty()) {
-                    selectMovie(result.get(0));
-                    isInitialLoad = false;
-                }
-            }
-
-            @Override
-            public void onError(Throwable t) {
-                error.setValue(t.getMessage());
-                if (t instanceof UnknownHostException ||
-                        t.getMessage() != null && t.getMessage().contains("Unable to resolve host")) {
-                    uiState.setValue(UiState.networkError());
-                } else {
-                    uiState.setValue(UiState.serverError(t.getMessage()));
-                }
-            }
-        });
+        // Filter logic should be applied here or in DAO
+        // For MVP, we rely on getAllMedia observing
     }
 
+    // Called by UI
     public void selectMovie(Movie movie) {
         selectedMovie.setValue(movie);
-
-        // Fetch trailer for selected movie
-        try {
-            int movieId = Integer.parseInt(movie.getId());
-            repository.getMovieTrailer(movieId, movie.isTvShow(), new DataSourceCallback<String>() {
-                @Override
-                public void onSuccess(String result) {
-                    trailerUrl.setValue(result);
-                }
-
-                @Override
-                public void onError(Throwable t) {
-                    trailerUrl.setValue(null);
-                }
-            });
-        } catch (NumberFormatException e) {
-            trailerUrl.setValue(null);
-        }
+        // Fetch trailer logic here if needed
     }
 }

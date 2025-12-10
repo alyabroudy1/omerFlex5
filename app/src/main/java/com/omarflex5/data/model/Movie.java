@@ -17,11 +17,13 @@ public class Movie {
     private final boolean isTvShow;
     private final java.util.List<String> categories;
     private final String sourceName;
+    private final boolean isFavorite;
+    private final boolean isWatched;
 
     public Movie(String id, String title, String originalTitle, String description,
             String backgroundUrl, String posterUrl, String trailerUrl, String videoUrl,
             String year, String rating, MovieActionType actionType, boolean isTvShow,
-            java.util.List<String> categories, String sourceName) {
+            java.util.List<String> categories, String sourceName, boolean isFavorite, boolean isWatched) {
         this.id = id;
         this.title = title;
         this.originalTitle = originalTitle != null ? originalTitle : title;
@@ -36,6 +38,16 @@ public class Movie {
         this.isTvShow = isTvShow;
         this.categories = categories != null ? categories : new java.util.ArrayList<>();
         this.sourceName = sourceName != null ? sourceName : "TMDB";
+        this.isFavorite = isFavorite;
+        this.isWatched = isWatched;
+    }
+
+    public Movie(String id, String title, String originalTitle, String description,
+            String backgroundUrl, String posterUrl, String trailerUrl, String videoUrl,
+            String year, String rating, MovieActionType actionType, boolean isTvShow,
+            java.util.List<String> categories, String sourceName) {
+        this(id, title, originalTitle, description, backgroundUrl, posterUrl, trailerUrl, videoUrl,
+                year, rating, actionType, isTvShow, categories, sourceName, false, false);
     }
 
     public Movie(String id, String title, String originalTitle, String description,
@@ -131,6 +143,14 @@ public class Movie {
 
     public String getSourceName() {
         return sourceName;
+    }
+
+    public boolean isFavorite() {
+        return isFavorite;
+    }
+
+    public boolean isWatched() {
+        return isWatched;
     }
 
     @Override

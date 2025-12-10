@@ -60,6 +60,23 @@ public class TmdbMapper {
                 entity.setRating(((Number) voteAverage).floatValue());
             }
 
+            // Categories (Genres)
+            Object genresObj = data.get("genres");
+            if (genresObj instanceof java.util.List) {
+                java.util.List<?> genresList = (java.util.List<?>) genresObj;
+                org.json.JSONArray jsonArray = new org.json.JSONArray();
+                for (Object item : genresList) {
+                    if (item instanceof java.util.Map) {
+                        java.util.Map<?, ?> genreMap = (java.util.Map<?, ?>) item;
+                        Object name = genreMap.get("name");
+                        if (name instanceof String) {
+                            jsonArray.put(name);
+                        }
+                    }
+                }
+                entity.setCategoriesJson(jsonArray.toString());
+            }
+
             // Timestamps
             long now = System.currentTimeMillis();
             entity.setCreatedAt(now);

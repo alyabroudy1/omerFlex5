@@ -40,6 +40,14 @@ public interface MediaDao {
     @Query("SELECT * FROM media WHERE tmdbId = :tmdbId")
     LiveData<MediaEntity> getMediaByTmdbId(int tmdbId);
 
+    @androidx.room.Transaction
+    @Query("SELECT * FROM media")
+    List<com.omarflex5.data.local.model.MediaWithUserState> getAllMediaWithState();
+
+    @androidx.room.Transaction
+    @Query("SELECT * FROM media ORDER BY updatedAt DESC")
+    LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getAllMediaWithStateLiveData();
+
     @Query("SELECT MAX(tmdbId) FROM media")
     Integer getMaxTmdbId();
 

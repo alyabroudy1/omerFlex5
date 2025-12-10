@@ -8,17 +8,17 @@ import com.omarflex5.data.repository.MovieRepository;
 
 public class HomeViewModelFactory implements ViewModelProvider.Factory {
 
-    private final MovieRepository repository;
+    private final android.app.Application application;
 
-    public HomeViewModelFactory(MovieRepository repository) {
-        this.repository = repository;
+    public HomeViewModelFactory(android.app.Application application) {
+        this.application = application;
     }
 
     @NonNull
     @Override
     public <T extends ViewModel> T create(@NonNull Class<T> modelClass) {
         if (modelClass.isAssignableFrom(HomeViewModel.class)) {
-            return (T) new HomeViewModel(repository);
+            return (T) new HomeViewModel(application);
         }
         throw new IllegalArgumentException("Unknown ViewModel class");
     }

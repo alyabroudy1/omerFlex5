@@ -343,7 +343,7 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
     }
 
     private void initViewModel() {
-        HomeViewModelFactory factory = new HomeViewModelFactory(MovieRepository.getInstance());
+        HomeViewModelFactory factory = new HomeViewModelFactory(getApplication());
         viewModel = new ViewModelProvider(this, factory).get(HomeViewModel.class);
     }
 

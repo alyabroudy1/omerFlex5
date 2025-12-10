@@ -57,8 +57,8 @@ public class MediaRepository {
         return mediaDao.getMediaByTmdbId(tmdbId);
     }
 
-    public LiveData<List<MediaEntity>> getAllMedia() {
-        return mediaDao.getAllMedia();
+    public LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getAllMedia() {
+        return mediaDao.getAllMediaWithStateLiveData();
     }
 
     public LiveData<UserMediaStateEntity> getUserState(long mediaId) {
