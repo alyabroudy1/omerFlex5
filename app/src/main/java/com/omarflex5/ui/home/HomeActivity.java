@@ -172,14 +172,21 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
         btnFullscreen.setOnClickListener(v -> toggleFullscreen());
 
         // Setup WebView for YouTube
-        android.webkit.WebSettings webSettings = youtubeWebView.getSettings();
-        webSettings.setJavaScriptEnabled(true);
-        webSettings.setMediaPlaybackRequiresUserGesture(false);
-        webSettings.setDomStorageEnabled(true);
-        webSettings.setAllowFileAccess(false);
-        webSettings.setAllowContentAccess(false);
-        youtubeWebView.setWebChromeClient(new android.webkit.WebChromeClient());
-        youtubeWebView.setBackgroundColor(0x00000000); // Transparent background
+        // Setup WebView for YouTube
+        try {
+            android.webkit.WebSettings webSettings = youtubeWebView.getSettings();
+            webSettings.setJavaScriptEnabled(true);
+            webSettings.setMediaPlaybackRequiresUserGesture(false);
+            webSettings.setDomStorageEnabled(true);
+            webSettings.setAllowFileAccess(false);
+            webSettings.setAllowContentAccess(false);
+            youtubeWebView.setWebChromeClient(new android.webkit.WebChromeClient());
+            youtubeWebView.setBackgroundColor(0x00000000); // Transparent background
+        } catch (Exception e) {
+            Log.e(TAG, "Error initializing WebView: ", e);
+            // Hide WebView if it fails to initialize (e.g. on emulators without camera)
+            youtubeWebView.setVisibility(View.GONE);
+        }
 
         // Mute button
         btnMute = findViewById(R.id.btn_mute);

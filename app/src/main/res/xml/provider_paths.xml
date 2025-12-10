@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <paths>
     <!-- Use cache path or files path for internal storage updates -->
-    <external-path name="external_files" path="." />
+    <external-path name="external_root" path="." />
+    <external-files-path name="external_files" path="." />
     <cache-path name="cache_files" path="." />
     <files-path name="internal_files" path="." />
 </paths>

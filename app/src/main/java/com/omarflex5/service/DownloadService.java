@@ -54,7 +54,12 @@ public class DownloadService extends Service {
         if (intent != null) {
             String url = intent.getStringExtra(EXTRA_URL);
             if (url != null && !isDownloading) {
-                startForeground(NOTIFICATION_ID, createNotification(0));
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(NOTIFICATION_ID, createNotification(0, true),
+                            android.content.pm.ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC);
+                } else {
+                    startForeground(NOTIFICATION_ID, createNotification(0, true));
+                }
                 downloadFile(url);
             }
         }
@@ -66,8 +71,10 @@ public class DownloadService extends Service {
         executorService.execute(() -> {
             File outputFile = new File(getExternalFilesDir(null), "update.apk");
             long downloadedBytes = 0;
+            // Force delete to avoid corruption issues for now - disabling resume
+            // optimization
             if (outputFile.exists()) {
-                downloadedBytes = outputFile.length();
+                outputFile.delete();
             }
 
             Request.Builder requestBuilder = new Request.Builder().url(url);
@@ -77,6 +84,12 @@ public class DownloadService extends Service {
 
             try {
                 Response response = client.newCall(requestBuilder.build()).execute();
+                // LOGGING FOR DEBUGGING
+                android.util.Log.d("DownloadService", "Response URL: " + response.request().url());
+                android.util.Log.d("DownloadService", "Content-Type: " + response.header("Content-Type"));
+                android.util.Log.d("DownloadService", "Content-Length: " + response.header("Content-Length"));
+                android.util.Log.d("DownloadService", "Response Code: " + response.code());
+
                 if (!response.isSuccessful()) {
                     // If Range not satisfiable (e.g. file changed or completed), retry from scratch
                     if (response.code() == 416) {
@@ -88,19 +101,24 @@ public class DownloadService extends Service {
                         throw new IOException("Unexpected code " + response);
                 }
 
+                // Check if server actually honored the range request
+                boolean isResume = response.code() == 206;
+                if (!isResume) {
+                    // Server returned 200 OK (full file), so we must overwrite, not append
+                    downloadedBytes = 0;
+                }
+
                 long totalBytes = response.body().contentLength();
                 if (totalBytes == -1)
                     totalBytes = 0;
-                // If we are resuming, the total is the remaining bytes + already downloaded
-                // If server returns 206, content-length is the chunk size.
-                // We need to handle total size carefully.
-                // For simplicity, if constructing from scratch, total is content-length.
-                // If resuming, total to show in UI is chunk + existing.
 
+                // If isResume (206), content-length is just the chunk. Total = chunk +
+                // existing.
+                // If not isResume (200), content-length is full file. Total = full file.
                 long totalFileSize = totalBytes + downloadedBytes;
 
                 InputStream is = response.body().byteStream();
-                FileOutputStream fos = new FileOutputStream(outputFile, true); // Append mode
+                FileOutputStream fos = new FileOutputStream(outputFile, isResume); // Append only if HTTP 206
 
                 byte[] buffer = new byte[8192];
                 int read;
@@ -115,8 +133,11 @@ public class DownloadService extends Service {
 
                     long currentTime = System.currentTimeMillis();
                     if (currentTime - lastUpdateTime > 500 || currentBytes == totalFileSize) {
-                        int progress = (int) ((currentBytes * 100) / totalFileSize);
-                        updateNotification(progress);
+                        int progress = 0;
+                        if (totalFileSize > 0) {
+                            progress = (int) ((currentBytes * 100) / totalFileSize);
+                        }
+                        updateNotification(progress, totalFileSize <= 0);
                         broadcastProgress(progress);
                         lastUpdateTime = currentTime;
                     }
@@ -159,20 +180,20 @@ public class DownloadService extends Service {
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent);
     }
 
-    private Notification createNotification(int progress) {
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
-                .setContentTitle("Downloading Update")
-                .setContentText(progress + "%")
-                .setSmallIcon(R.drawable.ic_settings) // Placeholder icon
-                .setPriority(NotificationCompat.PRIORITY_LOW)
-                .setProgress(100, progress, false)
-                .setOnlyAlertOnce(true)
-                .build();
+    private void updateNotification(int progress, boolean indeterminate) {
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        manager.notify(NOTIFICATION_ID, createNotification(progress, indeterminate));
     }
 
-    private void updateNotification(int progress) {
-        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-        manager.notify(NOTIFICATION_ID, createNotification(progress));
+    private Notification createNotification(int progress, boolean indeterminate) {
+        return new NotificationCompat.Builder(this, CHANNEL_ID)
+                .setContentTitle("Downloading Update")
+                .setContentText(indeterminate ? "Downloading..." : progress + "%")
+                .setSmallIcon(R.drawable.ic_settings) // Placeholder icon
+                .setPriority(NotificationCompat.PRIORITY_LOW)
+                .setProgress(100, progress, indeterminate)
+                .setOnlyAlertOnce(true)
+                .build();
     }
 
     private void createNotificationChannel() {
