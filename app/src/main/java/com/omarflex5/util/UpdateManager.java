@@ -24,7 +24,7 @@ import okhttp3.Response;
 public class UpdateManager {
 
     private static UpdateManager instance;
-    private static final String UPDATE_JSON_URL = "https://your-server.com/update.json"; // TODO: Replace with actual
+    private static final String UPDATE_JSON_URL = "https://raw.githubusercontent.com/alyabroudy1/omerFlex5/refs/heads/main/app/src/main/java/com/omarflex5/data/update.json"; // TODO: Replace with actual
                                                                                          // URL
     private OkHttpClient client;
     private Gson gson;
