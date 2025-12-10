@@ -76,4 +76,7 @@ dependencies {
 
     // Local Proxy Server
     implementation("org.nanohttpd:nanohttpd:2.3.1")
+
+    // Local Broadcast Manager
+    implementation("androidx.localbroadcastmanager:localbroadcastmanager:1.1.0")
 }

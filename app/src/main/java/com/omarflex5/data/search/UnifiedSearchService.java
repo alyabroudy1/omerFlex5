@@ -357,6 +357,7 @@ public class UnifiedSearchService {
                 result.serverId = server.getId();
                 result.serverName = server.getName();
                 result.serverLabel = server.getLabel();
+                result.categories = item.getCategories();
                 results.add(result);
             }
 
@@ -479,6 +480,7 @@ public class UnifiedSearchService {
         public long serverId;
         public String serverName;
         public String serverLabel;
+        public List<String> categories;
         public List<SourceInfo> alternativeSources;
     }
 

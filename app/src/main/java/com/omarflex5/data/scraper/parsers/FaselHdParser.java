@@ -49,6 +49,17 @@ public class FaselHdParser extends BaseHtmlParser {
                             .setPageUrl(href)
                             .setPosterUrl(img)
                             .setType(type);
+
+                    // Extract categories (common in FaselHD: <div
+                    // class="cat"><a...>Action</a>...</div>)
+                    Elements catLinks = post.select(".cat a, .genres a");
+                    for (Element cat : catLinks) {
+                        String catName = cat.text().trim();
+                        if (!catName.isEmpty()) {
+                            item.addCategory(catName);
+                        }
+                    }
+
                     items.add(item);
                 }
             }

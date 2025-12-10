@@ -4,6 +4,7 @@ import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -131,7 +132,36 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
             // Categories
             if (categoriesLayout != null) {
                 categoriesLayout.removeAllViews();
-                categoriesLayout.setVisibility(View.GONE);
+
+                if (result.categories != null && !result.categories.isEmpty()) {
+                    categoriesLayout.setVisibility(View.VISIBLE);
+                    int count = 0;
+                    for (String cat : result.categories) {
+                        if (count >= 2)
+                            break; // Limit to 2
+
+                        TextView badge = new TextView(itemView.getContext());
+                        badge.setText(cat);
+                        badge.setTextSize(8); // 8sp
+                        badge.setTextColor(0xFFFFFFFF); // White
+                        badge.setTypeface(null, android.graphics.Typeface.BOLD);
+                        badge.setBackgroundResource(R.drawable.badge_background);
+                        badge.setPadding(8, 2, 8, 2); // px
+                        badge.setMaxLines(1);
+                        badge.setEllipsize(android.text.TextUtils.TruncateAt.END);
+
+                        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
+                                ViewGroup.LayoutParams.WRAP_CONTENT,
+                                ViewGroup.LayoutParams.WRAP_CONTENT);
+                        params.setMargins(0, 0, 0, 4); // Bottom margin
+                        badge.setLayoutParams(params);
+
+                        categoriesLayout.addView(badge);
+                        count++;
+                    }
+                } else {
+                    categoriesLayout.setVisibility(View.GONE);
+                }
             }
 
             // Server badge

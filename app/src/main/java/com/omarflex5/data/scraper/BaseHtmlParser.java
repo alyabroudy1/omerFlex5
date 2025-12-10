@@ -182,12 +182,25 @@ public abstract class BaseHtmlParser {
         private Integer episodeNumber;
         private String quality;
         private String matchKey;
+        private List<String> categories = new ArrayList<>();
 
         private List<ParsedItem> subItems = new ArrayList<>();
 
         // Builder pattern
         public ParsedItem setTitle(String title) {
             this.title = title;
+            return this;
+        }
+
+        public ParsedItem setCategories(List<String> categories) {
+            this.categories = categories != null ? categories : new ArrayList<>();
+            return this;
+        }
+
+        public ParsedItem addCategory(String category) {
+            if (this.categories == null)
+                this.categories = new ArrayList<>();
+            this.categories.add(category);
             return this;
         }
 
@@ -256,6 +269,10 @@ public abstract class BaseHtmlParser {
         // Getters
         public String getTitle() {
             return title;
+        }
+
+        public List<String> getCategories() {
+            return categories;
         }
 
         public String getOriginalTitle() {

@@ -124,6 +124,29 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
 
         // TODO: TEST MODE - Auto Search FaselHD
 
+        checkForUpdates();
+    }
+
+    private void checkForUpdates() {
+        com.omarflex5.util.UpdateManager.getInstance().checkForUpdate(this,
+                new com.omarflex5.util.UpdateManager.UpdateCheckCallback() {
+                    @Override
+                    public void onUpdateAvailable(com.omarflex5.data.model.UpdateInfo updateInfo) {
+                        com.omarflex5.ui.dialog.UpdateDialog dialog = com.omarflex5.ui.dialog.UpdateDialog
+                                .newInstance(updateInfo);
+                        dialog.show(getSupportFragmentManager(), "UpdateDialog");
+                    }
+
+                    @Override
+                    public void onNoUpdate() {
+                        // Do nothing
+                    }
+
+                    @Override
+                    public void onError(String error) {
+                        Log.e(TAG, "Update check failed: " + error);
+                    }
+                });
     }
 
     private void initViews() {
