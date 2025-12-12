@@ -371,6 +371,9 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
             // Tell ViewModel to load movies for this category
             viewModel.selectCategory(category);
 
+            // Explicitly reset scroll when switching categories
+            recyclerMovies.scrollToPosition(0);
+
             // Auto-select last focused movie for this category (done in observer after
             // movies load)
         });
@@ -393,6 +396,28 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
             }
         });
         recyclerMovies.setAdapter(movieCardAdapter);
+
+        // Pagination Scroll Listener
+        recyclerMovies.addOnScrollListener(new RecyclerView.OnScrollListener() {
+            @Override
+            public void onScrolled(@androidx.annotation.NonNull RecyclerView recyclerView, int dx, int dy) {
+                super.onScrolled(recyclerView, dx, dy);
+                if (dx > 0) { // Scrolling right
+                    LinearLayoutManager layoutManager = (LinearLayoutManager) recyclerView.getLayoutManager();
+                    if (layoutManager != null) {
+                        int visibleItemCount = layoutManager.getChildCount();
+                        int totalItemCount = layoutManager.getItemCount();
+                        int firstVisibleItemPosition = layoutManager.findFirstVisibleItemPosition();
+
+                        // Load more when reaching near the end (e.g., 5 items left)
+                        if ((visibleItemCount + firstVisibleItemPosition) >= totalItemCount - 5
+                                && firstVisibleItemPosition >= 0) {
+                            viewModel.loadNextPage();
+                        }
+                    }
+                }
+            }
+        });
     }
 
     /**
@@ -611,7 +636,7 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
             movieCardAdapter.setMovies(movies);
 
             if (!movies.isEmpty()) {
-                recyclerMovies.scrollToPosition(0);
+                // Remove unconditional scrollToPosition(0) which breaks pagination
 
                 // Restore selected movie if it exists in this category
                 if (lastSelectedMovie != null) {
@@ -621,6 +646,7 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
                             final int position = i;
                             recyclerMovies.post(() -> movieCardAdapter.selectMovie(position));
                             break;
+                            // Do NOT break focus here, let the adapter handle diff updates
                         }
                     }
                 }

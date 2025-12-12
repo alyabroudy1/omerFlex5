@@ -9,6 +9,95 @@ public class TmdbMapper {
 
     private static final String IMAGE_BASE_URL = "https://image.tmdb.org/t/p/w500";
 
+    // TMDB Genre ID to Name mapping
+    private static final Map<Integer, String> GENRE_MAP = new java.util.HashMap<Integer, String>() {
+        {
+            // Movie genres
+            put(28, "أكشن");
+            put(12, "مغامرة");
+            put(16, "رسوم متحركة");
+            put(35, "كوميديا");
+            put(80, "جريمة");
+            put(99, "وثائقي");
+            put(18, "دراما");
+            put(10751, "عائلي");
+            put(14, "فانتازيا");
+            put(36, "تاريخي");
+            put(27, "رعب");
+            put(10402, "موسيقى");
+            put(9648, "غموض");
+            put(10749, "رومانسي");
+            put(878, "خيال علمي");
+            put(10770, "تلفاز");
+            put(53, "إثارة");
+            put(10752, "حرب");
+            put(37, "غربي");
+            // TV genres
+            put(10759, "أكشن ومغامرة");
+            put(10762, "أطفال");
+            put(10763, "أخبار");
+            put(10764, "واقعي");
+            put(10765, "خيال علمي وفانتازيا");
+            put(10766, "مسلسل درامي");
+            put(10767, "حديث");
+            put(10768, "حرب وسياسة");
+        }
+    };
+
+    public static MediaEntity mapFromPojo(com.omarflex5.data.model.tmdb.TmdbMovie movie, MediaType type) {
+        if (movie == null)
+            return null;
+
+        MediaEntity entity = new MediaEntity();
+        entity.setTmdbId(movie.getId());
+        entity.setType(type);
+        entity.setTitle(movie.getTitle());
+        entity.setOriginalTitle(movie.getOriginalTitle());
+        entity.setDescription(movie.getOverview());
+
+        if (movie.getPosterPath() != null) {
+            entity.setPosterUrl(IMAGE_BASE_URL + movie.getPosterPath());
+        }
+        if (movie.getBackdropPath() != null) {
+            entity.setBackdropUrl(IMAGE_BASE_URL + movie.getBackdropPath());
+        }
+
+        entity.setRating((float) movie.getVoteAverage());
+
+        // Year
+        String date = (type == MediaType.SERIES) ? movie.getFirstAirDate() : movie.getReleaseDate();
+        entity.setReleaseDate(date);
+        if (date != null && date.length() >= 4) {
+            try {
+                entity.setYear(Integer.parseInt(date.substring(0, 4)));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+
+        // Map genre IDs to genre names
+        if (movie.getGenreIds() != null && !movie.getGenreIds().isEmpty()) {
+            org.json.JSONArray jsonArray = new org.json.JSONArray();
+            for (Integer genreId : movie.getGenreIds()) {
+                String genreName = GENRE_MAP.get(genreId);
+                if (genreName != null) {
+                    jsonArray.put(genreName);
+                }
+            }
+            if (jsonArray.length() > 0) {
+                entity.setCategoriesJson(jsonArray.toString());
+            }
+        }
+
+        // Store original language
+        entity.setOriginalLanguage(movie.getOriginalLanguage());
+
+        long now = System.currentTimeMillis();
+        entity.setCreatedAt(now);
+        entity.setUpdatedAt(now);
+
+        return entity;
+    }
+
     public static MediaEntity mapToEntity(Map<String, Object> data, MediaType type) {
         if (data == null)
             return null;

@@ -61,6 +61,24 @@ public class MediaRepository {
         return mediaDao.getAllMediaWithStateLiveData();
     }
 
+    public LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getPagedMedia(
+            androidx.lifecycle.MutableLiveData<Integer> limit) {
+        return androidx.lifecycle.Transformations.switchMap(limit, mediaDao::getAllMediaWithStateLiveData);
+    }
+
+    // Get media filtered by genre with pagination
+    public LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getMediaByGenre(
+            String genre, androidx.lifecycle.MutableLiveData<Integer> limit) {
+        return androidx.lifecycle.Transformations.switchMap(limit, l -> mediaDao.getMediaByGenreLiveData(genre, l));
+    }
+
+    // Get media filtered by language with pagination
+    public LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getMediaByLanguage(
+            String language, androidx.lifecycle.MutableLiveData<Integer> limit) {
+        return androidx.lifecycle.Transformations.switchMap(limit,
+                l -> mediaDao.getMediaByLanguageLiveData(language, l));
+    }
+
     public LiveData<UserMediaStateEntity> getUserState(long mediaId) {
         return userMediaStateDao.getStateForMedia(mediaId);
     }

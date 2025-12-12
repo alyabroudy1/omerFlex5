@@ -37,6 +37,7 @@ public class MediaEntity {
     private Float rating;
     private Integer year;
     private String releaseDate;
+    private String originalLanguage; // ISO 639-1 code (e.g., "ar" for Arabic, "en" for English)
 
     // Categories as JSON array: ["Action", "Drama"]
     private String categoriesJson;
@@ -151,6 +152,14 @@ public class MediaEntity {
 
     public void setReleaseDate(String releaseDate) {
         this.releaseDate = releaseDate;
+    }
+
+    public String getOriginalLanguage() {
+        return originalLanguage;
+    }
+
+    public void setOriginalLanguage(String originalLanguage) {
+        this.originalLanguage = originalLanguage;
     }
 
     public String getCategoriesJson() {

@@ -115,4 +115,31 @@ public class FirestoreSyncManager {
         }
         return 0;
     }
+
+    public String getEarliestReleaseDate() throws ExecutionException, InterruptedException {
+        Query query = mediaCollection
+                .whereNotEqualTo("releaseDate", null) // Filter out nulls
+                .orderBy("releaseDate", Query.Direction.ASCENDING)
+                .limit(1);
+
+        QuerySnapshot snapshot = Tasks.await(query.get());
+        if (!snapshot.isEmpty()) {
+            MediaEntity item = snapshot.getDocuments().get(0).toObject(MediaEntity.class);
+            return item != null ? item.getReleaseDate() : null;
+        }
+        return null;
+    }
+
+    public String getLatestReleaseDate() throws ExecutionException, InterruptedException {
+        Query query = mediaCollection
+                .orderBy("releaseDate", Query.Direction.DESCENDING)
+                .limit(1);
+
+        QuerySnapshot snapshot = Tasks.await(query.get());
+        if (!snapshot.isEmpty()) {
+            MediaEntity item = snapshot.getDocuments().get(0).toObject(MediaEntity.class);
+            return item != null ? item.getReleaseDate() : null;
+        }
+        return null;
+    }
 }

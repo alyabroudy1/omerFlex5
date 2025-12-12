@@ -23,6 +23,13 @@ public interface TmdbApi {
         @GET("discover/movie")
         Call<TmdbMovieResponse> getMoviesByGenre(@Query("with_genres") String genreId);
 
+        @GET("discover/movie")
+        Call<TmdbMovieResponse> discoverMoviesByDateRange(
+                        @Query("primary_release_date.gte") String minDate,
+                        @Query("primary_release_date.lte") String maxDate,
+                        @Query("sort_by") String sortBy,
+                        @Query("vote_count.gte") int minVotes);
+
         @GET("genre/movie/list")
         Call<TmdbGenreResponse> getGenres();
 
@@ -34,6 +41,13 @@ public interface TmdbApi {
         // ========== TV Series ==========
         @GET("trending/tv/week")
         Call<TmdbMovieResponse> getTrendingTVSeries();
+
+        @GET("discover/tv")
+        Call<TmdbMovieResponse> discoverTvByDateRange(
+                        @Query("first_air_date.gte") String minDate,
+                        @Query("first_air_date.lte") String maxDate,
+                        @Query("sort_by") String sortBy,
+                        @Query("vote_count.gte") int minVotes);
 
         @GET("tv/popular")
         Call<TmdbMovieResponse> getPopularTVSeries();

@@ -65,6 +65,9 @@ public class TmdbMovie {
     @SerializedName("genre_ids")
     private List<Integer> genreIds;
 
+    @SerializedName("original_language")
+    private String originalLanguage;
+
     public String getReleaseDate() {
         return releaseDate;
     }
@@ -79,5 +82,9 @@ public class TmdbMovie {
 
     public double getVoteAverage() {
         return voteAverage;
+    }
+
+    public String getOriginalLanguage() {
+        return originalLanguage;
     }
 }

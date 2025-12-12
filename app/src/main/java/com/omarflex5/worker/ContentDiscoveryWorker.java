@@ -43,73 +43,91 @@ public class ContentDiscoveryWorker extends Worker {
             Log.d(TAG, "doWork: Starting Daily Feeder...");
             FirestoreSyncManager firestoreManager = new FirestoreSyncManager();
 
-            // 1. Find where to start
-            Integer latestId = firestoreManager.getLatestTmdbId();
-            if (latestId == null || latestId == 0) {
-                // Fallback: Check local DB max ID or default to a safe known ID
-                latestId = 550; // Example: Fight Club
-            }
-
-            Log.d(TAG, "doWork: Latest Global TMDb ID is " + latestId + ". Fetching new content...");
-
-            List<MediaEntity> newContent = new java.util.ArrayList<>();
-            // 2. Fetch next batch from TMDB (Fetch 20 items to respect rate limits)
-            // We need a Retrofit instance here. Assuming NetworkUtils or similar provides
-            // it.
-            // For now, illustrating the logic loop:
-
             TmdbApi api = com.omarflex5.data.source.remote.BaseServer.getClient().create(TmdbApi.class);
-
             com.omarflex5.data.local.dao.MediaDao mediaDao = AppDatabase.getInstance(getApplicationContext())
                     .mediaDao();
 
-            // Loop for batch of 100
-            for (int i = 1; i <= 100; i++) {
-                int targetId = latestId + i;
-                try {
-                    Log.d(TAG, "Fetching TMDB ID: " + targetId);
+            // STRATEGY: Bi-Directional Frontier Expansion (Movies & TV)
+            // 1. Get Global Boundaries
+            String minDate = firestoreManager.getEarliestReleaseDate();
+            String maxDate = firestoreManager.getLatestReleaseDate();
 
-                    // Try fetch as Movie
-                    retrofit2.Response<java.util.Map<String, Object>> response = api.getMovieDetails(targetId)
-                            .execute();
-                    if (response.isSuccessful() && response.body() != null) {
-                        MediaEntity entity = com.omarflex5.util.TmdbMapper.mapToEntity(response.body(),
-                                com.omarflex5.data.local.entity.MediaType.FILM);
-                        if (entity != null) {
-                            newContent.add(entity);
-                            // INCREMENTAL INSERT: Save to Local DB immediately so UI updates live!
-                            mediaDao.insert(entity);
-                            Log.d(TAG, "Found & Saved Movie: " + entity.getTitle());
-                        }
-                    } else if (response.code() == 404) {
-                        Log.d(TAG, "ID " + targetId + " not found (404).");
-                    } else {
-                        Log.w(TAG, "Failed to fetch " + targetId + ": " + response.code());
-                    }
+            // Defaults if DB is empty
+            if (minDate == null)
+                minDate = "2023-01-01";
+            if (maxDate == null)
+                maxDate = "2023-12-01";
 
-                } catch (Exception e) {
-                    Log.e(TAG, "Error processing ID " + targetId, e);
-                }
-            }
+            Log.d(TAG, "Global Range: " + minDate + " to " + maxDate);
+
+            List<MediaEntity> newContent = new java.util.ArrayList<>();
+
+            // 2. Fetch 4 Batches (30 Future, 30 Past for Movies & TV)
+
+            // --- Movies Future (30) ---
+            fetchAndSave(api.discoverMoviesByDateRange(maxDate, null, "primary_release_date.asc", 50),
+                    mediaDao, newContent, com.omarflex5.data.local.entity.MediaType.FILM, "Movie (Future)");
+
+            // --- Movies Past (30) ---
+            fetchAndSave(api.discoverMoviesByDateRange(null, minDate, "primary_release_date.desc", 100),
+                    mediaDao, newContent, com.omarflex5.data.local.entity.MediaType.FILM, "Movie (Past)");
+
+            // --- TV Future (30) ---
+            fetchAndSave(api.discoverTvByDateRange(maxDate, null, "first_air_date.asc", 50),
+                    mediaDao, newContent, com.omarflex5.data.local.entity.MediaType.SERIES, "TV (Future)");
+
+            // --- TV Past (30) ---
+            fetchAndSave(api.discoverTvByDateRange(null, minDate, "first_air_date.desc", 50),
+                    mediaDao, newContent, com.omarflex5.data.local.entity.MediaType.SERIES, "TV (Past)");
 
             if (newContent.isEmpty()) {
                 Log.d(TAG, "doWork: No new content found in this batch.");
                 return Result.success();
             }
 
-            // 3. Push to Firestore (Crowdsource) - Done in batch at the end (less urgency)
+            // 3. Push to Firestore (Crowdsource)
             try {
                 firestoreManager.pushBatch(newContent);
             } catch (Exception e) {
                 Log.e(TAG, "doWork: Failed to push to Firestore (skipping)", e);
             }
 
-            Log.d(TAG, "doWork: Daily Feeder Completed. Added " + newContent.size() + " items.");
+            Log.d(TAG, "doWork: Expansion Completed. Added " + newContent.size() + " items.");
             return Result.success();
 
         } catch (Exception e) {
             Log.e(TAG, "doWork: Feeder failed", e);
             return Result.retry();
+        }
+    }
+
+    private void fetchAndSave(retrofit2.Call<com.omarflex5.data.model.tmdb.TmdbMovieResponse> call,
+            com.omarflex5.data.local.dao.MediaDao mediaDao,
+            List<MediaEntity> newContent,
+            com.omarflex5.data.local.entity.MediaType type,
+            String label) {
+        try {
+            retrofit2.Response<com.omarflex5.data.model.tmdb.TmdbMovieResponse> response = call.execute();
+            if (response.isSuccessful() && response.body() != null) {
+                List<com.omarflex5.data.model.tmdb.TmdbMovie> results = response.body().getResults();
+                if (results != null) {
+                    int count = 0;
+                    for (com.omarflex5.data.model.tmdb.TmdbMovie item : results) {
+                        if (count >= 30)
+                            break; // Limit to 30 per batch
+
+                        MediaEntity entity = com.omarflex5.util.TmdbMapper.mapFromPojo(item, type);
+                        if (entity != null) {
+                            mediaDao.insert(entity);
+                            newContent.add(entity);
+                            count++;
+                        }
+                    }
+                    Log.d(TAG, "Saved " + count + " " + label + " items.");
+                }
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error fetching " + label, e);
         }
     }
 }

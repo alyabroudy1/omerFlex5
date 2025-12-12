@@ -32,16 +32,74 @@ public class MovieCardAdapter extends RecyclerView.Adapter<MovieCardAdapter.Movi
     private OnMovieListener listener;
     private int selectedPosition = -1; // -1 means no selection
 
+    public MovieCardAdapter() {
+        setHasStableIds(true);
+        setStateRestorationPolicy(StateRestorationPolicy.PREVENT_WHEN_EMPTY);
+    }
+
     public interface OnMovieListener {
         void onMovieSelected(Movie movie);
 
         void onMovieClicked(Movie movie);
     }
 
-    public void setMovies(List<Movie> movies) {
-        this.movies = movies;
-        selectedPosition = -1; // Reset selection when data changes
-        notifyDataSetChanged();
+    @Override
+    public long getItemId(int position) {
+        // Use hash of ID, fallback to position if ID is invalid
+        try {
+            return Long.parseLong(movies.get(position).getId());
+        } catch (Exception e) {
+            return movies.get(position).getId().hashCode();
+        }
+    }
+
+    public void setMovies(List<Movie> newMovies) {
+        if (movies == null) {
+            movies = newMovies;
+            notifyItemRangeInserted(0, newMovies.size());
+            return;
+        }
+
+        androidx.recyclerview.widget.DiffUtil.DiffResult result = androidx.recyclerview.widget.DiffUtil
+                .calculateDiff(new androidx.recyclerview.widget.DiffUtil.Callback() {
+                    @Override
+                    public int getOldListSize() {
+                        return movies.size();
+                    }
+
+                    @Override
+                    public int getNewListSize() {
+                        return newMovies.size();
+                    }
+
+                    @Override
+                    public boolean areItemsTheSame(int oldItemPosition, int newItemPosition) {
+                        return movies.get(oldItemPosition).getId().equals(newMovies.get(newItemPosition).getId());
+                    }
+
+                    @Override
+                    public boolean areContentsTheSame(int oldItemPosition, int newItemPosition) {
+                        Movie oldMovie = movies.get(oldItemPosition);
+                        Movie newMovie = newMovies.get(newItemPosition);
+
+                        // Null-safe comparison
+                        boolean titleSame = java.util.Objects.equals(oldMovie.getTitle(), newMovie.getTitle());
+                        boolean posterSame = java.util.Objects.equals(oldMovie.getPosterUrl(), newMovie.getPosterUrl());
+
+                        return titleSame && posterSame;
+                    }
+                });
+
+        // Update list reference
+        this.movies = newMovies;
+
+        // Dispatch updates - this preserves focus!
+        result.dispatchUpdatesTo(this);
+
+        // Only reset selection if the selected movie is no longer present or valid
+        if (selectedPosition >= movies.size()) {
+            selectedPosition = -1;
+        }
     }
 
     public void setListener(OnMovieListener listener) {

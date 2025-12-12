@@ -45,7 +45,11 @@ public interface MediaDao {
     List<com.omarflex5.data.local.model.MediaWithUserState> getAllMediaWithState();
 
     @androidx.room.Transaction
-    @Query("SELECT * FROM media ORDER BY updatedAt DESC")
+    @Query("SELECT * FROM media ORDER BY CASE WHEN releaseDate IS NULL THEN 1 ELSE 0 END, releaseDate DESC, id DESC LIMIT :limit")
+    LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getAllMediaWithStateLiveData(int limit);
+
+    @androidx.room.Transaction
+    @Query("SELECT * FROM media ORDER BY CASE WHEN releaseDate IS NULL THEN 1 ELSE 0 END, releaseDate DESC, id DESC")
     LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getAllMediaWithStateLiveData();
 
     @Query("SELECT MAX(tmdbId) FROM media")
@@ -71,4 +75,15 @@ public interface MediaDao {
 
     @Query("UPDATE media SET isEnriched = 1, enrichedAt = :timestamp WHERE id = :id")
     void markEnriched(long id, long timestamp);
+
+    // Genre-based filtering for categories
+    @androidx.room.Transaction
+    @Query("SELECT * FROM media WHERE categoriesJson LIKE '%' || :genre || '%' ORDER BY CASE WHEN releaseDate IS NULL THEN 1 ELSE 0 END, releaseDate DESC, id DESC LIMIT :limit")
+    LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getMediaByGenreLiveData(String genre, int limit);
+
+    // Language-based filtering for Arabic category
+    @androidx.room.Transaction
+    @Query("SELECT * FROM media WHERE originalLanguage = :language ORDER BY CASE WHEN releaseDate IS NULL THEN 1 ELSE 0 END, releaseDate DESC, id DESC LIMIT :limit")
+    LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getMediaByLanguageLiveData(String language,
+            int limit);
 }
