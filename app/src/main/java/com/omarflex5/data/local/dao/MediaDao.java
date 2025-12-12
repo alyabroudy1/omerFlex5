@@ -76,6 +76,9 @@ public interface MediaDao {
     @Query("UPDATE media SET isEnriched = 1, enrichedAt = :timestamp WHERE id = :id")
     void markEnriched(long id, long timestamp);
 
+    @Query("UPDATE media SET trailerUrl = :trailerUrl WHERE id = :id")
+    void updateTrailerUrl(long id, String trailerUrl);
+
     // Genre-based filtering for categories
     @androidx.room.Transaction
     @Query("SELECT * FROM media WHERE categoriesJson LIKE '%' || :genre || '%' ORDER BY CASE WHEN releaseDate IS NULL THEN 1 ELSE 0 END, releaseDate DESC, id DESC LIMIT :limit")

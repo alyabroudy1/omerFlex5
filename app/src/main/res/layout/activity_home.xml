@@ -121,7 +121,7 @@
     </androidx.constraintlayout.widget.ConstraintLayout>
 
     <!-- LAYER 2: Categories Row (Weight 1 = 10%) - Can go UP, DOWN, LEFT, RIGHT -->
-    <androidx.recyclerview.widget.RecyclerView
+    <com.omarflex5.ui.view.NavigableRecyclerView
         android:id="@+id/recycler_categories"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
@@ -139,7 +139,7 @@
         tools:listitem="@layout/item_category" />
 
     <!-- LAYER 3: Movies Row (Weight 3 = 30%) - Can only go UP, LEFT, RIGHT (not DOWN) -->
-    <androidx.recyclerview.widget.RecyclerView
+    <com.omarflex5.ui.view.NavigableRecyclerView
         android:id="@+id/recycler_movies"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"

@@ -142,4 +142,20 @@ public class FirestoreSyncManager {
         }
         return null;
     }
+
+    /**
+     * Updates the trailer URL for a specific media item in the global database.
+     * Use "tmdb_" + tmdbId as the document key.
+     */
+    public void updateTrailer(int tmdbId, String trailerUrl) {
+        if (tmdbId <= 0 || trailerUrl == null)
+            return;
+
+        String docId = "tmdb_" + tmdbId;
+        // Fire and forget or simple async update
+        mediaCollection.document(docId)
+                .update("trailerUrl", trailerUrl)
+                .addOnSuccessListener(aVoid -> Log.d(TAG, "updateTrailer: Successfully updated trailer for " + tmdbId))
+                .addOnFailureListener(e -> Log.e(TAG, "updateTrailer: Failed to update trailer for " + tmdbId, e));
+    }
 }

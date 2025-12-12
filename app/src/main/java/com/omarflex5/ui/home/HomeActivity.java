@@ -44,8 +44,8 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
     private ImageView heroBackground;
     private TextView heroTitle;
     private TextView heroDescription;
-    private RecyclerView recyclerCategories;
-    private RecyclerView recyclerMovies;
+    private com.omarflex5.ui.view.NavigableRecyclerView recyclerCategories;
+    private com.omarflex5.ui.view.NavigableRecyclerView recyclerMovies;
     private CategoryAdapter categoryAdapter;
     private MovieCardAdapter movieCardAdapter;
 
@@ -75,14 +75,23 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
     private TextView errorMessage;
     private Button btnRetry;
 
-    // Focus memory for each layer (to restore focus when navigating back)
-    private View lastFocusedHero = null;
-    private View lastFocusedCategory = null;
-    private View lastFocusedMovie = null;
+    // Navigation system - delegates for each layer
+    private com.omarflex5.ui.navigation.FocusStateManager focusStateManager;
+    private com.omarflex5.ui.navigation.HeroNavigationDelegate heroDelegate;
+    private com.omarflex5.ui.navigation.RecyclerNavigationDelegate categoryDelegate;
+    private com.omarflex5.ui.navigation.RecyclerNavigationDelegate movieDelegate;
 
-    // Track last focused movie position per category
-    private java.util.Map<String, Integer> categoryToMoviePosition = new java.util.HashMap<>();
+    // Track current category for data loading
     private String currentCategoryId = null;
+
+    // Navigation flag to prevent pagination during active navigation
+    private boolean isNavigating = false;
+
+    private final android.os.Handler navigationHandler = new android.os.Handler();
+
+    // Pagination state tracking
+    private boolean isLoadingMore = false;
+    private int previousMovieCount = 0;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -118,7 +127,7 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
         initViews();
         initViewModel();
         setupAdapters();
-        setupBackPressCallback();
+        setupNavigation();
         setupBackPressCallback();
         observeViewModel();
 
@@ -312,17 +321,9 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
             btnFullscreen.setVisibility(View.VISIBLE);
             btnMute.setVisibility(View.VISIBLE);
 
-            // Restore focus to categories row
+            // Restore focus to categories row using navigation delegate
             recyclerCategories.postDelayed(() -> {
-                if (recyclerCategories.getChildCount() > 0) {
-                    View firstCategory = lastFocusedCategory != null
-                            && lastFocusedCategory.getParent() == recyclerCategories
-                                    ? lastFocusedCategory
-                                    : recyclerCategories.getChildAt(0);
-                    if (firstCategory != null) {
-                        firstCategory.requestFocus();
-                    }
-                }
+                categoryDelegate.requestFocus();
             }, 100);
         }
     }
@@ -357,13 +358,8 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
 
         categoryAdapter = new CategoryAdapter();
         categoryAdapter.setListener(category -> {
-            // Save current movie position for the old category before switching
-            if (currentCategoryId != null && lastFocusedMovie != null) {
-                int moviePosition = recyclerMovies.getChildLayoutPosition(lastFocusedMovie);
-                if (moviePosition != RecyclerView.NO_POSITION) {
-                    categoryToMoviePosition.put(currentCategoryId, moviePosition);
-                }
-            }
+            // Save current focus state before switching
+            focusStateManager.saveAllStates();
 
             // Update current category
             currentCategoryId = category.getId();
@@ -371,8 +367,8 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
             // Tell ViewModel to load movies for this category
             viewModel.selectCategory(category);
 
-            // Explicitly reset scroll when switching categories
-            recyclerMovies.scrollToPosition(0);
+            // Reset movie scroll to top for new category
+            movieDelegate.resetToPosition(0);
 
             // Auto-select last focused movie for this category (done in observer after
             // movies load)
@@ -397,27 +393,129 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
         });
         recyclerMovies.setAdapter(movieCardAdapter);
 
-        // Pagination Scroll Listener
-        recyclerMovies.addOnScrollListener(new RecyclerView.OnScrollListener() {
-            @Override
-            public void onScrolled(@androidx.annotation.NonNull RecyclerView recyclerView, int dx, int dy) {
-                super.onScrolled(recyclerView, dx, dy);
-                if (dx > 0) { // Scrolling right
-                    LinearLayoutManager layoutManager = (LinearLayoutManager) recyclerView.getLayoutManager();
-                    if (layoutManager != null) {
-                        int visibleItemCount = layoutManager.getChildCount();
-                        int totalItemCount = layoutManager.getItemCount();
-                        int firstVisibleItemPosition = layoutManager.findFirstVisibleItemPosition();
+        // Automatic pagination removed - now using manual "Load More" button
+        // This prevents DiffUtil updates during navigation and eliminates focus jumping
+        movieCardAdapter.setLoadMoreListener(() -> {
+            if (!isNavigating) {
+                // Track state before loading
+                isLoadingMore = true;
+                // getItemCount includes the button, so subtract 1 if needed, or just rely on
+                // movies.size() from adapter if exposed
+                // But easier to use current list size from viewModel if possible, or just count
+                // from adapter.
+                // Adapter.getItemCount() = movies.size() + 1.
+                // So movies count = getItemCount() - 1 (if load more shown).
+                previousMovieCount = movieCardAdapter.getItemCount() > 0 ? movieCardAdapter.getItemCount() - 1 : 0;
 
-                        // Load more when reaching near the end (e.g., 5 items left)
-                        if ((visibleItemCount + firstVisibleItemPosition) >= totalItemCount - 5
-                                && firstVisibleItemPosition >= 0) {
-                            viewModel.loadNextPage();
-                        }
-                    }
-                }
+                viewModel.loadNextPage();
             }
         });
+
+        // Handle focus restoration after Load More
+        movieCardAdapter.setLoadMoreFocusCallback(position -> {
+            if (recyclerMovies != null) {
+                // Scroll to position first to ensure it's laid out
+                recyclerMovies.scrollToPosition(position);
+
+                // Then post a request to focus specifically on this item
+                recyclerMovies.post(() -> {
+                    RecyclerView.ViewHolder holder = recyclerMovies.findViewHolderForAdapterPosition(position);
+                    if (holder != null && holder.itemView != null) {
+                        holder.itemView.requestFocus();
+                    }
+                });
+            }
+        });
+    }
+
+    /**
+     * Setup declarative navigation system with layer delegates.
+     * Replaces manual keyCode handling with clean delegation pattern.
+     */
+    private void setupNavigation() {
+        focusStateManager = new com.omarflex5.ui.navigation.FocusStateManager();
+
+        // Hero layer - mute/fullscreen buttons
+        heroDelegate = new com.omarflex5.ui.navigation.HeroNavigationDelegate(btnMute, btnFullscreen);
+        heroDelegate.setOnNavigateDown(() -> {
+            categoryDelegate.requestFocus();
+            return true;
+        });
+        focusStateManager.registerLayer("hero", heroDelegate);
+
+        // Category layer - horizontal RecyclerView
+        categoryDelegate = new com.omarflex5.ui.navigation.RecyclerNavigationDelegate(recyclerCategories, true);
+        categoryDelegate.setOnNavigateUp(() -> {
+            heroDelegate.requestFocus();
+            return true;
+        });
+        categoryDelegate.setOnNavigateDown(() -> {
+            movieDelegate.requestFocus();
+            return true;
+        });
+        focusStateManager.registerLayer("categories", categoryDelegate);
+
+        // Movie layer - horizontal RecyclerView
+        movieDelegate = new com.omarflex5.ui.navigation.RecyclerNavigationDelegate(recyclerMovies, true);
+        movieDelegate.setOnNavigateUp(() -> {
+            categoryDelegate.requestFocus();
+            return true;
+        });
+        movieDelegate.setOnNavigateDown(() -> false); // Block - stay in movies
+        focusStateManager.registerLayer("movies", movieDelegate);
+
+        // Install key listeners on all focusable views
+        installNavigationKeyListeners();
+    }
+
+    /**
+     * Install OnKeyListener on all focusable views to intercept D-pad events.
+     */
+    private void installNavigationKeyListeners() {
+        android.view.View.OnKeyListener navigationKeyListener = (v, keyCode, event) -> {
+            if (event.getAction() != android.view.KeyEvent.ACTION_DOWN) {
+                return false;
+            }
+
+            // Determine which delegate to use based on focused view
+            com.omarflex5.ui.navigation.NavigationDelegate currentDelegate = getCurrentNavigationDelegate(v);
+            if (currentDelegate == null) {
+                return false;
+            }
+
+            // Delegate to appropriate handler
+            switch (keyCode) {
+                case android.view.KeyEvent.KEYCODE_DPAD_UP:
+                    return currentDelegate.onNavigateUp();
+                case android.view.KeyEvent.KEYCODE_DPAD_DOWN:
+                    return currentDelegate.onNavigateDown();
+                case android.view.KeyEvent.KEYCODE_DPAD_LEFT:
+                    return currentDelegate.onNavigateLeft();
+                case android.view.KeyEvent.KEYCODE_DPAD_RIGHT:
+                    return currentDelegate.onNavigateRight();
+            }
+            return false;
+        };
+
+        // Apply to all focusable views
+        btnMute.setOnKeyListener(navigationKeyListener);
+        btnFullscreen.setOnKeyListener(navigationKeyListener);
+        recyclerCategories.setOnKeyListener(navigationKeyListener);
+        recyclerMovies.setOnKeyListener(navigationKeyListener);
+    }
+
+    /**
+     * Determine which navigation delegate owns the given view.
+     */
+    private com.omarflex5.ui.navigation.NavigationDelegate getCurrentNavigationDelegate(android.view.View view) {
+        if (view == btnMute || view == btnFullscreen) {
+            return heroDelegate;
+        } else if (isDescendantOf(view, recyclerCategories)) {
+            return categoryDelegate;
+        } else if (isDescendantOf(view, recyclerMovies)) {
+            return movieDelegate;
+        }
+        return null;
     }
 
     /**
@@ -461,9 +559,31 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
             Log.d("HomeActivity_KEY", "Current focus: NONE");
         }
 
-        if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
-            int keyCode = event.getKeyCode();
+        int keyCode = event.getKeyCode();
 
+        // Set navigating flag on D-pad DOWN events to prevent pagination
+        if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP ||
+                    keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ||
+                    keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                    keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                isNavigating = true;
+            }
+        }
+
+        // Clear navigating flag on D-pad UP events with delay
+        if (event.getAction() == android.view.KeyEvent.ACTION_UP) {
+            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP ||
+                    keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ||
+                    keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                    keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+                // Delay clearing to allow navigation to complete
+                navigationHandler.removeCallbacksAndMessages(null);
+                navigationHandler.postDelayed(() -> isNavigating = false, 150);
+            }
+        }
+
+        if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
             // Handle YouTube controls overlay when in fullscreen mode
             if (isFullscreen && youtubeWebView != null && youtubeWebView.getVisibility() == View.VISIBLE) {
                 // Handle BACK key specially
@@ -490,97 +610,57 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
                     return super.dispatchKeyEvent(event);
                 }
             }
+        }
 
-            // Normal navigation handling (when NOT in fullscreen YouTube mode)
-            View focused = getCurrentFocus();
+        // Cache focused view BEFORE processing to prevent mid-event focus changes
+        View cachedFocusedView = getCurrentFocus();
 
-            if (focused != null) {
-                // Check if focus is in categories row
-                if (isDescendantOf(focused, recyclerCategories)) {
-                    if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
-                        lastFocusedCategory = focused;
-                        View target = (lastFocusedMovie != null && lastFocusedMovie.getParent() == recyclerMovies)
-                                ? lastFocusedMovie
-                                : (recyclerMovies.getChildCount() > 0 ? recyclerMovies.getChildAt(0) : null);
-                        if (target != null) {
-                            target.requestFocus();
-                            return true;
+        // Delegate D-pad navigation to appropriate NavigationDelegate
+        // Handle BOTH DOWN and UP to fully block Android's focus system
+        if (event.getAction() == android.view.KeyEvent.ACTION_DOWN
+                || event.getAction() == android.view.KeyEvent.ACTION_UP) {
+            if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP ||
+                    keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN ||
+                    keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                    keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
+
+                // Use cached view instead of getCurrentFocus() to prevent focus jumping
+                if (cachedFocusedView != null) {
+                    com.omarflex5.ui.navigation.NavigationDelegate delegate = getCurrentNavigationDelegate(
+                            cachedFocusedView);
+                    if (delegate != null) {
+                        // Only process on DOWN, but consume both DOWN and UP
+                        if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
+                            switch (keyCode) {
+                                case android.view.KeyEvent.KEYCODE_DPAD_UP:
+                                    return delegate.onNavigateUp();
+                                case android.view.KeyEvent.KEYCODE_DPAD_DOWN:
+                                    return delegate.onNavigateDown();
+                                case android.view.KeyEvent.KEYCODE_DPAD_LEFT:
+                                    return delegate.onNavigateLeft();
+                                case android.view.KeyEvent.KEYCODE_DPAD_RIGHT:
+                                    return delegate.onNavigateRight();
+                            }
                         }
-                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
-                        lastFocusedCategory = focused;
-                        View target = (lastFocusedHero != null) ? lastFocusedHero : btnMute;
-                        target.requestFocus();
+                        // Consume UP event too to prevent focus search
                         return true;
-                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
-                            || keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
-                        // RTL layout: LEFT = next item (higher index), RIGHT = prev item (lower index)
-                        int currentIndex = recyclerCategories.indexOfChild(focused);
-                        int targetIndex = keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
-                                ? currentIndex + 1
-                                : currentIndex - 1;
-                        if (targetIndex >= 0 && targetIndex < recyclerCategories.getChildCount()) {
-                            View target = recyclerCategories.getChildAt(targetIndex);
-                            if (target != null) {
-                                target.requestFocus();
-                                return true;
-                            }
-                        }
-                        return true; // At edge - block navigation
-                    }
-                }
-                // Check if focus is in movies row
-                else if (isDescendantOf(focused, recyclerMovies)) {
-                    if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
-                        lastFocusedMovie = focused;
-                        View target = (lastFocusedCategory != null
-                                && lastFocusedCategory.getParent() == recyclerCategories)
-                                        ? lastFocusedCategory
-                                        : (recyclerCategories.getChildCount() > 0 ? recyclerCategories.getChildAt(0)
-                                                : null);
-                        if (target != null) {
-                            target.requestFocus();
-                            return true;
-                        }
-                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
-                        return true; // Block - stay in movies row
-                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
-                            || keyCode == android.view.KeyEvent.KEYCODE_DPAD_RIGHT) {
-                        // RTL layout: LEFT = next item (higher index), RIGHT = prev item (lower index)
-                        int currentIndex = recyclerMovies.indexOfChild(focused);
-                        int targetIndex = keyCode == android.view.KeyEvent.KEYCODE_DPAD_LEFT
-                                ? currentIndex + 1
-                                : currentIndex - 1;
-                        if (targetIndex >= 0 && targetIndex < recyclerMovies.getChildCount()) {
-                            View target = recyclerMovies.getChildAt(targetIndex);
-                            if (target != null) {
-                                target.requestFocus();
-                                recyclerMovies.smoothScrollToPosition(
-                                        recyclerMovies.getChildAdapterPosition(target));
-                                return true;
-                            }
-                        }
-                        return true; // At edge - block navigation
-                    }
-                }
-                // Check if focus is on hero buttons
-                else if (focused == btnMute || focused == btnFullscreen) {
-                    if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP) {
-                        return true; // Block - stay in hero
-                    } else if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
-                        lastFocusedHero = focused;
-                        View target = (lastFocusedCategory != null
-                                && lastFocusedCategory.getParent() == recyclerCategories)
-                                        ? lastFocusedCategory
-                                        : (recyclerCategories.getChildCount() > 0 ? recyclerCategories.getChildAt(0)
-                                                : null);
-                        if (target != null) {
-                            target.requestFocus();
-                            return true;
-                        }
                     }
                 }
             }
         }
+
+        // ===== OLD MANUAL NAVIGATION LOGIC - NOW HANDLED BY NavigationDelegates =====
+        // Navigation is now handled by OnKeyListener in setupNavigation()
+        // Keeping this commented code for reference during transition
+        /*
+         * // Normal navigation handling (when NOT in fullscreen YouTube mode)
+         * View focused = getCurrentFocus();
+         * 
+         * if (focused != null) {
+         * // OLD LOGIC REMOVED - now handled by HeroNavigationDelegate,
+         * // RecyclerNavigationDelegate with RTL support and adapter position stability
+         * }
+         */
         return super.dispatchKeyEvent(event);
     }
 
@@ -633,6 +713,20 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
         });
 
         viewModel.getMovies().observe(this, movies -> {
+            // Check for "No More Items" scenario
+            if (isLoadingMore) {
+                isLoadingMore = false;
+                if (movies != null && movies.size() <= previousMovieCount) {
+                    android.widget.Toast.makeText(this, "No more items to load", android.widget.Toast.LENGTH_SHORT)
+                            .show();
+                    // Early exit is crucial here!
+                    // If we update the adapter with the same list, it might cause a re-layout or
+                    // focus search
+                    // that resets focus. By returning, we ensure NOTHING changes in the UI.
+                    return;
+                }
+            }
+
             movieCardAdapter.setMovies(movies);
 
             if (!movies.isEmpty()) {
@@ -664,6 +758,15 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
         viewModel.getTrailerUrl().observe(this, trailerUrl -> {
             if (trailerUrl != null && !trailerUrl.isEmpty()) {
                 playTrailer(trailerUrl);
+            } else {
+                // Stop playing any previous trailer
+                releasePlayer();
+                // Ensure background is visible
+                heroBackground.setVisibility(View.VISIBLE);
+                if (playerView != null)
+                    playerView.setVisibility(View.GONE);
+                if (youtubeWebView != null)
+                    youtubeWebView.setVisibility(View.GONE);
             }
         });
 

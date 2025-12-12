@@ -38,6 +38,7 @@ public class MediaEntity {
     private Integer year;
     private String releaseDate;
     private String originalLanguage; // ISO 639-1 code (e.g., "ar" for Arabic, "en" for English)
+    private String trailerUrl; // Cached trailer URL
 
     // Categories as JSON array: ["Action", "Drama"]
     private String categoriesJson;
@@ -160,6 +161,14 @@ public class MediaEntity {
 
     public void setOriginalLanguage(String originalLanguage) {
         this.originalLanguage = originalLanguage;
+    }
+
+    public String getTrailerUrl() {
+        return trailerUrl;
+    }
+
+    public void setTrailerUrl(String trailerUrl) {
+        this.trailerUrl = trailerUrl;
     }
 
     public String getCategoriesJson() {

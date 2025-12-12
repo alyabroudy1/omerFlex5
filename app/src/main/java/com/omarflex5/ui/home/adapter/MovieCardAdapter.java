@@ -26,11 +26,16 @@ import java.util.List;
  * - Focused: visual animation (scale up, pulse) when navigating with D-pad
  * - Selected: persistent red border when item is clicked
  */
-public class MovieCardAdapter extends RecyclerView.Adapter<MovieCardAdapter.MovieViewHolder> {
+public class MovieCardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+
+    private static final int VIEW_TYPE_MOVIE = 0;
+    private static final int VIEW_TYPE_LOAD_MORE = 1;
 
     private List<Movie> movies = new ArrayList<>();
     private OnMovieListener listener;
+    private OnLoadMoreListener loadMoreListener;
     private int selectedPosition = -1; // -1 means no selection
+    private boolean showLoadMore = true; // Show load more button by default
 
     public MovieCardAdapter() {
         setHasStableIds(true);
@@ -43,8 +48,16 @@ public class MovieCardAdapter extends RecyclerView.Adapter<MovieCardAdapter.Movi
         void onMovieClicked(Movie movie);
     }
 
+    public interface OnLoadMoreListener {
+        void onLoadMore();
+    }
+
     @Override
     public long getItemId(int position) {
+        // Load more button doesn't have stable ID
+        if (getItemViewType(position) == VIEW_TYPE_LOAD_MORE) {
+            return -1;
+        }
         // Use hash of ID, fallback to position if ID is invalid
         try {
             return Long.parseLong(movies.get(position).getId());
@@ -53,7 +66,31 @@ public class MovieCardAdapter extends RecyclerView.Adapter<MovieCardAdapter.Movi
         }
     }
 
+    @Override
+    public int getItemViewType(int position) {
+        if (showLoadMore && position == movies.size()) {
+            return VIEW_TYPE_LOAD_MORE;
+        }
+        return VIEW_TYPE_MOVIE;
+    }
+
+    @Override
+    public int getItemCount() {
+        return showLoadMore ? movies.size() + 1 : movies.size();
+    }
+
     public void setMovies(List<Movie> newMovies) {
+        // Detect if this is a "Load More" operation
+        final boolean isLoadMore;
+        final int oldSize;
+        if (movies != null && newMovies != null && newMovies.size() > movies.size()) {
+            isLoadMore = true;
+            oldSize = movies.size();
+        } else {
+            isLoadMore = false;
+            oldSize = 0;
+        }
+
         if (movies == null) {
             movies = newMovies;
             notifyItemRangeInserted(0, newMovies.size());
@@ -96,14 +133,48 @@ public class MovieCardAdapter extends RecyclerView.Adapter<MovieCardAdapter.Movi
         // Dispatch updates - this preserves focus!
         result.dispatchUpdatesTo(this);
 
+        // Handling for "Load More" focus preservation
+        if (isLoadMore && loadMoreFocusCallback != null) {
+            // When items are added, the Load More button moves to the end.
+            // We want to focus on the FIRST newly added item so the user sees what's new.
+            // The first new item is at index 'oldSize'.
+
+            // We notify the callback to request focus on the specific position
+            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                if (loadMoreFocusCallback != null) {
+                    loadMoreFocusCallback.onFocusRequest(oldSize);
+                }
+            }, 100);
+        }
+
         // Only reset selection if the selected movie is no longer present or valid
         if (selectedPosition >= movies.size()) {
             selectedPosition = -1;
         }
     }
 
+    // Callback for focus requests
+    public interface OnFocusRequestCallback {
+        void onFocusRequest(int position);
+    }
+
+    private OnFocusRequestCallback loadMoreFocusCallback;
+
+    public void setLoadMoreFocusCallback(OnFocusRequestCallback callback) {
+        this.loadMoreFocusCallback = callback;
+    }
+
     public void setListener(OnMovieListener listener) {
         this.listener = listener;
+    }
+
+    public void setLoadMoreListener(OnLoadMoreListener loadMoreListener) {
+        this.loadMoreListener = loadMoreListener;
+    }
+
+    public void setShowLoadMore(boolean showLoadMore) {
+        this.showLoadMore = showLoadMore;
+        notifyDataSetChanged();
     }
 
     /**
@@ -122,32 +193,38 @@ public class MovieCardAdapter extends RecyclerView.Adapter<MovieCardAdapter.Movi
 
     @NonNull
     @Override
-    public MovieViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+    public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        if (viewType == VIEW_TYPE_LOAD_MORE) {
+            View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_load_more, parent, false);
+            return new LoadMoreViewHolder(view);
+        }
         View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_movie_card, parent, false);
         return new MovieViewHolder(view);
     }
 
     @Override
-    public void onBindViewHolder(@NonNull MovieViewHolder holder, int position) {
-        holder.bind(movies.get(position), position, position == selectedPosition);
-    }
-
-    @Override
-    public void onBindViewHolder(@NonNull MovieViewHolder holder, int position, @NonNull List<Object> payloads) {
-        if (payloads.isEmpty()) {
-            onBindViewHolder(holder, position);
-        } else {
-            for (Object payload : payloads) {
-                if (payload instanceof String && payload.equals("selection")) {
-                    holder.updateSelectionState(position == selectedPosition);
-                }
-            }
+    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+        if (holder instanceof MovieViewHolder) {
+            ((MovieViewHolder) holder).bind(movies.get(position), position, position == selectedPosition);
+        } else if (holder instanceof LoadMoreViewHolder) {
+            ((LoadMoreViewHolder) holder).bind();
         }
     }
 
     @Override
-    public int getItemCount() {
-        return movies.size();
+    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position,
+            @NonNull List<Object> payloads) {
+        if (payloads.isEmpty()) {
+            onBindViewHolder(holder, position);
+        } else {
+            if (holder instanceof MovieViewHolder) {
+                for (Object payload : payloads) {
+                    if (payload instanceof String && payload.equals("selection")) {
+                        ((MovieViewHolder) holder).updateSelectionState(position == selectedPosition);
+                    }
+                }
+            }
+        }
     }
 
     class MovieViewHolder extends RecyclerView.ViewHolder {
@@ -338,6 +415,57 @@ public class MovieCardAdapter extends RecyclerView.Adapter<MovieCardAdapter.Movi
 
         public void updateSelectionState(boolean isSelected) {
             cardView.setSelected(isSelected);
+            if (isSelected) {
+                itemView.setBackgroundResource(R.drawable.border_selected);
+            } else {
+                itemView.setBackgroundResource(0);
+            }
+        }
+    }
+
+    class LoadMoreViewHolder extends RecyclerView.ViewHolder {
+        CardView cardView;
+        TextView countText;
+
+        public LoadMoreViewHolder(@NonNull View itemView) {
+            super(itemView);
+            cardView = itemView.findViewById(R.id.card_load_more);
+            countText = itemView.findViewById(R.id.text_load_more_count);
+
+            // Handle Focus - Attach to cardView which is the focusable element
+            cardView.setOnFocusChangeListener((v, hasFocus) -> {
+                if (hasFocus) {
+                    animateFocus(v, true);
+                } else {
+                    animateFocus(v, false);
+                }
+            });
+
+            // Handle Click - Attach to cardView
+            cardView.setOnClickListener(v -> {
+                if (loadMoreListener != null) {
+                    loadMoreListener.onLoadMore();
+                }
+            });
+        }
+
+        public void bind() {
+            // Can update text dynamically if needed, e.g. "Load 30 more"
+        }
+
+        private void animateFocus(View view, boolean hasFocus) {
+            float scale = hasFocus ? 1.05f : 1.0f;
+            float elevation = hasFocus ? 12f : 4f;
+
+            ObjectAnimator scaleX = ObjectAnimator.ofFloat(view, "scaleX", scale);
+            ObjectAnimator scaleY = ObjectAnimator.ofFloat(view, "scaleY", scale);
+            ObjectAnimator elevAnim = ObjectAnimator.ofFloat(view, "elevation", elevation);
+
+            AnimatorSet set = new AnimatorSet();
+            set.playTogether(scaleX, scaleY, elevAnim);
+            set.setDuration(200);
+            set.setInterpolator(new AccelerateDecelerateInterpolator());
+            set.start();
         }
     }
 }

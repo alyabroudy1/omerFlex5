@@ -270,6 +270,28 @@ public class HomeViewModel extends AndroidViewModel {
     // Called by UI
     public void selectMovie(Movie movie) {
         selectedMovie.setValue(movie);
-        // Fetch trailer logic here if needed
+        trailerUrl.setValue(null); // Reset prev
+
+        if (movie == null)
+            return;
+
+        try {
+            long mediaId = Long.parseLong(movie.getId());
+            repository.getTrailerUrl(getApplication(), mediaId, new DataSourceCallback<String>() {
+                @Override
+                public void onSuccess(String result) {
+                    trailerUrl.setValue(result);
+                }
+
+                @Override
+                public void onError(Throwable t) {
+                    // Log error but don't disrupt UI
+                    t.printStackTrace();
+                }
+            });
+        } catch (NumberFormatException e) {
+            e.printStackTrace();
+        }
     }
+
 }
