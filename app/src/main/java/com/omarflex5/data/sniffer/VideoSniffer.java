@@ -40,48 +40,60 @@ public class VideoSniffer {
     private static final Pattern VIDEO_PATTERN = Pattern.compile(".*\\.(m3u8|mp4|mkv|webm|mpd)(\\?.*)?$",
             Pattern.CASE_INSENSITIVE);
 
-    // Iframe Monitor Script (Minified/Inline)
-    private static final String IFRAME_MONITOR_SCRIPT = "javascript:(function() {" +
-            "   try {" +
-            "       console.log('[Sniffer] Starting monitor');" +
-            "       var foundVideo = false;" +
-            "       function checkVideo(src) {" +
-            "           if (!src) return;" +
-            "           if (src.match(/\\.(m3u8|mp4|mkv|webm|mpd)($|\\?)/i)) {" +
-            "               window.SnifferAndroid.onVideoDetected(src);" +
-            "               foundVideo = true;" +
-            "           }" +
-            "       }" +
-            "       function scan() {" +
-            "           var videos = document.getElementsByTagName('video');" +
-            "           for(var i=0; i<videos.length; i++) {" +
-            "               checkVideo(videos[i].src);" +
-            "               checkVideo(videos[i].currentSrc);" +
-            "           }" +
-            "           var iframes = document.getElementsByTagName('iframe');" +
-            "           for(var i=0; i<iframes.length; i++) {" +
-            "               checkVideo(iframes[i].src);" +
-            "               try {" +
-            "                   var doc = iframes[i].contentDocument || iframes[i].contentWindow.document;" +
-            "                   if(doc) {" +
-            "                       var innerVideos = doc.getElementsByTagName('video');" +
-            "                       for(var j=0; j<innerVideos.length; j++){" +
-            "                           checkVideo(innerVideos[j].src);" +
-            "                       }" +
-            "                   }" +
-            "               } catch(e){}" +
-            "           }" +
-            "       }" +
-            "       setInterval(scan, 1000);" + // Scan every second
-            "       /* Auto-Click Helper */" +
-            "       setTimeout(function() {" +
-            "           if(!foundVideo) {" +
-            "               var poster = document.querySelector('.poster, .play-button, [aria-label=\"Play\"]');" +
-            "               if(poster) poster.click();" +
-            "           }" +
-            "       }, 2000);" +
-            "   } catch(e) {}" +
-            "})();";
+    // Base Monitor Script Builder
+    private String getMonitorScript() {
+        return "javascript:(function() {" +
+                "   try {" +
+                "       console.log('[Sniffer] Starting monitor');" +
+                "       var foundVideo = false;" +
+                "       function checkVideo(src) {" +
+                "           if (!src) return;" +
+                "           if (src.match(/\\.(m3u8|mp4|mkv|webm|mpd)($|\\?)/i)) {" +
+                "               window.SnifferAndroid.onVideoDetected(src);" +
+                "               foundVideo = true;" +
+                "           }" +
+                "       }" +
+                "       function scan() {" +
+                "           /* Custom Script Injection */" +
+                "           " + (customScript != null ? customScript : "") +
+                "           " +
+                "           var videos = document.getElementsByTagName('video');" +
+                "           for(var i=0; i<videos.length; i++) {" +
+                "               checkVideo(videos[i].src);" +
+                "               checkVideo(videos[i].currentSrc);" +
+                "           }" +
+                "           var iframes = document.getElementsByTagName('iframe');" +
+                "           for(var i=0; i<iframes.length; i++) {" +
+                "               checkVideo(iframes[i].src);" +
+                "               try {" +
+                "                   var doc = iframes[i].contentDocument || iframes[i].contentWindow.document;" +
+                "                   if(doc) {" +
+                "                       var innerVideos = doc.getElementsByTagName('video');" +
+                "                       for(var j=0; j<innerVideos.length; j++){" +
+                "                           checkVideo(innerVideos[j].src);" +
+                "                       }" +
+                "                   }" +
+                "               } catch(e){}" +
+                "           }" +
+                "       }" +
+                "       setInterval(scan, 1000);" + // Scan every second
+                "       /* Auto-Click Helper */" +
+                "       setTimeout(function() {" +
+                "           if(!foundVideo) {" +
+                "               var poster = document.querySelector('.poster, .play-button, [aria-label=\"Play\"], .download_button, a[class*=\"download\"], a[href*=\"download\"]');"
+                +
+                "               if(poster) poster.click();" +
+                "           }" +
+                "       }, 2000);" +
+                "   } catch(e) {}" +
+                "})();";
+    }
+
+    private String customScript = null;
+
+    public void setCustomScript(String script) {
+        this.customScript = script;
+    }
 
     private Context context;
     private ViewGroup container;
@@ -209,13 +221,27 @@ public class VideoSniffer {
         }
 
         @Override
+        public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+            String url = request.getUrl().toString();
+
+            // STRICT: Block any non-HTTP/HTTPS redirect (e.g. intent://, market://,
+            // mailto:)
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                Log.d(TAG, "BLOCKED Non-HTTP Redirect: " + url);
+                return true; // Block it
+            }
+
+            return super.shouldOverrideUrlLoading(view, request);
+        }
+
+        @Override
         public void onPageFinished(WebView view, String url) {
             if (isDestroyed || videoFound)
                 return;
             callback.onProgress("Looking for video...");
 
             // Inject Monitor Script
-            view.evaluateJavascript(IFRAME_MONITOR_SCRIPT, null);
+            view.evaluateJavascript(getMonitorScript(), null);
         }
 
         @Override
@@ -314,16 +340,28 @@ public class VideoSniffer {
         if (videoFound || isDestroyed)
             return;
 
-        // Ensure Referer/User-Agent if missing
-        Map<String, String> finalHeaders = new HashMap<>();
-        if (headers != null)
-            finalHeaders.putAll(headers);
-        if (!finalHeaders.containsKey("User-Agent"))
-            finalHeaders.put("User-Agent", USER_AGENT);
-
         handler.post(() -> {
             if (videoFound || isDestroyed)
                 return; // Double check on main thread
+
+            // Auto-Inject Referer from WebView if missing
+            String currentUrl = null;
+            if (webView != null) {
+                currentUrl = webView.getUrl();
+            }
+
+            Map<String, String> finalHeaders = new HashMap<>();
+            if (headers != null)
+                finalHeaders.putAll(headers);
+
+            if (!finalHeaders.containsKey("User-Agent"))
+                finalHeaders.put("User-Agent", USER_AGENT);
+
+            if (!finalHeaders.containsKey("Referer") && currentUrl != null) {
+                finalHeaders.put("Referer", currentUrl);
+                Log.d(TAG, "Auto-Injected Referer: " + currentUrl);
+            }
+
             videoFound = true;
             callback.onVideoFound(url, finalHeaders);
         });

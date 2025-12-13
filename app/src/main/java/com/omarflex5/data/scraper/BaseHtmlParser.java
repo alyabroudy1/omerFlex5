@@ -18,6 +18,12 @@ public abstract class BaseHtmlParser {
 
     public BaseHtmlParser(String html) {
         this.html = html;
+        this.pageUrl = "";
+    }
+
+    public BaseHtmlParser(String html, String pageUrl) {
+        this.html = html;
+        this.pageUrl = pageUrl;
     }
 
     public void setPageUrl(String pageUrl) {

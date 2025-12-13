@@ -69,10 +69,37 @@ public class ServerTestActivity extends AppCompatActivity {
         btnTest.setOnClickListener(v -> runTest());
 
         log("Ready. Select a server and click TEST.");
+
+        handleAutoTest();
+    }
+
+    private void handleAutoTest() {
+        if (getIntent().getBooleanExtra("EXTRA_AUTO_TEST", false)) {
+            String query = getIntent().getStringExtra("EXTRA_QUERY");
+            if (query == null)
+                query = "Matrix";
+
+            inputQuery.setText(query);
+
+            String targetServer = getIntent().getStringExtra("EXTRA_SERVER_NAME");
+            if (targetServer == null)
+                targetServer = "akwam";
+
+            // Select Target Server
+            for (int i = 0; i < spinnerServers.getAdapter().getCount(); i++) {
+                if (targetServer.equals(spinnerServers.getAdapter().getItem(i))) {
+                    spinnerServers.setSelection(i);
+                    break;
+                }
+            }
+
+            // Auto run after a short delay
+            new android.os.Handler().postDelayed(this::runTest, 1000);
+        }
     }
 
     private void setupSpinner() {
-        String[] servers = { "faselhd", "arabseed", "mycima", "cimanow", "akwam", "koora" };
+        String[] servers = { "faselhd", "arabseed", "mycima", "cimanow", "akwam", "oldakwam", "koora" };
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, servers);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerServers.setAdapter(adapter);
@@ -197,6 +224,37 @@ public class ServerTestActivity extends AppCompatActivity {
 
                             log("Found " + subItems.size() + " sub-items.");
 
+                            log("Found " + subItems.size() + " sub-items.");
+
+                            // AUTO-NAVIGATION LOGIC
+                            // Don't require size==1. If we find a "Direct" or standard nav link, take it.
+                            for (BaseHtmlParser.ParsedItem item : subItems) {
+                                boolean isNav = item.getTitle().equalsIgnoreCase("Go to Download") ||
+                                        item.getTitle().equalsIgnoreCase("Direct Link") ||
+                                        "Direct".equalsIgnoreCase(item.getQuality());
+
+                                if (isNav) {
+                                    log("Auto-Navigating (Found Valid Item): " + item.getTitle());
+
+                                    boolean isDownloadPage = item.getPageUrl().contains("/download/")
+                                            || item.getPageUrl().contains("/old/download/");
+
+                                    if (isDownloadPage) {
+                                        // Use Sniffer for download pages
+                                        handleWebViewFallback(item.getPageUrl());
+                                    } else if ("Direct".equalsIgnoreCase(item.getQuality())
+                                            || item.getPageUrl().endsWith(".mp4")
+                                            || item.getPageUrl().endsWith(".mkv")) {
+                                        // Final step: Play valid media files
+                                        playVideo(item.getPageUrl(), item.getTitle());
+                                    } else {
+                                        // Intermediate step: Load next page
+                                        loadPageAndParse(item.getPageUrl());
+                                    }
+                                    return; // Stop processing other items
+                                }
+                            }
+
                             // Determine Action based on what we found
                             boolean isResolution = false;
                             if (!subItems.isEmpty()) {
@@ -262,21 +320,35 @@ public class ServerTestActivity extends AppCompatActivity {
                         BaseHtmlParser.ParsedItem selected = items.get(which);
                         String url = selected.getPageUrl();
 
-                        log("Playing: " + url);
-                        if (url != null && url.startsWith("http")) {
-                            android.content.Intent intent = new android.content.Intent(this,
-                                    com.omarflex5.ui.player.PlayerActivity.class);
-                            intent.putExtra(com.omarflex5.ui.player.PlayerActivity.EXTRA_VIDEO_URL, url);
-                            intent.putExtra(com.omarflex5.ui.player.PlayerActivity.EXTRA_VIDEO_TITLE,
-                                    selected.getTitle());
-                            startActivity(intent);
-                        } else {
-                            log("Invalid URL: " + url);
-                        }
+                        playVideo(url, selected.getTitle());
                     })
                     .setPositiveButton("Close", null)
                     .show();
         });
+    }
+
+    private void playVideo(String url, String title) {
+        if (url == null)
+            return;
+
+        // INTERCEPT: If this is a download page, send to Sniffer instead of Player
+        if (url.contains("/download/") || url.contains("/old/download/") || url.contains(".link")) {
+            log("Redirecting to Sniffer (Download Page): " + url);
+            handleWebViewFallback(url);
+            return;
+        }
+
+        log("Playing: " + url);
+        if (url.startsWith("http")) {
+            android.content.Intent intent = new android.content.Intent(this,
+                    com.omarflex5.ui.player.PlayerActivity.class);
+            intent.putExtra(com.omarflex5.ui.player.PlayerActivity.EXTRA_VIDEO_URL, url);
+            intent.putExtra(com.omarflex5.ui.player.PlayerActivity.EXTRA_VIDEO_TITLE,
+                    title);
+            startActivity(intent);
+        } else {
+            log("Invalid URL: " + url);
+        }
     }
 
     private void log(String message) {
@@ -345,7 +417,6 @@ public class ServerTestActivity extends AppCompatActivity {
                         intent.putExtra(com.omarflex5.ui.player.PlayerActivity.EXTRA_VIDEO_URL, videoUrl);
                         intent.putExtra(com.omarflex5.ui.player.PlayerActivity.EXTRA_VIDEO_TITLE, "Sniffed Video");
 
-                        // Pass Headers if available
                         if (headers != null && !headers.isEmpty()) {
                             String userAgent = headers.get("User-Agent");
                             if (userAgent != null)
@@ -374,6 +445,37 @@ public class ServerTestActivity extends AppCompatActivity {
                     // Optional
                 }
             });
+
+            // INJECT SERVER-SPECIFIC JS
+            // If url implies "oldakwam", inject the specific extractor script
+            if (url.contains("ak.sv") || url.contains("akwam")) {
+                String oldAkwamScript = "try {" +
+                        "    /* Strategy 1: Exact .download_button (Reference Way) */" +
+                        "    var btn1 = document.querySelector('.download_button');" +
+                        "    if (btn1 && btn1.href) { " +
+                        "       console.log('[OldAkwam] Found .download_button: ' + btn1.href); " +
+                        "       window.SnifferAndroid.onVideoDetected(btn1.href); " +
+                        "       return; " +
+                        "    }" +
+                        "    " +
+                        "    /* Strategy 2: .unauth_capsule (Reference Way) */" +
+                        "    /* Reference: getElementsByClassName('unauth_capsule clearfix')[0].getElementsByTagName('a')[0].getAttribute('ng-href') */"
+                        +
+                        "    var capsule = document.querySelector('.unauth_capsule a');" +
+                        "    if (capsule) { " +
+                        "       var href = capsule.getAttribute('ng-href') || capsule.href; " +
+                        "       if(href) { " +
+                        "           console.log('[OldAkwam] Found .unauth_capsule: ' + href); " +
+                        "           window.SnifferAndroid.onVideoDetected(href); " +
+                        "           return; " +
+                        "       }" +
+                        "    }" +
+                        "    " +
+                        "    console.log('[OldAkwam] Still scanning... (Title: ' + document.title + ')');" +
+                        "} catch(e) { console.log('[OldAkwam] Error: ' + e.message); }";
+                sniffer.setCustomScript(oldAkwamScript);
+                log("OldAkwam JS Injected.");
+            }
 
             // 6. Handle Cleanup
             dialog.setOnDismissListener(d -> sniffer.destroy());

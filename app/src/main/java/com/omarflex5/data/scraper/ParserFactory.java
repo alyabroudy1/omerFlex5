@@ -28,6 +28,12 @@ public class ParserFactory {
             case "arabseed":
                 parser = new com.omarflex5.data.scraper.parsers.ArabSeedParser(html);
                 break;
+            case "akwam":
+                parser = new com.omarflex5.data.scraper.parsers.AkwamParser(html, url);
+                break;
+            case "oldakwam":
+                parser = new com.omarflex5.data.scraper.parsers.OldAkwamParser(html, url);
+                break;
             default:
                 parser = new GenericParser(html);
                 break;

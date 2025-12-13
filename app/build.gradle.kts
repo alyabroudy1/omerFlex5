@@ -46,6 +46,7 @@ dependencies {
     implementation(libs.media3.exoplayer.hls)
     implementation(libs.media3.exoplayer.dash)
     implementation(libs.media3.datasource)
+    implementation("androidx.media3:media3-datasource-okhttp:1.2.0") 
     implementation(libs.media3.cast)
     testImplementation(libs.junit)
     androidTestImplementation(libs.ext.junit)

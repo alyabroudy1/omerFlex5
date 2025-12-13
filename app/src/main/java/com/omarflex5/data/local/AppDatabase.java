@@ -34,7 +34,7 @@ import java.util.concurrent.Executors;
         MediaSourceEntity.class,
         SearchQueueEntity.class,
         UserMediaStateEntity.class
-}, version = 4, exportSchema = true)
+}, version = 6, exportSchema = true)
 @TypeConverters({ Converters.class })
 public abstract class AppDatabase extends RoomDatabase {
 
@@ -119,7 +119,7 @@ public abstract class AppDatabase extends RoomDatabase {
         faselhd.setBaseUrl("https://www.faselhds.biz");
         faselhd.setBasePriority(2);
         faselhd.setCurrentPriority(2);
-        faselhd.setEnabled(true);
+        faselhd.setEnabled(false); // Disabled for testing Akwam
         faselhd.setSearchable(true);
         faselhd.setRequiresWebView(true); // CF protected
         faselhd.setSearchUrlPattern("/?s={query}");
@@ -196,27 +196,28 @@ public abstract class AppDatabase extends RoomDatabase {
         akwam.setLabel("أكوام");
         akwam.setBaseUrl("https://ak.sv");
         akwam.setBasePriority(5);
-        akwam.setCurrentPriority(5);
-        akwam.setEnabled(false); // Disabled for Production
+        akwam.setCurrentPriority(1); // Set to 1 for testing
+        akwam.setEnabled(true); // Enabled for testing
         akwam.setSearchable(true);
         akwam.setRequiresWebView(true); // CF protected
-        akwam.setSearchUrlPattern("/search/{query}");
+        akwam.setSearchUrlPattern("/search?q={query}");
         akwam.setParseStrategy("HTML");
         akwam.setCreatedAt(now);
         akwam.setUpdatedAt(now);
         serverDao.insert(akwam);
 
         // Server 8: Old Akwam
+        // Server 8: Old Akwam
         ServerEntity oldAkwam = new ServerEntity();
-        oldAkwam.setName("old_akwam");
+        oldAkwam.setName("oldakwam");
         oldAkwam.setLabel("اكوام القديم");
-        oldAkwam.setBaseUrl("https://ak.sv");
+        oldAkwam.setBaseUrl("https://ak.sv"); // Try current active domain
         oldAkwam.setBasePriority(6);
-        oldAkwam.setCurrentPriority(6);
-        oldAkwam.setEnabled(false); // Disabled for Production
+        oldAkwam.setCurrentPriority(1); // High priority for test
+        oldAkwam.setEnabled(true);
         oldAkwam.setSearchable(true);
         oldAkwam.setRequiresWebView(true);
-        oldAkwam.setSearchUrlPattern("/old/search/{query}");
+        oldAkwam.setSearchUrlPattern("/old/advanced-search/{query}");
         oldAkwam.setParseStrategy("HTML");
         oldAkwam.setCreatedAt(now);
         oldAkwam.setUpdatedAt(now);

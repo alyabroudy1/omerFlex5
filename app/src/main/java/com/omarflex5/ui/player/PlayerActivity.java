@@ -670,7 +670,11 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
         }
 
         // Create data source factory with headers
-        DefaultHttpDataSource.Factory dataSourceFactory = new DefaultHttpDataSource.Factory();
+        // FIXED: Use OkHttpDataSource to handle SSL issues (unsafe)
+        okhttp3.OkHttpClient okHttpClient = getUnsafeOkHttpClient();
+        androidx.media3.datasource.okhttp.OkHttpDataSource.Factory dataSourceFactory = new androidx.media3.datasource.okhttp.OkHttpDataSource.Factory(
+                okHttpClient);
+
         if (!headers.isEmpty()) {
             dataSourceFactory.setDefaultRequestProperties(headers);
         }
@@ -678,8 +682,21 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
         // Create appropriate media source based on URL type
         MediaSource mediaSource = createMediaSource(mediaUrl, dataSourceFactory);
 
-        // Build player
-        player = new ExoPlayer.Builder(this).build();
+        // OPTIMIZATION: Configure LoadControl for slower networks
+        // Min Buffer: 30s, Max Buffer: 120s
+        androidx.media3.exoplayer.LoadControl loadControl = new androidx.media3.exoplayer.DefaultLoadControl.Builder()
+                .setBufferDurationsMs(
+                        30000,
+                        120000,
+                        1500,
+                        5000)
+                .build();
+
+        // Build player with optimizations
+        player = new ExoPlayer.Builder(this)
+                .setLoadControl(loadControl)
+                .build();
+
         playerView.setPlayer(player);
 
         // check DLNA Session
@@ -714,7 +731,7 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
     /**
      * Creates the appropriate MediaSource based on the URL type.
      */
-    private MediaSource createMediaSource(String url, DefaultHttpDataSource.Factory dataSourceFactory) {
+    private MediaSource createMediaSource(String url, androidx.media3.datasource.DataSource.Factory dataSourceFactory) {
         MediaUtils.MediaType mediaType = MediaUtils.getMediaType(url);
         MediaItem mediaItem = MediaItem.fromUri(url);
 
@@ -728,6 +745,50 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
             default:
                 return new ProgressiveMediaSource.Factory(dataSourceFactory)
                         .createMediaSource(mediaItem);
+        }
+    }
+
+    private okhttp3.OkHttpClient getUnsafeOkHttpClient() {
+        try {
+            // Create a trust manager that does not validate certificate chains
+            final javax.net.ssl.TrustManager[] trustAllCerts = new javax.net.ssl.TrustManager[] {
+                    new javax.net.ssl.X509TrustManager() {
+                        @Override
+                        public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType)
+                                throws java.security.cert.CertificateException {
+                        }
+
+                        @Override
+                        public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType)
+                                throws java.security.cert.CertificateException {
+                        }
+
+                        @Override
+                        public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                            return new java.security.cert.X509Certificate[] {};
+                        }
+                    }
+            };
+
+            // Install the all-trusting trust manager
+            final javax.net.ssl.SSLContext sslContext = javax.net.ssl.SSLContext.getInstance("SSL");
+            sslContext.init(null, trustAllCerts, new java.security.SecureRandom());
+
+            // Create an ssl socket factory with our all-trusting manager
+            final javax.net.ssl.SSLSocketFactory sslSocketFactory = sslContext.getSocketFactory();
+
+            okhttp3.OkHttpClient.Builder builder = new okhttp3.OkHttpClient.Builder();
+            builder.sslSocketFactory(sslSocketFactory, (javax.net.ssl.X509TrustManager) trustAllCerts[0]);
+            builder.hostnameVerifier((hostname, session) -> true);
+
+            // OPTIMIZATION: Extended Timeouts
+            builder.connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS);
+            builder.readTimeout(60, java.util.concurrent.TimeUnit.SECONDS);
+            builder.writeTimeout(60, java.util.concurrent.TimeUnit.SECONDS);
+
+            return builder.build();
+        } catch (Exception e) {
+            throw new RuntimeException(e);
         }
     }
 
