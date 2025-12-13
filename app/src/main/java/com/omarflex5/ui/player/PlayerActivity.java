@@ -668,6 +668,9 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
         if (getIntent().hasExtra("EXTRA_REFERER")) {
             headers.put("Referer", getIntent().getStringExtra("EXTRA_REFERER"));
         }
+        if (getIntent().hasExtra("EXTRA_COOKIE")) {
+            headers.put("Cookie", getIntent().getStringExtra("EXTRA_COOKIE"));
+        }
 
         // Create data source factory with headers
         // FIXED: Use OkHttpDataSource to handle SSL issues (unsafe)
@@ -780,6 +783,16 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
             okhttp3.OkHttpClient.Builder builder = new okhttp3.OkHttpClient.Builder();
             builder.sslSocketFactory(sslSocketFactory, (javax.net.ssl.X509TrustManager) trustAllCerts[0]);
             builder.hostnameVerifier((hostname, session) -> true);
+
+            // FIX: Force HTTP/1.1 and Allow Cleartext to prevent 502 errors on some servers
+            builder.protocols(java.util.Collections.singletonList(okhttp3.Protocol.HTTP_1_1));
+            builder.connectionSpecs(java.util.Arrays.asList(
+                    okhttp3.ConnectionSpec.MODERN_TLS,
+                    okhttp3.ConnectionSpec.COMPATIBLE_TLS,
+                    okhttp3.ConnectionSpec.CLEARTEXT));
+
+            builder.followRedirects(true);
+            builder.followSslRedirects(true);
 
             // OPTIMIZATION: Extended Timeouts
             builder.connectTimeout(30, java.util.concurrent.TimeUnit.SECONDS);

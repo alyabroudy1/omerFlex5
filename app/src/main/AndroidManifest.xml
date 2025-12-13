@@ -88,6 +88,13 @@
             android:hardwareAccelerated="true"
             android:theme="@style/Theme.OmarFlex5.Fullscreen" />
 
+        <activity
+            android:name=".ui.sniffer.SnifferActivity"
+            android:exported="false"
+            android:screenOrientation="landscape"
+            android:hardwareAccelerated="true"
+            android:theme="@style/Theme.OmarFlex5.Fullscreen" />
+
         <service
             android:name=".cast.receiver.ReceiverService"
             android:enabled="true"

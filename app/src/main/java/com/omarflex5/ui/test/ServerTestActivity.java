@@ -19,7 +19,7 @@ import com.omarflex5.data.repository.ServerRepository;
 import com.omarflex5.data.scraper.BaseHtmlParser;
 import com.omarflex5.data.scraper.ParserFactory;
 import com.omarflex5.data.scraper.WebViewScraperManager;
-import com.omarflex5.data.sniffer.VideoSniffer;
+// VideoSniffer import removed - now using SnifferActivity
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -30,6 +30,7 @@ import java.util.Map;
 public class ServerTestActivity extends AppCompatActivity {
 
     private static final String TAG = "ServerTestActivity";
+    private static final int REQUEST_SNIFFER = 1001;
 
     private EditText inputQuery;
     private Spinner spinnerServers;
@@ -365,125 +366,85 @@ public class ServerTestActivity extends AppCompatActivity {
     }
 
     private void handleWebViewFallback(String url) {
-        log("No direct links found. Launching Visible Video Sniffer for: " + url);
+        log("Launching SnifferActivity for: " + url);
+        log("URL Hash Fragment: " + (url.contains("#") ? url.substring(url.indexOf("#")) : "MISSING"));
+
         runOnUiThread(() -> {
-            // 1. Create a Root Container (FrameLayout for layering)
-            android.widget.FrameLayout root = new android.widget.FrameLayout(this);
-            root.setLayoutParams(new android.view.ViewGroup.LayoutParams(
-                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                    android.view.ViewGroup.LayoutParams.MATCH_PARENT));
-            root.setBackgroundColor(0xFF000000); // Black background
+            // Determine strategy based on URL
+            int strategy = com.omarflex5.ui.sniffer.SnifferActivity.STRATEGY_VIDEO;
+            String customJs = null;
 
-            // 2. Create WebView Container
-            android.widget.FrameLayout webContainer = new android.widget.FrameLayout(this);
-            webContainer.setLayoutParams(new android.widget.FrameLayout.LayoutParams(
-                    android.view.ViewGroup.LayoutParams.MATCH_PARENT,
-                    android.view.ViewGroup.LayoutParams.MATCH_PARENT));
-            root.addView(webContainer);
-
-            // 3. Create Close Level (Overlay Button)
-            Button closeBtn = new Button(this);
-            closeBtn.setText("CLOSE SNIFFER");
-            closeBtn.setBackgroundColor(0xFFFF0000); // Red
-            closeBtn.setTextColor(0xFFFFFFFF); // White
-
-            android.widget.FrameLayout.LayoutParams btnParams = new android.widget.FrameLayout.LayoutParams(
-                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT,
-                    android.view.ViewGroup.LayoutParams.WRAP_CONTENT);
-            btnParams.gravity = android.view.Gravity.TOP | android.view.Gravity.END;
-            btnParams.setMargins(20, 20, 20, 20);
-
-            root.addView(closeBtn, btnParams);
-
-            // 4. Build Dialog - Raw Dialog for TRUE Fullscreen
-            android.app.Dialog dialog = new android.app.Dialog(this, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
-            dialog.setContentView(root);
-            dialog.setCancelable(false);
-
-            // Close Action
-            closeBtn.setOnClickListener(v -> {
-                dialog.dismiss();
-            });
-
-            // 5. Initialize Sniffer
-            VideoSniffer sniffer = new VideoSniffer(this, webContainer, new VideoSniffer.SniffCallback() {
-                @Override
-                public void onVideoFound(String videoUrl, Map<String, String> headers) {
-                    log("SNIFF SUCCESS: " + videoUrl);
-                    dialog.dismiss();
-                    runOnUiThread(() -> {
-                        android.content.Intent intent = new android.content.Intent(ServerTestActivity.this,
-                                com.omarflex5.ui.player.PlayerActivity.class);
-                        intent.putExtra(com.omarflex5.ui.player.PlayerActivity.EXTRA_VIDEO_URL, videoUrl);
-                        intent.putExtra(com.omarflex5.ui.player.PlayerActivity.EXTRA_VIDEO_TITLE, "Sniffed Video");
-
-                        if (headers != null && !headers.isEmpty()) {
-                            String userAgent = headers.get("User-Agent");
-                            if (userAgent != null)
-                                intent.putExtra("EXTRA_USER_AGENT", userAgent);
-
-                            String referer = headers.get("Referer");
-                            if (referer != null)
-                                intent.putExtra("EXTRA_REFERER", referer);
-                        }
-
-                        startActivity(intent);
-                    });
-                }
-
-                @Override
-                public void onError(String message) {
-                    log("SNIFF ERROR: " + message);
-                    runOnUiThread(() -> {
-                        android.widget.Toast.makeText(ServerTestActivity.this, "Error: " + message,
-                                android.widget.Toast.LENGTH_LONG).show();
-                    });
-                }
-
-                @Override
-                public void onProgress(String message) {
-                    // Optional
-                }
-            });
-
-            // INJECT SERVER-SPECIFIC JS
-            // If url implies "oldakwam", inject the specific extractor script
+            // If Old Akwam, use the specialized strategy
             if (url.contains("ak.sv") || url.contains("akwam")) {
-                String oldAkwamScript = "try {" +
-                        "    /* Strategy 1: Exact .download_button (Reference Way) */" +
-                        "    var btn1 = document.querySelector('.download_button');" +
-                        "    if (btn1 && btn1.href) { " +
-                        "       console.log('[OldAkwam] Found .download_button: ' + btn1.href); " +
-                        "       window.SnifferAndroid.onVideoDetected(btn1.href); " +
-                        "       return; " +
-                        "    }" +
-                        "    " +
-                        "    /* Strategy 2: .unauth_capsule (Reference Way) */" +
-                        "    /* Reference: getElementsByClassName('unauth_capsule clearfix')[0].getElementsByTagName('a')[0].getAttribute('ng-href') */"
-                        +
-                        "    var capsule = document.querySelector('.unauth_capsule a');" +
-                        "    if (capsule) { " +
-                        "       var href = capsule.getAttribute('ng-href') || capsule.href; " +
-                        "       if(href) { " +
-                        "           console.log('[OldAkwam] Found .unauth_capsule: ' + href); " +
-                        "           window.SnifferAndroid.onVideoDetected(href); " +
-                        "           return; " +
-                        "       }" +
-                        "    }" +
-                        "    " +
-                        "    console.log('[OldAkwam] Still scanning... (Title: ' + document.title + ')');" +
-                        "} catch(e) { console.log('[OldAkwam] Error: ' + e.message); }";
-                sniffer.setCustomScript(oldAkwamScript);
-                log("OldAkwam JS Injected.");
+                log("Using OldAkwam strategy");
+                // Custom JS for hash restoration + button polling
+                customJs = new com.omarflex5.data.sniffer.strategy.OldAkwamStrategy(null).getCustomScript();
             }
 
-            // 6. Handle Cleanup
-            dialog.setOnDismissListener(d -> sniffer.destroy());
+            // Create intent for SnifferActivity
+            android.content.Intent intent = com.omarflex5.ui.sniffer.SnifferActivity.createIntent(
+                    this, url, strategy);
 
-            dialog.show();
+            if (customJs != null) {
+                intent.putExtra(com.omarflex5.ui.sniffer.SnifferActivity.EXTRA_CUSTOM_JS, customJs);
+            }
 
-            // 7. Start!
-            sniffer.startSniffing(url);
+            // Launch with result
+            startActivityForResult(intent, REQUEST_SNIFFER);
         });
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == REQUEST_SNIFFER) {
+            if (resultCode == RESULT_OK && data != null) {
+                String videoUrl = data.getStringExtra(com.omarflex5.ui.sniffer.SnifferActivity.RESULT_VIDEO_URL);
+
+                if (videoUrl != null) {
+                    log("SNIFF SUCCESS: " + videoUrl);
+
+                    // Get headers from sniffer
+                    @SuppressWarnings("unchecked")
+                    Map<String, String> headers = (Map<String, String>) data.getSerializableExtra(
+                            com.omarflex5.ui.sniffer.SnifferActivity.RESULT_HEADERS);
+
+                    // Launch player
+                    android.content.Intent playerIntent = new android.content.Intent(this,
+                            com.omarflex5.ui.player.PlayerActivity.class);
+                    playerIntent.putExtra(com.omarflex5.ui.player.PlayerActivity.EXTRA_VIDEO_URL, videoUrl);
+                    playerIntent.putExtra(com.omarflex5.ui.player.PlayerActivity.EXTRA_VIDEO_TITLE, "Sniffed Video");
+
+                    if (headers != null && !headers.isEmpty()) {
+                        String userAgent = headers.get("User-Agent");
+                        if (userAgent != null)
+                            playerIntent.putExtra("EXTRA_USER_AGENT", userAgent);
+
+                        String referer = headers.get("Referer");
+                        if (referer != null)
+                            playerIntent.putExtra("EXTRA_REFERER", referer);
+
+                        String cookie = headers.get("Cookie");
+                        if (cookie != null) {
+                            playerIntent.putExtra("EXTRA_COOKIE", cookie);
+                            log("Passing Cookie to Player: " + cookie.substring(0, Math.min(20, cookie.length()))
+                                    + "...");
+                        }
+                    }
+
+                    startActivity(playerIntent);
+                } else {
+                    // Check for HTML result (CF bypass mode)
+                    String html = data.getStringExtra(com.omarflex5.ui.sniffer.SnifferActivity.RESULT_HTML);
+                    if (html != null) {
+                        log("HTML extracted (" + html.length() + " chars)");
+                    }
+                }
+            } else {
+                String error = data != null ? data.getStringExtra("error") : "Unknown error";
+                log("SNIFF ERROR: " + error);
+            }
+        }
     }
 }

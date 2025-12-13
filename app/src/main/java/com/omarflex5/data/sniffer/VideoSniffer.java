@@ -148,6 +148,7 @@ public class VideoSniffer {
                 settings.setSupportMultipleWindows(true);
                 settings.setUserAgentString(USER_AGENT);
                 settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+                settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
 
                 // Viewport Settings
                 settings.setUseWideViewPort(true);
@@ -344,22 +345,38 @@ public class VideoSniffer {
             if (videoFound || isDestroyed)
                 return; // Double check on main thread
 
-            // Auto-Inject Referer from WebView if missing
+            // CRITICAL: Always inject WebView session headers for HTTP download links
+            // The download server validates these to prevent hotlinking
             String currentUrl = null;
+            String webViewUA = null;
             if (webView != null) {
                 currentUrl = webView.getUrl();
+                webViewUA = webView.getSettings().getUserAgentString();
             }
 
             Map<String, String> finalHeaders = new HashMap<>();
             if (headers != null)
                 finalHeaders.putAll(headers);
 
-            if (!finalHeaders.containsKey("User-Agent"))
+            // FORCE WebView User-Agent (overrides any intercept UA)
+            if (webViewUA != null) {
+                finalHeaders.put("User-Agent", webViewUA);
+                Log.d(TAG, "Injected WebView User-Agent");
+            } else if (!finalHeaders.containsKey("User-Agent")) {
                 finalHeaders.put("User-Agent", USER_AGENT);
+            }
 
-            if (!finalHeaders.containsKey("Referer") && currentUrl != null) {
+            // FORCE Referer from current page (critical for HTTP links)
+            if (currentUrl != null) {
                 finalHeaders.put("Referer", currentUrl);
-                Log.d(TAG, "Auto-Injected Referer: " + currentUrl);
+                Log.d(TAG, "Injected Referer: " + currentUrl);
+
+                // FORCE Cookies (Critical for authenticated downloads)
+                String cookies = android.webkit.CookieManager.getInstance().getCookie(currentUrl);
+                if (cookies != null && !cookies.isEmpty()) {
+                    finalHeaders.put("Cookie", cookies);
+                    Log.d(TAG, "Injected Cookies: " + cookies);
+                }
             }
 
             videoFound = true;
