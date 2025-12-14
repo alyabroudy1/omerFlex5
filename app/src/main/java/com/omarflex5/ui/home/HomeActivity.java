@@ -138,8 +138,8 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
         android.content.Intent intent = new android.content.Intent(this,
                 com.omarflex5.ui.test.ServerTestActivity.class);
         intent.putExtra("EXTRA_AUTO_TEST", true);
-        intent.putExtra("EXTRA_QUERY", "Batman"); // Default query
-        intent.putExtra("EXTRA_SERVER_NAME", "oldakwam"); // Target generic or oldakwam
+        intent.putExtra("EXTRA_QUERY", "ratched"); // Default query
+        intent.putExtra("EXTRA_SERVER_NAME", "arabseed"); // Target generic or oldakwam
         startActivity(intent);
     }
 

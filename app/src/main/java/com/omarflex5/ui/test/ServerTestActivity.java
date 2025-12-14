@@ -19,7 +19,7 @@ import com.omarflex5.data.repository.ServerRepository;
 import com.omarflex5.data.scraper.BaseHtmlParser;
 import com.omarflex5.data.scraper.ParserFactory;
 import com.omarflex5.data.scraper.WebViewScraperManager;
-// VideoSniffer import removed - now using SnifferActivity
+import com.omarflex5.ui.sniffer.SnifferActivity;
 
 import java.text.SimpleDateFormat;
 import java.util.Date;
@@ -104,6 +104,9 @@ public class ServerTestActivity extends AppCompatActivity {
         ArrayAdapter<String> adapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, servers);
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerServers.setAdapter(adapter);
+        // Default to ArabSeed for testing
+        spinnerServers.setSelection(1);
+        inputQuery.setText("la casa");
     }
 
     private void runTest() {
@@ -135,7 +138,7 @@ public class ServerTestActivity extends AppCompatActivity {
     private void startScraping(ServerEntity server, String query) {
         log("--- SEARCHING ---");
 
-        scraperManager.search(server, query, true, new WebViewScraperManager.ScraperCallback() {
+        scraperManager.search(server, query, true, this, new WebViewScraperManager.ScraperCallback() {
             @Override
             public void onSuccess(String html, Map<String, String> cookies) {
                 log("--- SEARCH SUCCESS ---");
@@ -167,10 +170,15 @@ public class ServerTestActivity extends AppCompatActivity {
     // Generic Navigation Entry Point
     private void onItemClicked(BaseHtmlParser.ParsedItem item) {
         log("\n--- NAVIGATING: " + item.getTitle() + " ---");
-        loadPageAndParse(item.getPageUrl());
+        // Entry from Search: Enable Auto-Redirect for Series Discovery
+        loadPageAndParse(item.getPageUrl(), true);
     }
 
     private void loadPageAndParse(String url) {
+        loadPageAndParse(url, false); // Default: No redirect
+    }
+
+    private void loadPageAndParse(String url, boolean allowAutoRedirect) {
         String serverName = (String) spinnerServers.getSelectedItem();
 
         serverRepository.getServerByName(serverName, server -> {
@@ -201,7 +209,7 @@ public class ServerTestActivity extends AppCompatActivity {
                         .setCancelable(false)
                         .show();
 
-                scraperManager.loadHybrid(server, finalUrl, true, new WebViewScraperManager.ScraperCallback() {
+                scraperManager.loadHybrid(server, finalUrl, true, this, new WebViewScraperManager.ScraperCallback() {
                     @Override
                     public void onSuccess(String html, Map<String, String> cookies) {
                         loadingDialog.dismiss();
@@ -225,38 +233,43 @@ public class ServerTestActivity extends AppCompatActivity {
 
                             log("Found " + subItems.size() + " sub-items.");
 
-                            log("Found " + subItems.size() + " sub-items.");
-
-                            // AUTO-NAVIGATION LOGIC
-                            // Don't require size==1. If we find a "Direct" or standard nav link, take it.
-                            for (BaseHtmlParser.ParsedItem item : subItems) {
-                                boolean isNav = item.getTitle().equalsIgnoreCase("Go to Download") ||
-                                        item.getTitle().equalsIgnoreCase("Direct Link") ||
-                                        "Direct".equalsIgnoreCase(item.getQuality());
-
-                                if (isNav) {
-                                    log("Auto-Navigating (Found Valid Item): " + item.getTitle());
-
-                                    boolean isDownloadPage = item.getPageUrl().contains("/download/")
-                                            || item.getPageUrl().contains("/old/download/");
-
-                                    if (isDownloadPage) {
-                                        // Use Sniffer for download pages
-                                        handleWebViewFallback(item.getPageUrl());
-                                    } else if ("Direct".equalsIgnoreCase(item.getQuality())
-                                            || item.getPageUrl().endsWith(".mp4")
-                                            || item.getPageUrl().endsWith(".mkv")) {
-                                        // Final step: Play valid media files
-                                        playVideo(item.getPageUrl(), item.getTitle());
-                                    } else {
-                                        // Intermediate step: Load next page
-                                        loadPageAndParse(item.getPageUrl());
+                            // SERIES DISCOVERY: Check for Parent Link and Auto-Redirect
+                            if (allowAutoRedirect) {
+                                for (BaseHtmlParser.ParsedItem item : subItems) {
+                                    if ("parent_series".equals(item.getQuality())) {
+                                        log("Series Discovery: Auto-Redirecting to Parent Series -> "
+                                                + item.getTitle());
+                                        loadPageAndParse(item.getPageUrl(), false); // Disable redirect for next page
+                                        return;
                                     }
-                                    return; // Stop processing other items
                                 }
                             }
 
-                            // Determine Action based on what we found
+                            // AUTO-NAVIGATION LOGIC (Refactored to List Options)
+                            java.util.List<BaseHtmlParser.ParsedItem> validOptions = new java.util.ArrayList<>();
+                            for (BaseHtmlParser.ParsedItem item : subItems) {
+                                boolean isNav = item.getTitle().equalsIgnoreCase("Go to Download") ||
+                                        item.getTitle().equalsIgnoreCase("Direct Link") ||
+                                        "Direct".equalsIgnoreCase(item.getQuality()) ||
+                                        "Navigation".equalsIgnoreCase(item.getQuality()) ||
+                                        "Server".equalsIgnoreCase(item.getQuality()) ||
+                                // Include Episodes and Series for navigation
+                                        item.getType() == com.omarflex5.data.local.entity.MediaType.EPISODE ||
+                                        item.getType() == com.omarflex5.data.local.entity.MediaType.SERIES;
+
+                                if (isNav) {
+                                    validOptions.add(item);
+                                }
+                            }
+
+                            if (!validOptions.isEmpty()) {
+                                log("Found " + validOptions.size() + " valid server/destination options.");
+                                showServerSelectionDialog(validOptions);
+                                return; // Stop and wait for user selection
+                            }
+
+                            // Determine Action based on what we found (Fallback if no specific servers
+                            // found)
                             boolean isResolution = false;
                             if (!subItems.isEmpty()) {
                                 String firstQuality = subItems.get(0).getQuality();
@@ -286,6 +299,46 @@ public class ServerTestActivity extends AppCompatActivity {
                     }
                 });
             });
+        });
+    }
+
+    private void showServerSelectionDialog(List<BaseHtmlParser.ParsedItem> items) {
+        String[] names = new String[items.size()];
+        for (int i = 0; i < items.size(); i++) {
+            names[i] = items.get(i).getTitle();
+        }
+
+        runOnUiThread(() -> {
+            new AlertDialog.Builder(this)
+                    .setTitle("Select Server / Action")
+                    .setItems(names, (dialog, which) -> {
+                        BaseHtmlParser.ParsedItem item = items.get(which);
+                        String url = item.getPageUrl();
+                        log("User Selected: " + item.getTitle());
+
+                        boolean isDownloadPage = url.contains("/download/")
+                                || url.contains("/old/download/");
+
+                        if (isDownloadPage || "Server".equalsIgnoreCase(item.getQuality())) {
+                            // Use Sniffer for download pages or Server embeds
+                            handleWebViewFallback(url);
+                        } else if ("Direct".equalsIgnoreCase(item.getQuality())
+                                || url.endsWith(".mp4")
+                                || url.endsWith(".mkv")) {
+                            // Final step: Play valid media files
+                            playVideo(url, item.getTitle());
+                        } else {
+                            // Intermediate step: Load next page
+                            // Handle POST params if present (basic stripping for now to prevent crash)
+                            if (url.contains("|postParams=")) {
+                                log("Warning: POST params detected but not fully supported in Test Activity: " + url);
+                                url = url.split("\\|")[0];
+                            }
+                            loadPageAndParse(url);
+                        }
+                    })
+                    .setPositiveButton("Close", null)
+                    .show();
         });
     }
 
@@ -366,12 +419,12 @@ public class ServerTestActivity extends AppCompatActivity {
     }
 
     private void handleWebViewFallback(String url) {
-        log("Launching SnifferActivity for: " + url);
+        log("Fallback to WebView for: " + url);
         log("URL Hash Fragment: " + (url.contains("#") ? url.substring(url.indexOf("#")) : "MISSING"));
 
         runOnUiThread(() -> {
             // Determine strategy based on URL
-            int strategy = com.omarflex5.ui.sniffer.SnifferActivity.STRATEGY_VIDEO;
+            int strategy = SnifferActivity.STRATEGY_VIDEO;
             String customJs = null;
 
             // If Old Akwam, use the specialized strategy
@@ -382,11 +435,12 @@ public class ServerTestActivity extends AppCompatActivity {
             }
 
             // Create intent for SnifferActivity
-            android.content.Intent intent = com.omarflex5.ui.sniffer.SnifferActivity.createIntent(
-                    this, url, strategy);
+            // URL might contain pipes e.g. "http://...|Referer=..." which SnifferActivity
+            // now handles internally
+            android.content.Intent intent = SnifferActivity.createIntent(this, url, strategy);
 
             if (customJs != null) {
-                intent.putExtra(com.omarflex5.ui.sniffer.SnifferActivity.EXTRA_CUSTOM_JS, customJs);
+                intent.putExtra(SnifferActivity.EXTRA_CUSTOM_JS, customJs);
             }
 
             // Launch with result
@@ -400,7 +454,7 @@ public class ServerTestActivity extends AppCompatActivity {
 
         if (requestCode == REQUEST_SNIFFER) {
             if (resultCode == RESULT_OK && data != null) {
-                String videoUrl = data.getStringExtra(com.omarflex5.ui.sniffer.SnifferActivity.RESULT_VIDEO_URL);
+                String videoUrl = data.getStringExtra(SnifferActivity.RESULT_VIDEO_URL);
 
                 if (videoUrl != null) {
                     log("SNIFF SUCCESS: " + videoUrl);
@@ -408,7 +462,7 @@ public class ServerTestActivity extends AppCompatActivity {
                     // Get headers from sniffer
                     @SuppressWarnings("unchecked")
                     Map<String, String> headers = (Map<String, String>) data.getSerializableExtra(
-                            com.omarflex5.ui.sniffer.SnifferActivity.RESULT_HEADERS);
+                            SnifferActivity.RESULT_HEADERS);
 
                     // Launch player
                     android.content.Intent playerIntent = new android.content.Intent(this,
@@ -436,7 +490,7 @@ public class ServerTestActivity extends AppCompatActivity {
                     startActivity(playerIntent);
                 } else {
                     // Check for HTML result (CF bypass mode)
-                    String html = data.getStringExtra(com.omarflex5.ui.sniffer.SnifferActivity.RESULT_HTML);
+                    String html = data.getStringExtra(SnifferActivity.RESULT_HTML);
                     if (html != null) {
                         log("HTML extracted (" + html.length() + " chars)");
                     }

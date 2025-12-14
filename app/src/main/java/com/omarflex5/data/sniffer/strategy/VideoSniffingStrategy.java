@@ -145,8 +145,11 @@ public class VideoSniffingStrategy implements SniffingStrategy {
         StringBuilder script = new StringBuilder();
         script.append("javascript:(function() {");
         script.append("   try {");
-        script.append("       console.log('[VideoSniffer] Starting monitor');");
+        script.append("       console.log('[VideoSniffer] Starting monitor v2.0');");
         script.append("       var foundVideo = false;");
+        script.append("       var clickAttempts = 0;");
+        script.append("       var hasClicked = false;");
+        script.append("       ");
         script.append("       function checkVideo(src) {");
         script.append("           if (!src || foundVideo) return;");
         script.append("           if (src.match(/\\.(m3u8|mp4|mkv|webm|mpd)($|\\?)/i)) {");
@@ -154,7 +157,35 @@ public class VideoSniffingStrategy implements SniffingStrategy {
         script.append("               foundVideo = true;");
         script.append("           }");
         script.append("       }");
+        script.append("       ");
+        script.append("       function attemptClick() {");
+        script.append("           if (foundVideo || hasClicked || clickAttempts > 5) return;");
+        script.append("           ");
+        script.append("           var targets = [");
+        script.append("               '.vjs-big-play-button',");
+        script.append("               '.jw-display-icon-container',");
+        script.append("               '.plyr__control--overlaid',");
+        script.append("               '#play-button',");
+        script.append("               '.play-button',");
+        script.append("               'button[class*=\"play\"]',");
+        script.append("               'div[class*=\"play\"]',");
+        script.append("               'div[id*=\"player\"] div[class*=\"overlay\"]'"); // Generic overlay
+        script.append("           ];");
+        script.append("           ");
+        script.append("           for (var i = 0; i < targets.length; i++) {");
+        script.append("               var el = document.querySelector(targets[i]);");
+        script.append("               if (el && el.offsetParent !== null) {"); // Visible
+        script.append("                   console.log('[VideoSniffer] Clicking: ' + targets[i]);");
+        script.append("                   el.click();");
+        script.append("                   hasClicked = true;");
+        script.append("                   return;");
+        script.append("               }");
+        script.append("           }");
+        script.append("           clickAttempts++;");
+        script.append("       }");
+        script.append("       ");
         script.append("       function scan() {");
+        script.append("           if (foundVideo) return;");
 
         // Inject custom script if provided
         if (customScript != null && !customScript.isEmpty()) {
@@ -169,7 +200,20 @@ public class VideoSniffingStrategy implements SniffingStrategy {
         script.append("           var iframes = document.getElementsByTagName('iframe');");
         script.append("           for(var i=0; i<iframes.length; i++) {");
         script.append("               checkVideo(iframes[i].src);");
+        script.append("               try {"); // Try to peer into same-origin iframes
+        script.append(
+                "                   var innerDoc = iframes[i].contentDocument || iframes[i].contentWindow.document;");
+        script.append("                   if (innerDoc) {");
+        script.append("                       var innerVideos = innerDoc.getElementsByTagName('video');");
+        script.append("                       for(var j=0; j<innerVideos.length; j++) {");
+        script.append("                           checkVideo(innerVideos[j].src);");
+        script.append("                           checkVideo(innerVideos[j].currentSrc);");
+        script.append("                       }");
+        script.append("                   }");
+        script.append("               } catch(e) {}");
         script.append("           }");
+        script.append("           ");
+        script.append("           attemptClick();");
         script.append("       }");
         script.append("       setInterval(scan, 1000);");
         script.append("       scan();"); // Initial scan

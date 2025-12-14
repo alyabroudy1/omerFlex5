@@ -784,8 +784,7 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
             builder.sslSocketFactory(sslSocketFactory, (javax.net.ssl.X509TrustManager) trustAllCerts[0]);
             builder.hostnameVerifier((hostname, session) -> true);
 
-            // FIX: Force HTTP/1.1 and Allow Cleartext to prevent 502 errors on some servers
-            builder.protocols(java.util.Collections.singletonList(okhttp3.Protocol.HTTP_1_1));
+            // Allow Cleartext traffic (HTTP)
             builder.connectionSpecs(java.util.Arrays.asList(
                     okhttp3.ConnectionSpec.MODERN_TLS,
                     okhttp3.ConnectionSpec.COMPATIBLE_TLS,

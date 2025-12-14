@@ -219,7 +219,7 @@ public class UnifiedSearchService {
         List<SearchResult> results = new ArrayList<>();
         CountDownLatch latch = new CountDownLatch(1);
 
-        scraperManager.search(server, query, allowFallback, new WebViewScraperManager.ScraperCallback() {
+        scraperManager.search(server, query, allowFallback, null, new WebViewScraperManager.ScraperCallback() {
             @Override
             public void onSuccess(String html, Map<String, String> cookies) {
                 results.addAll(parseResults(server, html));
@@ -307,7 +307,7 @@ public class UnifiedSearchService {
         Log.d(TAG, "Processing QUEUED server: " + server.getName());
 
         // IN THE QUEUE: Allow Fallback = TRUE
-        scraperManager.search(server, currentQuery, true, new WebViewScraperManager.ScraperCallback() {
+        scraperManager.search(server, currentQuery, true, null, new WebViewScraperManager.ScraperCallback() {
             @Override
             public void onSuccess(String html, Map<String, String> cookies) {
                 List<SearchResult> results = parseResults(server, html);

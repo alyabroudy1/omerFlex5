@@ -1,10 +1,17 @@
 package com.omarflex5.data.scraper;
 
+import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.Context;
 import android.net.Uri;
 import android.os.Handler;
 import android.os.Looper;
 import android.util.Log;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.ViewGroup.LayoutParams;
+import android.view.Window;
 import android.webkit.CookieManager;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -46,6 +53,7 @@ public class WebViewScraperManager {
     private final Gson gson;
 
     private WebView webView;
+    private Dialog visibleDialog; // Dialog to hold WebView if visible
     private boolean isWebViewReady = false;
 
     private WebViewScraperManager(Context context) {
@@ -84,25 +92,48 @@ public class WebViewScraperManager {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setJavaScriptCanOpenWindowsAutomatically(true);
+        // CRITICAL: Use MOBILE User-Agent. Cloudflare Turnstile checks for touch events
+        // + mobile UA consistency.
         settings.setUserAgentString(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
-        settings.setBlockNetworkImage(true); // Save bandwidth
+                "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
+        settings.setBlockNetworkImage(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        settings.setCacheMode(WebSettings.LOAD_NO_CACHE); // Don't cache CF challenges
+
+        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null); // Hardware accel for canvas challenges
+        webView.setWebChromeClient(new android.webkit.WebChromeClient() {
+            @Override
+            public boolean onConsoleMessage(android.webkit.ConsoleMessage cm) {
+                Log.d("WebViewConsole", cm.message() + " -- From line " + cm.lineNumber() + " of " + cm.sourceId());
+                return true;
+            }
+        });
+
+        // Critical for CF Turnstile
+        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
+        CookieManager.getInstance().flush();
     }
 
     /**
      * Load a URL and extract CF cookies + page HTML.
      */
-    public void loadWithCfBypass(ServerEntity server, String url, ScraperCallback callback) {
+    public void loadWithCfBypass(ServerEntity server, String url, Activity activity, ScraperCallback callback) {
         if (!isWebViewReady) {
             initialize();
             // Retry after a short delay
-            mainHandler.postDelayed(() -> loadWithCfBypass(server, url, callback), 500);
+            mainHandler.postDelayed(() -> loadWithCfBypass(server, url, activity, callback), 500);
             return;
         }
 
         mainHandler.post(() -> {
-            Log.d(TAG, "Loading URL: " + url);
+            Log.d(TAG, "Loading URL with CF Bypass: " + url);
+
+            // Show Dialog if Activity provided
+            if (activity != null && !activity.isFinishing()) {
+                showWebViewDialog(activity);
+            }
 
             AtomicBoolean completed = new AtomicBoolean(false);
             AtomicBoolean cfDetected = new AtomicBoolean(false);
@@ -116,12 +147,23 @@ public class WebViewScraperManager {
                     view.evaluateJavascript("document.title", title -> {
                         String pageTitle = title != null ? title.replace("\"", "") : "";
 
+                        // Update visual status if available
+                        if (view.getTag() instanceof android.widget.TextView) {
+                            android.widget.TextView st = (android.widget.TextView) view.getTag(); // Safe cast
+                            st.post(() -> st.setText("Status: " + (pageTitle.isEmpty() ? "Loading..." : pageTitle)));
+                        }
+
                         if (pageTitle.contains("Cloudflare") ||
                                 pageTitle.contains("Just a moment") ||
                                 pageTitle.contains("Checking your browser")) {
                             // Still on CF challenge
                             cfDetected.set(true);
                             Log.d(TAG, "CF challenge detected, waiting...");
+                            if (view.getTag() instanceof android.widget.TextView) {
+                                ((android.widget.TextView) view.getTag())
+                                        .post(() -> ((android.widget.TextView) view.getTag())
+                                                .setText("⚠️ Cloudflare Detected. Please verify."));
+                            }
                         } else if (cfDetected.get() || !pageTitle.isEmpty()) {
                             // CF passed or normal page
                             if (!completed.getAndSet(true)) {
@@ -156,10 +198,84 @@ public class WebViewScraperManager {
         });
     }
 
+    private void showWebViewDialog(Activity activity) {
+        try {
+            if (visibleDialog != null && visibleDialog.isShowing()) {
+                visibleDialog.dismiss();
+            }
+
+            // Remove WebView from any previous parent
+            if (webView.getParent() != null) {
+                ((ViewGroup) webView.getParent()).removeView(webView);
+            }
+
+            visibleDialog = new Dialog(activity, android.R.style.Theme_Black_NoTitleBar_Fullscreen);
+            visibleDialog.setCancelable(true);
+
+            // Create a FrameLayout to hold WebView + Status Bar Overlay
+            android.widget.FrameLayout container = new android.widget.FrameLayout(activity);
+            container.setLayoutParams(new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+
+            // Add WebView
+            container.addView(webView, new LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT));
+
+            // Add Status Bar Overlay (Top)
+            android.widget.LinearLayout statusBar = new android.widget.LinearLayout(activity);
+            statusBar.setOrientation(android.widget.LinearLayout.VERTICAL);
+            statusBar.setBackgroundColor(0xCC000000); // Semi-transparent black
+            statusBar.setPadding(16, 16, 16, 16);
+            android.widget.FrameLayout.LayoutParams statusParams = new android.widget.FrameLayout.LayoutParams(
+                    LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT);
+            statusParams.gravity = android.view.Gravity.TOP;
+
+            android.widget.TextView statusText = new android.widget.TextView(activity);
+            statusText.setText("Status: Initialize...");
+            statusText.setTextColor(0xFFFFFFFF);
+            statusText.setTextSize(14f);
+            statusBar.addView(statusText);
+
+            container.addView(statusBar, statusParams);
+
+            visibleDialog.setContentView(container);
+            visibleDialog.setOnDismissListener(dialog -> {
+                // Optional: Cancel loading?
+            });
+            visibleDialog.show();
+            webView.requestFocus();
+            Log.d(TAG, "WebView Dialog shown with Status Bar.");
+
+            // Store status text reference to update later (simple hack since we don't have
+            // a class member for it yet)
+            webView.setTag(statusText);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to show WebView Dialog", e);
+        }
+    }
+
+    private void dismissDialog() {
+        mainHandler.post(() -> {
+            try {
+                if (visibleDialog != null && visibleDialog.isShowing()) {
+                    visibleDialog.dismiss();
+                    visibleDialog = null;
+                }
+                // Detach webview to be safe?
+                if (webView != null && webView.getParent() != null) {
+                    ((ViewGroup) webView.getParent()).removeView(webView);
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error dismissing dialog", e);
+            }
+        });
+    }
+
     /**
      * Extract cookies and HTML from loaded page.
      */
     private void extractAndSave(WebView view, ServerEntity server, ScraperCallback callback) {
+        // Dismiss UI
+        dismissDialog();
+
         // Get cookies
         String cookieString = CookieManager.getInstance().getCookie(server.getBaseUrl());
         Map<String, String> cookies = parseCookies(cookieString);
@@ -191,9 +307,13 @@ public class WebViewScraperManager {
     /**
      * Search a server using WebView (for CF-protected searches).
      */
-    public void search(ServerEntity server, String query, boolean allowWebViewFallback, ScraperCallback callback) {
+    /**
+     * Search a server using WebView (for CF-protected searches).
+     */
+    public void search(ServerEntity server, String query, boolean allowWebViewFallback, Activity activity,
+            ScraperCallback callback) {
         String searchUrl = buildSearchUrl(server, query);
-        loadHybrid(server, searchUrl, allowWebViewFallback, callback);
+        loadHybrid(server, searchUrl, allowWebViewFallback, activity, callback);
     }
 
     /**
@@ -290,7 +410,11 @@ public class WebViewScraperManager {
     /**
      * Try direct request first. If CF detected, fallback to WebView.
      */
-    public void loadHybrid(ServerEntity server, String url, boolean allowWebViewFallback, ScraperCallback callback) {
+    /**
+     * Try direct request first. If CF detected, fallback to WebView.
+     */
+    public void loadHybrid(ServerEntity server, String url, boolean allowWebViewFallback, Activity activity,
+            ScraperCallback callback) {
         new Thread(() -> {
             try {
                 // 1. Prepare Direct Request
@@ -325,7 +449,7 @@ public class WebViewScraperManager {
                     if (allowWebViewFallback) {
                         // Failover to WebView
                         Log.d(TAG, "Direct request hit Cloudflare (" + code + "). Falling back to WebView.");
-                        mainHandler.post(() -> loadWithCfBypass(server, url, callback));
+                        mainHandler.post(() -> loadWithCfBypass(server, url, activity, callback));
                     } else {
                         // Strict Fast Mode: Fail immediately so caller can queue it
                         Log.d(TAG, "Direct request hit Cloudflare (" + code + "). Reporting CLOUDFLARE_DETECTED.");
@@ -348,7 +472,7 @@ public class WebViewScraperManager {
             } catch (Exception e) {
                 Log.e(TAG, "Direct request failed: " + e.getMessage());
                 if (allowWebViewFallback) {
-                    mainHandler.post(() -> loadWithCfBypass(server, url, callback));
+                    mainHandler.post(() -> loadWithCfBypass(server, url, activity, callback));
                 } else {
                     mainHandler.post(() -> callback.onError("CONNECTION_ERROR"));
                 }

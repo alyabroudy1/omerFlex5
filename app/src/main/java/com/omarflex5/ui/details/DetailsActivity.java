@@ -135,7 +135,7 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
 
         showLoading();
         new Thread(() -> {
-            scraperManager.loadHybrid(currentServer, url, true, new WebViewScraperManager.ScraperCallback() {
+            scraperManager.loadHybrid(currentServer, url, true, this, new WebViewScraperManager.ScraperCallback() {
                 @Override
                 public void onSuccess(String html, Map<String, String> cookies) {
                     runOnUiThread(() -> parseContent(html));

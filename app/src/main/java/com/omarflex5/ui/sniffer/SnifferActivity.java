@@ -49,7 +49,7 @@ public class SnifferActivity extends AppCompatActivity {
     public static final String EXTRA_STRATEGY = "extra_strategy";
     public static final String EXTRA_CUSTOM_JS = "extra_custom_js";
     public static final String EXTRA_TIMEOUT = "extra_timeout";
-    public static final String EXTRA_USER_AGENT = "extra_user_agent";
+    // EXTRA_HEADERS removed to simplify interface
 
     // Result Extras
     public static final String RESULT_VIDEO_URL = "result_video_url";
@@ -79,6 +79,12 @@ public class SnifferActivity extends AppCompatActivity {
     // JS Interface for callbacks from WebView
     private final SnifferJsInterface jsInterface = new SnifferJsInterface();
 
+    public static Intent createIntent(Context context, String url, int strategyType, Map<String, String> headers) {
+        // Headers map ignored in intent to fix build issues.
+        // Caller should encode headers in URL pipe or we rely on defaults.
+        return createIntent(context, url, strategyType);
+    }
+
     public static Intent createIntent(Context context, String url, int strategyType) {
         Intent intent = new Intent(context, SnifferActivity.class);
         intent.putExtra(EXTRA_URL, url);
@@ -101,16 +107,38 @@ public class SnifferActivity extends AppCompatActivity {
         handler = new Handler(Looper.getMainLooper());
 
         // Parse intent
-        targetUrl = getIntent().getStringExtra(EXTRA_URL);
+        String rawUrl = getIntent().getStringExtra(EXTRA_URL);
         int strategyType = getIntent().getIntExtra(EXTRA_STRATEGY, STRATEGY_VIDEO);
         String customJs = getIntent().getStringExtra(EXTRA_CUSTOM_JS);
         timeout = getIntent().getLongExtra(EXTRA_TIMEOUT, 60000);
-        String userAgent = getIntent().getStringExtra(EXTRA_USER_AGENT);
 
-        if (targetUrl == null || targetUrl.isEmpty()) {
+        // Parse User Agent
+        // Allow caller to override default UA (e.g. for Desktop mode)
+        String userAgent = getIntent().getStringExtra("EXTRA_USER_AGENT");
+
+        if (rawUrl == null || rawUrl.isEmpty()) {
             updateStatus("❌ No URL provided");
             finishWithError("No URL provided");
             return;
+        }
+
+        // Parse Headers from URL (Format: url|Key=Value&Key2=Value2)
+        Map<String, String> extraHeaders = new HashMap<>();
+        if (rawUrl.contains("|")) {
+            String[] parts = rawUrl.split("\\|", 2);
+            targetUrl = parts[0];
+            String params = parts[1];
+
+            String[] pairs = params.split("&");
+            for (String pair : pairs) {
+                String[] kv = pair.split("=", 2);
+                if (kv.length == 2) {
+                    extraHeaders.put(kv[0], kv[1]);
+                }
+            }
+            Log.d(TAG, "Parsed headers from URL: " + extraHeaders);
+        } else {
+            targetUrl = rawUrl;
         }
 
         // Create strategy based on type
@@ -135,7 +163,41 @@ public class SnifferActivity extends AppCompatActivity {
 
         // Load URL
         updateStatus("Loading: " + targetUrl);
-        webView.loadUrl(targetUrl);
+        if (!extraHeaders.isEmpty()) {
+            webView.loadUrl(targetUrl, extraHeaders);
+        } else {
+            webView.loadUrl(targetUrl);
+        }
+
+        // AUTO-CLICK FALLBACK (Native):
+        // If JS clicker fails (due to cross-origin iframe), this physical tap will wake
+        // the player.
+        handler.postDelayed(() -> {
+            if (!isDestroyed && !resultDelivered) {
+                simulateClick();
+            }
+        }, 4000); // 4 seconds after load
+    }
+
+    private void simulateClick() {
+        if (webView == null)
+            return;
+
+        long downTime = android.os.SystemClock.uptimeMillis();
+        long eventTime = android.os.SystemClock.uptimeMillis() + 100;
+        float x = webView.getWidth() / 2.0f;
+        float y = webView.getHeight() / 2.0f;
+
+        Log.d(TAG, "Simulating native click at " + x + "," + y);
+        updateStatus("👆 Simulating Click...");
+
+        android.view.MotionEvent downEvent = android.view.MotionEvent.obtain(
+                downTime, eventTime, android.view.MotionEvent.ACTION_DOWN, x, y, 0);
+        android.view.MotionEvent upEvent = android.view.MotionEvent.obtain(
+                downTime, eventTime + 100, android.view.MotionEvent.ACTION_UP, x, y, 0);
+
+        webView.dispatchTouchEvent(downEvent);
+        webView.dispatchTouchEvent(upEvent);
     }
 
     private SniffingStrategy createStrategy(int type, String customJs) {
@@ -311,6 +373,13 @@ public class SnifferActivity extends AppCompatActivity {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             String url = request.getUrl().toString();
+
+            // SECURITY: Block non-HTTP schemes (intent://, market://, etc.)
+            if (!url.startsWith("http")) {
+                Log.w(TAG, "Blocked non-HTTP navigation: " + url);
+                return true;
+            }
+
             return strategy.shouldOverrideUrlLoading(url);
         }
 
