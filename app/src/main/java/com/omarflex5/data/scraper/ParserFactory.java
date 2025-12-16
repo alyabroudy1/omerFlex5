@@ -44,6 +44,37 @@ public class ParserFactory {
     }
 
     /**
+     * Get the search URLs for a server based on its specific strategy.
+     */
+    public static java.util.List<String> getSearchUrls(com.omarflex5.data.local.entity.ServerEntity server,
+            String query) {
+        String pattern = server.getSearchUrlPattern();
+        if (pattern == null || pattern.isEmpty()) {
+            pattern = "/?s={query}";
+        }
+
+        String encodedQuery;
+        try {
+            encodedQuery = java.net.URLEncoder.encode(query, "UTF-8");
+        } catch (Exception e) {
+            encodedQuery = query.replace(" ", "+");
+        }
+
+        String baseSearchUrl = server.getBaseUrl() + pattern.replace("{query}", encodedQuery);
+        java.util.List<String> urls = new java.util.ArrayList<>();
+
+        if ("arabseed".equalsIgnoreCase(server.getName())) {
+            // ArabSeed specific: Split into Movies and Series for better accuracy
+            urls.add(baseSearchUrl + "&type=movies");
+            urls.add(baseSearchUrl + "&type=series");
+        } else {
+            urls.add(baseSearchUrl);
+        }
+
+        return urls;
+    }
+
+    /**
      * Generic parser that works with common HTML structures.
      */
     private static class GenericParser extends BaseHtmlParser {

@@ -131,7 +131,7 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
         setupBackPressCallback();
         observeViewModel();
         // TEMP: Start OldAkwam Test
-        startAkwamTest();
+        // startAkwamTest();
     }
 
     public void startAkwamTest() {
@@ -364,21 +364,33 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
                 new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false));
 
         categoryAdapter = new CategoryAdapter();
-        categoryAdapter.setListener(category -> {
-            // Save current focus state before switching
-            focusStateManager.saveAllStates();
+        categoryAdapter.setListener(new CategoryAdapter.OnCategoryListener() {
+            @Override
+            public void onCategorySelected(Category category) {
+                // Save current focus state before switching
+                focusStateManager.saveAllStates();
 
-            // Update current category
-            currentCategoryId = category.getId();
+                // Update current category
+                currentCategoryId = category.getId();
 
-            // Tell ViewModel to load movies for this category
-            viewModel.selectCategory(category);
+                // Tell ViewModel to load movies for this category
+                viewModel.selectCategory(category);
 
-            // Reset movie scroll to top for new category
-            movieDelegate.resetToPosition(0);
+                // Reset movie scroll to top for new category
+                movieDelegate.resetToPosition(0);
 
-            // Auto-select last focused movie for this category (done in observer after
-            // movies load)
+                // Auto-select last focused movie for this category (done in observer after
+                // movies load)
+            }
+
+            @Override
+            public void onSearchSubmitted(String query) {
+                Log.d(TAG, "Search submitted: " + query);
+                android.content.Intent intent = new android.content.Intent(HomeActivity.this,
+                        com.omarflex5.ui.search.SearchActivity.class);
+                intent.putExtra(com.omarflex5.ui.search.SearchActivity.EXTRA_QUERY, query);
+                startActivity(intent);
+            }
         });
         recyclerCategories.setAdapter(categoryAdapter);
 

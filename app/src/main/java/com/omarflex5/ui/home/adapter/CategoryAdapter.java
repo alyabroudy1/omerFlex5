@@ -2,13 +2,19 @@ package com.omarflex5.ui.home.adapter;
 
 import android.animation.AnimatorSet;
 import android.animation.ObjectAnimator;
+import android.animation.ValueAnimator;
+import android.view.KeyEvent;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.animation.AccelerateDecelerateInterpolator;
+import android.view.inputmethod.EditorInfo;
+import android.widget.EditText;
+import android.widget.ImageView;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
+import androidx.cardview.widget.CardView;
 import androidx.recyclerview.widget.RecyclerView;
 
 import com.omarflex5.R;
@@ -19,22 +25,32 @@ import java.util.List;
 
 /**
  * CategoryAdapter with distinct focus and selection states:
- * - Focused: visual animation (scale up + pulse) when navigating with D-pad
- * - Selected: persistent red background when item is clicked
+ * - Position 0: Expanding Search Bar
+ * - Position 1+: Category Items
  */
-public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.CategoryViewHolder> {
+public class CategoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder> {
+
+    private static final int VIEW_TYPE_SEARCH = 0;
+    private static final int VIEW_TYPE_CATEGORY = 1;
 
     private List<Category> categories = new ArrayList<>();
     private OnCategoryListener listener;
-    private int selectedPosition = -1; // -1 means no selection
+    private int selectedPosition = 1; // Default to first category (index 1)
 
+    // Callback for search submission
     public interface OnCategoryListener {
         void onCategorySelected(Category category);
+
+        void onSearchSubmitted(String query);
     }
 
     public void setCategories(List<Category> categories) {
         this.categories = categories;
-        selectedPosition = 0; // Select first category by default
+        // Keep selection if valid, otherwise reset to first category (which is at index
+        // 1 now)
+        if (selectedPosition < 1 || selectedPosition > categories.size()) {
+            selectedPosition = 1;
+        }
         notifyDataSetChanged();
     }
 
@@ -46,68 +62,92 @@ public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.Catego
         return selectedPosition;
     }
 
+    @Override
+    public int getItemViewType(int position) {
+        // The first item is always the Search Bar
+        return position == 0 ? VIEW_TYPE_SEARCH : VIEW_TYPE_CATEGORY;
+    }
+
     @NonNull
     @Override
-    public CategoryViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
-        View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_category, parent, false);
-        return new CategoryViewHolder(view);
+    public RecyclerView.ViewHolder onCreateViewHolder(@NonNull ViewGroup parent, int viewType) {
+        if (viewType == VIEW_TYPE_SEARCH) {
+            View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_category_search, parent, false);
+            return new SearchViewHolder(view);
+        } else {
+            View view = LayoutInflater.from(parent.getContext()).inflate(R.layout.item_category, parent, false);
+            return new CategoryViewHolder(view);
+        }
     }
 
     @Override
-    public void onBindViewHolder(@NonNull CategoryViewHolder holder, int position) {
-        holder.bind(categories.get(position), position, position == selectedPosition);
+    public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
+        if (holder instanceof SearchViewHolder) {
+            ((SearchViewHolder) holder).bind();
+        } else if (holder instanceof CategoryViewHolder) {
+            // Adjust position for categories list (index 0 in categories is position 1 in
+            // adapter)
+            int categoryIndex = position - 1;
+            ((CategoryViewHolder) holder).bind(categories.get(categoryIndex), position, position == selectedPosition);
+        }
     }
 
     @Override
     public int getItemCount() {
-        return categories.size();
+        // Search Item + Categories
+        return categories.size() + 1;
     }
 
-    class CategoryViewHolder extends RecyclerView.ViewHolder {
-        TextView categoryText;
+    // --- VIEW HOLDERS ---
+
+    class SearchViewHolder extends RecyclerView.ViewHolder {
+        CardView cardView;
+        ImageView searchIcon;
+        EditText searchInput;
+        boolean isExpanded = false;
         AnimatorSet pulseAnimator;
 
-        public CategoryViewHolder(@NonNull View itemView) {
+        public SearchViewHolder(@NonNull View itemView) {
             super(itemView);
-            categoryText = (TextView) itemView;
+            cardView = (CardView) itemView;
+            searchIcon = itemView.findViewById(R.id.img_search_icon);
+            searchInput = itemView.findViewById(R.id.edit_search_query);
 
-            // Focus change - visual animation (scale + pulse)
-            categoryText.setOnFocusChangeListener((v, hasFocus) -> {
+            // Handle Click to Expand
+            cardView.setOnClickListener(v -> toggleExpansion());
+
+            // Handle Focus (D-Pad support)
+            cardView.setOnFocusChangeListener((v, hasFocus) -> {
                 if (hasFocus) {
-                    v.animate()
-                            .scaleX(1.1f)
-                            .scaleY(1.1f)
-                            .setDuration(150)
-                            .setInterpolator(new AccelerateDecelerateInterpolator())
-                            .start();
+                    v.animate().scaleX(1.1f).scaleY(1.1f).setDuration(150)
+                            .setInterpolator(new AccelerateDecelerateInterpolator()).start();
                     startPulseAnimation(v);
                 } else {
                     stopPulseAnimation();
-                    v.animate()
-                            .scaleX(1.0f)
-                            .scaleY(1.0f)
-                            .setDuration(150)
-                            .start();
+                    v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(150).start();
+                    // Retract if lost focus and empty? Maybe kept open for better UX.
+                    // For now, let's keep it manual toggle or auto-close if empty on lost focus.
+                    if (isExpanded && searchInput.getText().toString().isEmpty()) {
+                        toggleExpansion(); // Close if empty and lost focus
+                    }
                 }
             });
 
-            // Click - sets selected state and notifies
-            categoryText.setOnClickListener(v -> {
-                int position = getAdapterPosition();
-                if (position != RecyclerView.NO_POSITION) {
-                    // Update selected position
-                    int oldPosition = selectedPosition;
-                    selectedPosition = position;
-                    if (oldPosition >= 0) {
-                        notifyItemChanged(oldPosition);
+            // Handle Search Submission
+            searchInput.setOnEditorActionListener((v, actionId, event) -> {
+                if (actionId == EditorInfo.IME_ACTION_SEARCH ||
+                        (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
+                                && event.getAction() == KeyEvent.ACTION_DOWN)) {
+                    String query = searchInput.getText().toString().trim();
+                    if (!query.isEmpty() && listener != null) {
+                        listener.onSearchSubmitted(query);
+                        // Optional: Clear or Collapse
+                        searchInput.setText("");
+                        toggleExpansion();
                     }
-                    notifyItemChanged(selectedPosition);
-
-                    // Notify listener
-                    if (listener != null) {
-                        listener.onCategorySelected(categories.get(position));
-                    }
+                    return true;
                 }
+                return false;
             });
         }
 
@@ -123,6 +163,122 @@ public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.Catego
             pulseUp.playTogether(scaleUpX, scaleUpY);
             pulseUp.setDuration(400);
 
+            AnimatorSet pulseDown = new AnimatorSet();
+            pulseDown.playTogether(scaleDownX, scaleDownY);
+            pulseDown.setDuration(400);
+
+            pulseAnimator = new AnimatorSet();
+            pulseAnimator.playSequentially(pulseUp, pulseDown);
+            pulseAnimator.setInterpolator(new AccelerateDecelerateInterpolator());
+            pulseAnimator.addListener(new android.animation.AnimatorListenerAdapter() {
+                @Override
+                public void onAnimationEnd(android.animation.Animator animation) {
+                    if (pulseAnimator != null && cardView.hasFocus()) {
+                        pulseAnimator.start();
+                    }
+                }
+            });
+            pulseAnimator.start();
+        }
+
+        private void stopPulseAnimation() {
+            if (pulseAnimator != null) {
+                pulseAnimator.cancel();
+                pulseAnimator = null;
+            }
+        }
+
+        private void toggleExpansion() {
+            if (isExpanded) {
+                collapse();
+            } else {
+                expand();
+            }
+        }
+
+        private void expand() {
+            isExpanded = true;
+            searchInput.setVisibility(View.VISIBLE);
+            searchInput.requestFocus();
+
+            // Show keyboard manually if needed, usually requestFocus handles it if touch
+            // mode.
+            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) itemView
+                    .getContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+            if (imm != null)
+                imm.showSoftInput(searchInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
+
+            // Animate Width (Simplified: just rely on LayoutTransition or visibility for
+            // now, or assume wrap_content handles it)
+            // But user asked for "expand to be a little wide".
+            // Since it's in a horizontal RecyclerView, expanding width pushes siblings.
+            // This works naturally.
+        }
+
+        private void collapse() {
+            isExpanded = false;
+            searchInput.setVisibility(View.GONE);
+            cardView.requestFocus(); // Return focus to card
+            android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) itemView
+                    .getContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
+            if (imm != null)
+                imm.hideSoftInputFromWindow(searchInput.getWindowToken(), 0);
+        }
+
+        public void bind() {
+            // Reset state if needed
+        }
+    }
+
+    class CategoryViewHolder extends RecyclerView.ViewHolder {
+        TextView categoryText;
+        AnimatorSet pulseAnimator;
+
+        public CategoryViewHolder(@NonNull View itemView) {
+            super(itemView);
+            categoryText = (TextView) itemView;
+
+            categoryText.setOnFocusChangeListener((v, hasFocus) -> {
+                if (hasFocus) {
+                    v.animate().scaleX(1.1f).scaleY(1.1f).setDuration(150)
+                            .setInterpolator(new AccelerateDecelerateInterpolator()).start();
+                    startPulseAnimation(v);
+                } else {
+                    stopPulseAnimation();
+                    v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(150).start();
+                }
+            });
+
+            categoryText.setOnClickListener(v -> {
+                int position = getAdapterPosition();
+                if (position != RecyclerView.NO_POSITION) {
+                    // Update selection
+                    int oldPosition = selectedPosition;
+                    selectedPosition = position;
+                    notifyItemChanged(oldPosition);
+                    notifyItemChanged(selectedPosition);
+
+                    if (listener != null) {
+                        // Correct index for listener (subtract 1)
+                        int catIndex = position - 1;
+                        if (catIndex >= 0 && catIndex < categories.size()) {
+                            listener.onCategorySelected(categories.get(catIndex));
+                        }
+                    }
+                }
+            });
+        }
+
+        private void startPulseAnimation(View v) {
+            stopPulseAnimation();
+            ObjectAnimator scaleUpX = ObjectAnimator.ofFloat(v, "scaleX", 1.1f, 1.13f);
+            ObjectAnimator scaleUpY = ObjectAnimator.ofFloat(v, "scaleY", 1.1f, 1.13f);
+            ObjectAnimator scaleDownX = ObjectAnimator.ofFloat(v, "scaleX", 1.13f, 1.1f);
+            ObjectAnimator scaleDownY = ObjectAnimator.ofFloat(v, "scaleY", 1.13f, 1.1f);
+
+            AnimatorSet pulseUp = new AnimatorSet();
+            pulseUp.playTogether(scaleUpX, scaleUpY);
+            pulseUp.setDuration(400);
             AnimatorSet pulseDown = new AnimatorSet();
             pulseDown.playTogether(scaleDownX, scaleDownY);
             pulseDown.setDuration(400);
@@ -150,11 +306,7 @@ public class CategoryAdapter extends RecyclerView.Adapter<CategoryAdapter.Catego
 
         public void bind(Category category, int position, boolean isSelected) {
             categoryText.setText(category.getName());
-
-            // Set selected state for visual styling (red background via selector)
             categoryText.setSelected(isSelected);
-            // NOTE: No setNextFocusLeftId/RightId calls - RecyclerView handles horizontal
-            // navigation
         }
     }
 }

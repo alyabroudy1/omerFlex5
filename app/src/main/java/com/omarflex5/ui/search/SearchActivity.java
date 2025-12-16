@@ -85,7 +85,15 @@ public class SearchActivity extends com.omarflex5.ui.base.BaseActivity {
             Log.d(TAG, "Result clicked: " + result.title + " from " + result.serverName);
 
             // Directly launch DetailsActivity. It will handle loading and parsing.
-            DetailsActivity.start(this, result.pageUrl, result.title, result.serverId);
+            com.omarflex5.data.local.entity.MediaType type = com.omarflex5.data.local.entity.MediaType.FILM;
+            if (result.type != null) {
+                try {
+                    type = com.omarflex5.data.local.entity.MediaType.valueOf(result.type.toUpperCase());
+                } catch (IllegalArgumentException e) {
+                    // Default to FILM
+                }
+            }
+            DetailsActivity.start(this, result.pageUrl, result.title, result.serverId, null, type);
         });
 
         int spanCount = getResources()

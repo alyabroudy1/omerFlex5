@@ -34,7 +34,7 @@ import java.util.concurrent.Executors;
         MediaSourceEntity.class,
         SearchQueueEntity.class,
         UserMediaStateEntity.class
-}, version = 6, exportSchema = true)
+}, version = 7, exportSchema = true)
 @TypeConverters({ Converters.class })
 public abstract class AppDatabase extends RoomDatabase {
 
@@ -95,7 +95,6 @@ public abstract class AppDatabase extends RoomDatabase {
      */
     private static void insertDefaultServers(ServerDao serverDao) {
         long now = System.currentTimeMillis();
-
         // Server 1: MyCima
         ServerEntity mycima = new ServerEntity();
         mycima.setName("mycima");
@@ -104,7 +103,7 @@ public abstract class AppDatabase extends RoomDatabase {
         mycima.setBasePriority(1);
         mycima.setCurrentPriority(1);
         mycima.setEnabled(false); // Disabled for Production
-        mycima.setSearchable(true);
+        mycima.setSearchable(false);
         mycima.setRequiresWebView(true); // CF protected
         mycima.setSearchUrlPattern("/search/{query}");
         mycima.setParseStrategy("HTML");
@@ -119,8 +118,8 @@ public abstract class AppDatabase extends RoomDatabase {
         faselhd.setBaseUrl("https://www.faselhds.biz");
         faselhd.setBasePriority(2);
         faselhd.setCurrentPriority(2);
-        faselhd.setEnabled(false); // Disabled for testing Akwam
-        faselhd.setSearchable(true);
+        faselhd.setEnabled(false); // Enabled for Production
+        faselhd.setSearchable(false);
         faselhd.setRequiresWebView(true); // CF protected
         faselhd.setSearchUrlPattern("/?s={query}");
         faselhd.setParseStrategy("HTML");
@@ -135,7 +134,7 @@ public abstract class AppDatabase extends RoomDatabase {
         arabseed.setBaseUrl("https://arabseed.show");
         arabseed.setBasePriority(3);
         arabseed.setCurrentPriority(3);
-        arabseed.setEnabled(false); // Disabled for Production
+        arabseed.setEnabled(true); // Enabled for Production
         arabseed.setSearchable(true);
         arabseed.setRequiresWebView(true); // Sometimes CF
         arabseed.setSearchUrlPattern("/?s={query}");
@@ -151,8 +150,8 @@ public abstract class AppDatabase extends RoomDatabase {
         cimanow.setBaseUrl("https://cimanow.cc");
         cimanow.setBasePriority(4);
         cimanow.setCurrentPriority(4);
-        cimanow.setEnabled(false); // Disabled for Production
-        cimanow.setSearchable(true);
+        cimanow.setEnabled(false); // Enabled for Production
+        cimanow.setSearchable(false);
         cimanow.setRequiresWebView(true); // CF protected
         cimanow.setSearchUrlPattern("/?s={query}");
         cimanow.setParseStrategy("HTML");
@@ -183,7 +182,7 @@ public abstract class AppDatabase extends RoomDatabase {
         iptv.setBasePriority(3);
         iptv.setCurrentPriority(3);
         iptv.setEnabled(false); // Disabled until implemented
-        iptv.setSearchable(true);
+        iptv.setSearchable(false);
         iptv.setRequiresWebView(false); // Local parsing
         iptv.setParseStrategy("LOCAL");
         iptv.setCreatedAt(now);
@@ -196,9 +195,9 @@ public abstract class AppDatabase extends RoomDatabase {
         akwam.setLabel("أكوام");
         akwam.setBaseUrl("https://ak.sv");
         akwam.setBasePriority(5);
-        akwam.setCurrentPriority(1); // Set to 1 for testing
-        akwam.setEnabled(true); // Enabled for testing
-        akwam.setSearchable(true);
+        akwam.setCurrentPriority(5);
+        akwam.setEnabled(false); // Enabled for Production
+        akwam.setSearchable(false);
         akwam.setRequiresWebView(true); // CF protected
         akwam.setSearchUrlPattern("/search?q={query}");
         akwam.setParseStrategy("HTML");
@@ -213,9 +212,9 @@ public abstract class AppDatabase extends RoomDatabase {
         oldAkwam.setLabel("اكوام القديم");
         oldAkwam.setBaseUrl("https://ak.sv"); // Try current active domain
         oldAkwam.setBasePriority(6);
-        oldAkwam.setCurrentPriority(1); // High priority for test
-        oldAkwam.setEnabled(true);
-        oldAkwam.setSearchable(true);
+        oldAkwam.setCurrentPriority(6);
+        oldAkwam.setEnabled(false);
+        oldAkwam.setSearchable(false);
         oldAkwam.setRequiresWebView(true);
         oldAkwam.setSearchUrlPattern("/old/advanced-search/{query}");
         oldAkwam.setParseStrategy("HTML");
@@ -230,8 +229,8 @@ public abstract class AppDatabase extends RoomDatabase {
         watanflix.setBaseUrl("https://watanflix.com");
         watanflix.setBasePriority(7);
         watanflix.setCurrentPriority(7);
-        watanflix.setEnabled(false); // Disabled for Production
-        watanflix.setSearchable(true);
+        watanflix.setEnabled(false); // Enabled for Production
+        watanflix.setSearchable(false);
         watanflix.setRequiresWebView(false); // Sometimes no CF
         watanflix.setSearchUrlPattern("/?s={query}");
         watanflix.setParseStrategy("HTML");

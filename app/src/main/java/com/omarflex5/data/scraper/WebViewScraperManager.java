@@ -383,35 +383,9 @@ public class WebViewScraperManager {
         Log.d(TAG, "External Save: Persisted " + cookies.size() + " cookies for " + server.getName());
     }
 
-    /**
-     * Search a server using WebView (for CF-protected searches).
-     */
-    /**
-     * Search a server using WebView (for CF-protected searches).
-     */
-    public void search(ServerEntity server, String query, boolean allowWebViewFallback, Activity activity,
+    public void search(ServerEntity server, String url, boolean allowWebViewFallback, Activity activity,
             ScraperCallback callback) {
-        String searchUrl = buildSearchUrl(server, query);
-        loadHybrid(server, searchUrl, allowWebViewFallback, activity, callback);
-    }
-
-    /**
-     * Build search URL from server config.
-     */
-    private String buildSearchUrl(ServerEntity server, String query) {
-        String pattern = server.getSearchUrlPattern();
-        if (pattern == null || pattern.isEmpty()) {
-            pattern = "/?s={query}"; // Default WordPress-style
-        }
-
-        String encodedQuery;
-        try {
-            encodedQuery = java.net.URLEncoder.encode(query, "UTF-8");
-        } catch (Exception e) {
-            encodedQuery = query.replace(" ", "+");
-        }
-
-        return server.getBaseUrl() + pattern.replace("{query}", encodedQuery);
+        loadHybrid(server, url, allowWebViewFallback, activity, callback);
     }
 
     // ==================== HELPER METHODS ====================

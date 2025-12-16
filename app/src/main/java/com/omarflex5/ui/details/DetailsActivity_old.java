@@ -9,7 +9,6 @@ import android.widget.Button;
 import android.widget.TextView;
 import android.widget.Toast;
 
-import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
@@ -21,21 +20,18 @@ import com.omarflex5.data.repository.ServerRepository;
 import com.omarflex5.data.scraper.BaseHtmlParser;
 import com.omarflex5.data.scraper.ParserFactory;
 import com.omarflex5.data.scraper.WebViewScraperManager;
-import com.omarflex5.ui.browser.BrowserActivity;
 import com.omarflex5.ui.player.PlayerActivity;
 import com.omarflex5.ui.sniffer.SnifferActivity;
 
 import java.util.List;
 import java.util.Map;
 
-public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
+public class DetailsActivity_old extends com.omarflex5.ui.base.BaseActivity {
 
     public static final String EXTRA_URL = "extra_url";
     public static final String EXTRA_TITLE = "extra_title";
     public static final String EXTRA_SERVER_ID = "extra_server_id";
     public static final String EXTRA_BREADCRUMB = "extra_breadcrumb";
-
-    public static final String EXTRA_TYPE = "extra_type"; // NEW
 
     private static final int REQUEST_VIDEO_BROWSER = 1002;
 
@@ -50,7 +46,6 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
     private String url;
     private String title;
     private String breadcrumb; // Accumulated title hierarchy: "Series - Season - Episode"
-    private MediaType mediaType; // NEW: Context Type
     private long serverId;
     private ServerEntity currentServer;
 
@@ -58,19 +53,15 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
     private ServerRepository serverRepository;
 
     public static void start(Context context, String url, String title, long serverId) {
-        start(context, url, title, serverId, null, null);
+        start(context, url, title, serverId, null);
     }
 
-    public static void start(Context context, String url, String title, long serverId, String breadcrumb,
-            MediaType type) {
-        Intent intent = new Intent(context, DetailsActivity.class);
+    public static void start(Context context, String url, String title, long serverId, String breadcrumb) {
+        Intent intent = new Intent(context, DetailsActivity_old.class);
         intent.putExtra(EXTRA_URL, url);
         intent.putExtra(EXTRA_TITLE, title);
         intent.putExtra(EXTRA_SERVER_ID, serverId);
         intent.putExtra(EXTRA_BREADCRUMB, breadcrumb);
-        if (type != null) {
-            intent.putExtra(EXTRA_TYPE, type.name());
-        }
         context.startActivity(intent);
     }
 
@@ -83,17 +74,6 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
         title = getIntent().getStringExtra(EXTRA_TITLE);
         serverId = getIntent().getLongExtra(EXTRA_SERVER_ID, -1);
         breadcrumb = getIntent().getStringExtra(EXTRA_BREADCRUMB);
-
-        String typeStr = getIntent().getStringExtra(EXTRA_TYPE);
-        if (typeStr != null) {
-            try {
-                mediaType = MediaType.valueOf(typeStr);
-            } catch (IllegalArgumentException e) {
-                mediaType = MediaType.FILM; // Default
-            }
-        } else {
-            mediaType = MediaType.FILM;
-        }
 
         // Initialize breadcrumb with first title if not set
         if (breadcrumb == null || breadcrumb.isEmpty()) {
@@ -176,50 +156,70 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
             BaseHtmlParser.ParsedItem sourceItem = new BaseHtmlParser.ParsedItem();
             sourceItem.setPageUrl(url);
             sourceItem.setTitle(title);
-            sourceItem.setType(mediaType); // CRITICAL FIX: Pass the type!
             parser.setSourceItem(sourceItem);
 
             BaseHtmlParser.ParsedItem result = parser.parseDetailPage();
+            List<BaseHtmlParser.ParsedItem> subItems = result.getSubItems();
 
-            // --- SEPARATION OF CONCERNS ---
-            // The Activity now only renders what the Parser tells it to.
-            // No business logic here.
-
-            switch (result.getStatus()) {
-                case EMPTY_ERROR:
-                    android.widget.Toast.makeText(this, result.getStatusMessage(), android.widget.Toast.LENGTH_LONG)
+            if (subItems == null || subItems.isEmpty()) {
+                // If it's a leaf node with no subItems (e.g. direct link or needs sniffing)
+                // Check if it is playable content
+                if (result.getType() == MediaType.FILM || result.getType() == MediaType.EPISODE) {
+                    // Check if it was supposed to have servers (ParsedItem implies navigation to
+                    // servers)
+                    // If we are here, getting 0 subitems for an EPISODE type usually means "No
+                    // Servers Found"
+                    Toast.makeText(this, "No Watch Servers Found", Toast.LENGTH_LONG)
                             .show();
-                    showError(result.getStatusMessage());
-                    break;
 
-                case REDIRECT:
-                    android.util.Log.d("DetailsActivity", "Parser requested REDIRECT to: " + result.getStatusMessage());
-                    this.url = result.getStatusMessage();
-                    runOnUiThread(this::loadContent); // Trigger fetch on Main Thread
-                    break;
+                    // Optimization: If no servers, don't stay on empty page, go back/finish?
+                    // User said "say as a toast", implying notification.
+                    // But if we just opened this activity, showing a blank screen with a toast is
+                    // bad.
+                    // Let's show the error layout too.
+                    showError("No Watch Servers Found");
+                    return;
+                } else {
+                    // SERIES or SEASON
+                    Toast.makeText(this, "No Episodes Found", Toast.LENGTH_LONG).show();
+                    showError("No Episodes Found");
+                    return;
+                }
+            } else {
+                showContent();
+                adapter.setItems(subItems);
 
-                case SUCCESS:
-                default:
-                    List<BaseHtmlParser.ParsedItem> subItems = result.getSubItems();
-                    if (subItems != null && !subItems.isEmpty()) {
-                        showContent();
-                        adapter.setItems(subItems);
+                // Update title if parsed title is available?
+                if (result.getTitle() != null && !result.getTitle().isEmpty()) {
+                    // toolbar.setTitle(result.getTitle());
+                }
 
-                        // Auto-trigger video sniffing if first item is ready-to-watch (Optimization)
-                        // This technically interacts with Sniffer, but it's UI behavior (auto-click).
-                        // Consider moving to User settings later.
-                        BaseHtmlParser.ParsedItem firstItem = subItems.get(0);
-                        boolean isServer = "Server".equals(firstItem.getQuality());
-                        if (isServer || needsVideoSniffing(firstItem.getPageUrl())) {
-                            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                                onItemClicked(firstItem);
-                            }, 300);
+                // Auto-trigger first sniffable item (skip extra click for servers)
+                if (!subItems.isEmpty()) {
+                    // UX OPTIMIZATION: Auto-resolve "Navigation" items (e.g. ArabSeed "Watch Page")
+                    // If we have a single item that constitutes a "Navigation" step, follow it
+                    // automatically.
+                    if (subItems.size() == 1) {
+                        BaseHtmlParser.ParsedItem singleItem = subItems.get(0);
+                        if ("Navigation".equals(singleItem.getQuality())) {
+                            android.util.Log.d("DetailsActivity",
+                                    "Auto-following Navigation item: " + singleItem.getPageUrl());
+                            // Update URL and re-fetch content transparency
+                            this.url = singleItem.getPageUrl();
+                            runOnUiThread(this::loadContent); // Trigger fetch on Main Thread
+                            return; // Stop processing this intermediate page
                         }
-                    } else {
-                        // Fallback safety (should be caught by EMPTY_ERROR)
-                        showError("No Content Found (Unknown Error)");
                     }
-                    break;
+
+                    BaseHtmlParser.ParsedItem firstItem = subItems.get(0);
+                    String firstUrl = firstItem.getPageUrl();
+                    if (needsVideoSniffing(firstUrl)) {
+                        // Delay slightly to let UI update
+                        new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                            onItemClicked(firstItem);
+                        }, 300);
+                    }
+                }
             }
         } catch (Exception e) {
             showError("Parsing Error: " + e.getMessage());
@@ -297,7 +297,7 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
 
         // If it seems to be a container (Season X, Episode Y, Server Name), open new
         // DetailsActivity
-        DetailsActivity.start(this, itemUrl, itemTitle, serverId, newBreadcrumb, item.getType());
+        DetailsActivity_old.start(this, itemUrl, itemTitle, serverId, newBreadcrumb);
     }
 
     private void startSniffer(String url) {
@@ -446,11 +446,11 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
         android.util.Log.d("DetailsActivity_KEY", "KEY DOWN: " + keyName + " (code=" + keyCode + ")");
 
         // Log focus state
-        android.view.View focused = getCurrentFocus();
+        View focused = getCurrentFocus();
         if (focused != null) {
             android.util.Log.d("DetailsActivity_KEY", "Current focus: " + focused.getClass().getSimpleName()
                     + " id="
-                    + (focused.getId() != android.view.View.NO_ID ? getResources().getResourceEntryName(focused.getId())
+                    + (focused.getId() != View.NO_ID ? getResources().getResourceEntryName(focused.getId())
                             : "NO_ID"));
         } else {
             android.util.Log.d("DetailsActivity_KEY", "Current focus: NONE");
@@ -475,14 +475,14 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
 
         if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
             int keyCode = event.getKeyCode();
-            android.view.View focused = getCurrentFocus();
+            View focused = getCurrentFocus();
 
             if (focused != null && recyclerView != null) {
                 // Check if focus is in the RecyclerView
                 android.view.ViewParent parent = focused.getParent();
                 while (parent != null && parent != recyclerView) {
-                    if (parent instanceof android.view.View) {
-                        parent = ((android.view.View) parent).getParent();
+                    if (parent instanceof View) {
+                        parent = ((View) parent).getParent();
                     } else {
                         break;
                     }
@@ -492,17 +492,17 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
                     // Vertical RecyclerView - handle UP/DOWN navigation
                     if (keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP
                             || keyCode == android.view.KeyEvent.KEYCODE_DPAD_DOWN) {
-                        android.view.View focusedItem = focused;
+                        View focusedItem = focused;
                         // Find the direct child of RecyclerView
                         while (focusedItem.getParent() != recyclerView) {
-                            focusedItem = (android.view.View) focusedItem.getParent();
+                            focusedItem = (View) focusedItem.getParent();
                         }
                         int currentIndex = recyclerView.indexOfChild(focusedItem);
                         int targetIndex = keyCode == android.view.KeyEvent.KEYCODE_DPAD_UP
                                 ? currentIndex - 1
                                 : currentIndex + 1;
                         if (targetIndex >= 0 && targetIndex < recyclerView.getChildCount()) {
-                            android.view.View target = recyclerView.getChildAt(targetIndex);
+                            View target = recyclerView.getChildAt(targetIndex);
                             if (target != null) {
                                 target.requestFocus();
                                 recyclerView.smoothScrollToPosition(

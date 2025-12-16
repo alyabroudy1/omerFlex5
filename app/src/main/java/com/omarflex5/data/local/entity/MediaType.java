@@ -7,5 +7,6 @@ public enum MediaType {
     SERIES, // TV series (Group of Groups / Seasons)
     SEASON, // Specific Season (Group of Episodes)
     EPISODE, // Specific Episode (Playable Item)
-    FILM // Standalone movie (Playable Item)
+    FILM, // Standalone movie (Playable Item)
+    SERVER // Watch Server link
 }

@@ -55,8 +55,18 @@ public class UnifiedSearchService {
     private final MutableLiveData<SearchState> searchState = new MutableLiveData<>(SearchState.idle());
     private String currentQuery = null;
 
-    // Track servers that failed Direct Search due to Cloudflare
-    private final List<ServerEntity> lastFailedCfServers = new ArrayList<>();
+    // Track tasks that failed Direct Search due to Cloudflare
+    private final List<SearchTask> lastFailedTasks = new ArrayList<>();
+
+    private static class SearchTask {
+        final ServerEntity server;
+        final String url;
+
+        SearchTask(ServerEntity server, String url) {
+            this.server = server;
+            this.url = url;
+        }
+    }
 
     private UnifiedSearchService(Context context) {
         this.context = context.getApplicationContext();
@@ -109,7 +119,7 @@ public class UnifiedSearchService {
 
         currentQuery = query.trim();
         searchState.postValue(SearchState.loading(currentQuery));
-        lastFailedCfServers.clear(); // Clear previous session failures
+        lastFailedTasks.clear(); // Clear previous session failures
 
         Log.d(TAG, "Starting search: " + currentQuery);
 
@@ -125,47 +135,51 @@ public class UnifiedSearchService {
                     // Strict Production Filter (Fasel Only) & Active Servers Check
                     List<ServerEntity> activeServers = new ArrayList<>();
                     for (ServerEntity server : servers) {
-                        // Strict Production Filter
-                        if (!server.getName().equals("faselhd")) {
-                            if (server.isEnabled()) {
-                                Log.i(TAG, "Skipping and Disabling non-production server: " + server.getName());
-                                serverRepository.setServerEnabled(server.getId(), false);
-                            }
-                            continue; // Skip this server for current search
-                        }
-
-                        // Double check enabled state
                         if (server.isEnabled()) {
                             activeServers.add(server);
                         }
                     }
 
-                    Log.d(TAG, "Starting Hybrid Search on " + activeServers.size() + " servers.");
+                    // Generate All Search Tasks
+                    List<SearchTask> allTasks = new ArrayList<>();
+                    for (ServerEntity server : activeServers) {
+                        List<String> urls = ParserFactory.getSearchUrls(server, currentQuery);
+                        for (String url : urls) {
+                            allTasks.add(new SearchTask(server, url));
+                        }
+                    }
+
+                    Log.d(TAG,
+                            "Starting Hybrid Search with " + allTasks.size() + " tasks across " + activeServers.size()
+                                    + " servers.");
 
                     // Execute Fast Search (Strict Mode: allowFallback=false)
-                    // This puts all active servers into the "Fast" pool first.
-                    List<SearchResult> allResults = searchFastServers(activeServers, currentQuery);
+                    List<SearchResult> allResults = searchFastTasks(allTasks);
 
                     // Deduplicate results
                     List<SearchResult> deduped = deduplicateResults(allResults);
 
                     // Decision Time
-                    if (deduped.isEmpty() && !lastFailedCfServers.isEmpty()) {
-                        Log.i(TAG, "Fast search empty. Auto-triggering queue for " + lastFailedCfServers.size()
-                                + " servers.");
+                    if (deduped.isEmpty() && !lastFailedTasks.isEmpty()) {
+                        Log.i(TAG, "Fast search empty. Auto-triggering queue for " + lastFailedTasks.size()
+                                + " tasks.");
 
                         // Copy list to avoid concurrent modification issues
-                        List<ServerEntity> toQueue = new ArrayList<>();
-                        synchronized (lastFailedCfServers) {
-                            toQueue.addAll(lastFailedCfServers);
+                        List<SearchTask> toQueue = new ArrayList<>();
+                        synchronized (lastFailedTasks) {
+                            toQueue.addAll(lastFailedTasks);
                         }
 
                         // Auto-queue logic
-                        processNextQueuedServer(toQueue, 0, deduped, new ArrayList<>());
+                        processNextQueuedTask(toQueue, 0, deduped, new ArrayList<>());
 
-                    } else if (!lastFailedCfServers.isEmpty()) {
-                        // We have results, but some servers failed. Allow "Load More".
-                        searchState.postValue(SearchState.partial(currentQuery, deduped, lastFailedCfServers.size()));
+                    } else if (!lastFailedTasks.isEmpty()) {
+                        // We have results, but some tasks failed. Allow "Load More".
+                        // Calculate unique servers from failed tasks
+                        Set<Long> failedServerIds = new HashSet<>();
+                        for (SearchTask t : lastFailedTasks)
+                            failedServerIds.add(t.server.getId());
+                        searchState.postValue(SearchState.partial(currentQuery, deduped, failedServerIds.size()));
                     } else {
                         // All good (or all failed with non-CF errors)
                         searchState.postValue(SearchState.complete(currentQuery, deduped));
@@ -181,17 +195,16 @@ public class UnifiedSearchService {
     /**
      * Search fast servers in parallel.
      */
-    private List<SearchResult> searchFastServers(List<ServerEntity> servers, String query) {
+    private List<SearchResult> searchFastTasks(List<SearchTask> tasks) {
         List<SearchResult> allResults = new ArrayList<>();
-        CountDownLatch latch = new CountDownLatch(servers.size());
+        CountDownLatch latch = new CountDownLatch(tasks.size());
         Object lock = new Object();
 
-        for (ServerEntity server : servers) {
+        for (SearchTask task : tasks) {
             executor.execute(() -> {
                 try {
                     // Try to search FAST (allowFallback = false)
-                    // This will fail with CLOUDFLARE_DETECTED if needed
-                    List<SearchResult> results = searchSingleServer(server, query, false);
+                    List<SearchResult> results = searchSingleTask(task, false);
                     synchronized (lock) {
                         allResults.addAll(results);
                     }
@@ -215,28 +228,28 @@ public class UnifiedSearchService {
     /**
      * Search a single server using WebView scraper.
      */
-    private List<SearchResult> searchSingleServer(ServerEntity server, String query, boolean allowFallback) {
+    private List<SearchResult> searchSingleTask(SearchTask task, boolean allowFallback) {
         List<SearchResult> results = new ArrayList<>();
         CountDownLatch latch = new CountDownLatch(1);
 
-        scraperManager.search(server, query, allowFallback, null, new WebViewScraperManager.ScraperCallback() {
+        scraperManager.search(task.server, task.url, allowFallback, null, new WebViewScraperManager.ScraperCallback() {
             @Override
             public void onSuccess(String html, Map<String, String> cookies) {
-                results.addAll(parseResults(server, html));
-                serverRepository.recordSuccess(server);
+                results.addAll(parseResults(task.server, html));
+                serverRepository.recordSuccess(task.server);
                 latch.countDown();
             }
 
             @Override
             public void onError(String message) {
                 if ("CLOUDFLARE_DETECTED".equals(message)) {
-                    Log.w(TAG, "Capturing CF Failure for: " + server.getName());
-                    synchronized (lastFailedCfServers) {
-                        lastFailedCfServers.add(server);
+                    Log.w(TAG, "Capturing CF Failure for task: " + task.url);
+                    synchronized (lastFailedTasks) {
+                        lastFailedTasks.add(task);
                     }
                 } else {
-                    Log.e(TAG, "Search failed on " + server.getName() + ": " + message);
-                    serverRepository.recordFailure(server);
+                    Log.e(TAG, "Search failed on " + task.server.getName() + ": " + message);
+                    serverRepository.recordFailure(task.server);
                 }
                 latch.countDown();
             }
@@ -245,7 +258,7 @@ public class UnifiedSearchService {
         try {
             latch.await(PARALLEL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
         } catch (InterruptedException e) {
-            Log.w(TAG, "Search timeout for " + server.getName());
+            Log.w(TAG, "Search timeout for " + task.url);
         }
 
         return results;
@@ -262,39 +275,42 @@ public class UnifiedSearchService {
         List<SearchResult> baseResults = getCurrentResults();
         searchState.postValue(SearchState.loadingMore(currentQuery, baseResults));
 
-        // Use cached failed servers if available
-        List<ServerEntity> toProcess = new ArrayList<>();
-        synchronized (lastFailedCfServers) {
-            if (!lastFailedCfServers.isEmpty()) {
-                toProcess.addAll(lastFailedCfServers);
+        // Use cached failed tasks if available
+        List<SearchTask> toProcess = new ArrayList<>();
+        synchronized (lastFailedTasks) {
+            if (!lastFailedTasks.isEmpty()) {
+                toProcess.addAll(lastFailedTasks);
             }
         }
 
         if (!toProcess.isEmpty()) {
-            Log.d(TAG, "Processing cached failed servers: " + toProcess.size());
-            processNextQueuedServer(toProcess, 0, baseResults, new ArrayList<>());
+            Log.d(TAG, "Processing cached failed tasks: " + toProcess.size());
+            processNextQueuedTask(toProcess, 0, baseResults, new ArrayList<>());
         } else {
             // Fallback (edge case)
             serverRepository.getSearchableServers(servers -> {
-                List<ServerEntity> fallbackQueue = new ArrayList<>();
+                List<SearchTask> fallbackQueue = new ArrayList<>();
                 for (ServerEntity server : servers) {
                     if (server.isEnabled() && server.isRequiresWebView()) {
-                        fallbackQueue.add(server);
+                        List<String> urls = ParserFactory.getSearchUrls(server, currentQuery);
+                        for (String url : urls) {
+                            fallbackQueue.add(new SearchTask(server, url));
+                        }
                     }
                 }
                 if (fallbackQueue.isEmpty()) {
                     searchState.postValue(SearchState.complete(currentQuery, baseResults));
                 } else {
-                    processNextQueuedServer(fallbackQueue, 0, baseResults, new ArrayList<>());
+                    processNextQueuedTask(fallbackQueue, 0, baseResults, new ArrayList<>());
                 }
             });
         }
     }
 
-    private void processNextQueuedServer(List<ServerEntity> servers, int index,
+    private void processNextQueuedTask(List<SearchTask> tasks, int index,
             List<SearchResult> baseResults, List<SearchResult> accumulated) {
 
-        if (index >= servers.size()) {
+        if (index >= tasks.size()) {
             // All done - merge final results
             List<SearchResult> finalResults = new ArrayList<>(baseResults);
             finalResults.addAll(accumulated);
@@ -303,18 +319,18 @@ public class UnifiedSearchService {
             return;
         }
 
-        ServerEntity server = servers.get(index);
-        Log.d(TAG, "Processing QUEUED server: " + server.getName());
+        SearchTask task = tasks.get(index);
+        Log.d(TAG, "Processing QUEUED task: " + task.url);
 
         // IN THE QUEUE: Allow Fallback = TRUE
-        scraperManager.search(server, currentQuery, true, null, new WebViewScraperManager.ScraperCallback() {
+        scraperManager.search(task.server, task.url, true, null, new WebViewScraperManager.ScraperCallback() {
             @Override
             public void onSuccess(String html, Map<String, String> cookies) {
-                List<SearchResult> results = parseResults(server, html);
+                List<SearchResult> results = parseResults(task.server, html);
                 accumulated.addAll(results);
 
-                // Update progress
-                int remaining = servers.size() - index - 1;
+                // Update progress (approximate by unique servers or just tasks)
+                int remaining = tasks.size() - index - 1;
 
                 // Construct current display list: Base + Accumulated So Far
                 List<SearchResult> currentDisplay = new ArrayList<>(baseResults);
@@ -324,14 +340,14 @@ public class UnifiedSearchService {
                         deduplicateResults(currentDisplay), remaining));
 
                 // Process next
-                processNextQueuedServer(servers, index + 1, baseResults, accumulated);
+                processNextQueuedTask(tasks, index + 1, baseResults, accumulated);
             }
 
             @Override
             public void onError(String message) {
-                Log.e(TAG, "Queued Server " + server.getName() + " failed: " + message);
-                // Continue with next server
-                processNextQueuedServer(servers, index + 1, baseResults, accumulated);
+                Log.e(TAG, "Queued task failed (" + task.url + "): " + message);
+                // Continue with next task
+                processNextQueuedTask(tasks, index + 1, baseResults, accumulated);
             }
         });
     }

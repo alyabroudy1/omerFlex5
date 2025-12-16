@@ -338,8 +338,28 @@ public class MovieCardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
         }
 
         public void bind(Movie movie, int position, boolean isSelected) {
+            // Fix 403: Add Headers
+            String cookie = android.webkit.CookieManager.getInstance().getCookie(movie.getPosterUrl());
+            if (cookie == null && movie.getVideoUrl() != null) {
+                cookie = android.webkit.CookieManager.getInstance().getCookie(movie.getVideoUrl());
+            }
+
+            com.bumptech.glide.load.model.LazyHeaders.Builder builder = new com.bumptech.glide.load.model.LazyHeaders.Builder()
+                    .addHeader("User-Agent", com.omarflex5.util.WebConfig.getUserAgent(itemView.getContext()));
+
+            if (cookie != null) {
+                builder.addHeader("Cookie", cookie);
+            }
+
+            if (movie.getVideoUrl() != null) {
+                builder.addHeader("Referer", movie.getVideoUrl());
+            }
+
+            com.bumptech.glide.load.model.GlideUrl glideUrl = new com.bumptech.glide.load.model.GlideUrl(
+                    movie.getPosterUrl(), builder.build());
+
             Glide.with(itemView.getContext())
-                    .load(movie.getPosterUrl())
+                    .load(glideUrl)
                     .centerCrop()
                     .into(posterImage);
 

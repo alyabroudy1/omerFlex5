@@ -111,8 +111,16 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
                 meta.append(result.year);
             }
 
-            String typeLabel = "SERIES".equalsIgnoreCase(result.type) || "TV".equalsIgnoreCase(result.type) ? "مسلسل"
-                    : "فيلم";
+            String typeLabel = "فيلم";
+            if (result.type != null) {
+                if ("SERIES".equalsIgnoreCase(result.type) || "TV".equalsIgnoreCase(result.type)) {
+                    typeLabel = "مسلسل";
+                } else if ("SEASON".equalsIgnoreCase(result.type)) {
+                    typeLabel = "موسم";
+                } else if ("EPISODE".equalsIgnoreCase(result.type)) {
+                    typeLabel = "حلقة";
+                }
+            }
             if (meta.length() > 0) {
                 meta.append(" • ").append(typeLabel);
             } else {
@@ -174,8 +182,28 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
 
             // Poster
             if (result.posterUrl != null && !result.posterUrl.isEmpty()) {
+                // Fix 403: Add Headers (Cookie, UA, Referer)
+                String cookie = android.webkit.CookieManager.getInstance().getCookie(result.posterUrl);
+                if (cookie == null && result.pageUrl != null) {
+                    cookie = android.webkit.CookieManager.getInstance().getCookie(result.pageUrl);
+                }
+
+                com.bumptech.glide.load.model.LazyHeaders.Builder builder = new com.bumptech.glide.load.model.LazyHeaders.Builder()
+                        .addHeader("User-Agent", com.omarflex5.util.WebConfig.getUserAgent(poster.getContext()));
+
+                if (cookie != null) {
+                    builder.addHeader("Cookie", cookie);
+                }
+
+                if (result.pageUrl != null) {
+                    builder.addHeader("Referer", result.pageUrl);
+                }
+
+                com.bumptech.glide.load.model.GlideUrl glideUrl = new com.bumptech.glide.load.model.GlideUrl(
+                        result.posterUrl, builder.build());
+
                 Glide.with(poster.getContext())
-                        .load(result.posterUrl)
+                        .load(glideUrl)
                         .placeholder(R.drawable.placeholder_poster)
                         .error(R.drawable.placeholder_poster)
                         .centerCrop()

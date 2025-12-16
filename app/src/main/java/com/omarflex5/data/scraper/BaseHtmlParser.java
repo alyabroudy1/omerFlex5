@@ -15,6 +15,7 @@ public abstract class BaseHtmlParser {
 
     protected final String html;
     protected String pageUrl; // The URL of the page being parsed
+    protected ParsedItem sourceItem; // The item that triggered this parse (optional context)
 
     public BaseHtmlParser(String html) {
         this.html = html;
@@ -32,6 +33,14 @@ public abstract class BaseHtmlParser {
 
     public String getPageUrl() {
         return pageUrl;
+    }
+
+    public void setSourceItem(ParsedItem item) {
+        this.sourceItem = item;
+    }
+
+    public ParsedItem getSourceItem() {
+        return sourceItem;
     }
 
     /**
@@ -177,6 +186,16 @@ public abstract class BaseHtmlParser {
      * Represents a parsed search result or detail.
      */
     public static class ParsedItem {
+        public enum ProcessStatus {
+            SUCCESS,
+            EMPTY_ERROR, // Found nothing, and that's an error (e.g. no servers)
+            REDIRECT // Found a navigation step that should be auto-followed
+        }
+
+        // Status Fields
+        private ProcessStatus status = ProcessStatus.SUCCESS;
+        private String statusMessage; // For Error Toast or Redirect URL
+
         private String title;
         private String originalTitle;
         private String posterUrl;
@@ -191,6 +210,24 @@ public abstract class BaseHtmlParser {
         private List<String> categories = new ArrayList<>();
 
         private List<ParsedItem> subItems = new ArrayList<>();
+
+        public ProcessStatus getStatus() {
+            return status;
+        }
+
+        public ParsedItem setStatus(ProcessStatus status) {
+            this.status = status;
+            return this;
+        }
+
+        public String getStatusMessage() {
+            return statusMessage;
+        }
+
+        public ParsedItem setStatusMessage(String message) {
+            this.statusMessage = message;
+            return this;
+        }
 
         // Builder pattern
         public ParsedItem setTitle(String title) {

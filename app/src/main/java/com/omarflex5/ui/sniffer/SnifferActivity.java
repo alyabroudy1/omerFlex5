@@ -209,15 +209,19 @@ public class SnifferActivity extends AppCompatActivity {
         });
 
         // AUTO-CLICK FALLBACK (Native):
-        handler.postDelayed(() -> {
-            if (!isDestroyed && !resultDelivered) {
-                if (!isCloudflareActive) {
-                    simulateClick();
-                } else {
-                    Log.d(TAG, "Native click blocked by Cloudflare detection");
-                }
-            }
-        }, 4000); // 4 seconds after load
+        // Disabled: This causes redirect loops on some sites (e.g. ArabSeed) by
+        // clicking banners/home links.
+        /*
+         * handler.postDelayed(() -> {
+         * if (!isDestroyed && !resultDelivered) {
+         * if (!isCloudflareActive) {
+         * simulateClick();
+         * } else {
+         * Log.d(TAG, "Native click blocked by Cloudflare detection");
+         * }
+         * }
+         * }, 4000); // 4 seconds after load
+         */
     }
 
     private void simulateClick() {

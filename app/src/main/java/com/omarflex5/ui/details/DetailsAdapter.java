@@ -61,8 +61,24 @@ public class DetailsAdapter extends RecyclerView.Adapter<DetailsAdapter.ViewHold
 
         // Info text
         String info = "";
+        android.util.Log.d("DetailsAdapterDebug", "Binding Item: " + title + " | Type: " + item.getType());
         if (item.getType() != null) {
-            info = item.getType().toString();
+            switch (item.getType()) {
+                case SEASON:
+                    info = "موسم";
+                    break;
+                case EPISODE:
+                    info = "حلقة";
+                    break;
+                case SERIES:
+                    info = "مسلسل";
+                    break;
+                case FILM:
+                    info = "فيلم";
+                    break;
+                default:
+                    info = item.getType().toString();
+            }
         } else {
             info = "Click to View";
         }
