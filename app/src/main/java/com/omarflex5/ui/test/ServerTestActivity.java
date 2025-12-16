@@ -439,6 +439,9 @@ public class ServerTestActivity extends AppCompatActivity {
             // now handles internally
             android.content.Intent intent = SnifferActivity.createIntent(this, url, strategy);
 
+            // Explicitly pass the correct User-Agent
+            intent.putExtra("EXTRA_USER_AGENT", com.omarflex5.util.WebConfig.getUserAgent(this));
+
             if (customJs != null) {
                 intent.putExtra(SnifferActivity.EXTRA_CUSTOM_JS, customJs);
             }

@@ -89,30 +89,61 @@ public class WebViewScraperManager {
     }
 
     private void configureWebView(WebView webView) {
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true);
-        settings.setJavaScriptCanOpenWindowsAutomatically(true);
-        // CRITICAL: Use MOBILE User-Agent. Cloudflare Turnstile checks for touch events
-        // + mobile UA consistency. Use dynamic UA to match engine version.
-        settings.setUserAgentString(com.omarflex5.util.WebConfig.getUserAgent(context));
-        settings.setBlockNetworkImage(false);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        settings.setCacheMode(WebSettings.LOAD_NO_CACHE); // Don't cache CF challenges
+        // Unified Configuration
+        com.omarflex5.data.scraper.config.WebConfig.configure(webView);
 
-        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null); // Hardware accel for canvas challenges
-        webView.setWebChromeClient(new android.webkit.WebChromeClient() {
-            @Override
-            public boolean onConsoleMessage(android.webkit.ConsoleMessage cm) {
-                Log.d("WebViewConsole", cm.message() + " -- From line " + cm.lineNumber() + " of " + cm.sourceId());
-                return true;
+        // Add console logging
+        webView.setWebChromeClient(new com.omarflex5.data.scraper.client.CoreWebChromeClient(null)); // No UI controller
+                                                                                                     // needed for
+                                                                                                     // ChromeClient
+                                                                                                     // here yet
+    }
+
+    /**
+     * Borrow the shared WebView for use in an Activity (e.g. SnifferActivity).
+     * This ensures we use the EXACT SAME session/cookies/storage as the scraper.
+     * The caller is responsible for attaching it to their view hierarchy.
+     */
+    public WebView borrowWebView() {
+        if (webView == null) {
+            initialize(); // Try to init if null, though it should be ready
+            // If initialized on this thread, webView might still be null if posted.
+            // But usually scraper runs first.
+            if (webView == null) {
+                // Force sync init if absolutely needed (rare fallback)
+                webView = new WebView(context);
+                configureWebView(webView);
             }
-        });
+        }
 
-        // Critical for CF Turnstile
-        CookieManager.getInstance().setAcceptThirdPartyCookies(webView, true);
-        CookieManager.getInstance().flush();
+        // Detach from any existing parent
+        if (webView.getParent() != null) {
+            ((ViewGroup) webView.getParent()).removeView(webView);
+        }
+
+        // Hide global dialog if showing
+        if (visibleDialog != null && visibleDialog.isShowing()) {
+            visibleDialog.dismiss();
+            visibleDialog = null;
+        }
+
+        return webView;
+    }
+
+    /**
+     * Return the WebView after use.
+     * The borrower should detach it before calling this, but we check anyway.
+     */
+    public void returnWebView(WebView view) {
+        if (view == this.webView) {
+            if (view.getParent() != null) {
+                ((ViewGroup) view.getParent()).removeView(view);
+            }
+            // Reset clients/interfaces to avoid leaks or unintended behavior
+            view.setWebViewClient(null);
+            view.setWebChromeClient(null);
+            view.loadUrl("about:blank"); // Clear page content
+        }
     }
 
     /**
@@ -135,50 +166,48 @@ public class WebViewScraperManager {
             }
 
             AtomicBoolean completed = new AtomicBoolean(false);
-            AtomicBoolean cfDetected = new AtomicBoolean(false);
 
-            webView.setWebViewClient(new WebViewClient() {
+            // Implement Controller to link Client events to Manager logic
+            com.omarflex5.data.scraper.client.WebViewController controller = new com.omarflex5.data.scraper.client.WebViewController() {
                 @Override
-                public void onPageFinished(WebView view, String finishedUrl) {
-                    Log.d(TAG, "Page loaded: " + finishedUrl);
-
-                    // Check if still on CF challenge page
-                    view.evaluateJavascript("document.title", title -> {
-                        String pageTitle = title != null ? title.replace("\"", "") : "";
-
-                        // Update visual status if available
-                        if (view.getTag() instanceof android.widget.TextView) {
-                            android.widget.TextView st = (android.widget.TextView) view.getTag(); // Safe cast
-                            st.post(() -> st.setText("Status: " + (pageTitle.isEmpty() ? "Loading..." : pageTitle)));
-                        }
-
-                        if (pageTitle.contains("Cloudflare") ||
-                                pageTitle.contains("Just a moment") ||
-                                pageTitle.contains("Checking your browser")) {
-                            // Still on CF challenge
-                            cfDetected.set(true);
-                            Log.d(TAG, "CF challenge detected, waiting...");
-                            if (view.getTag() instanceof android.widget.TextView) {
-                                ((android.widget.TextView) view.getTag())
-                                        .post(() -> ((android.widget.TextView) view.getTag())
-                                                .setText("⚠️ Cloudflare Detected. Please verify."));
-                            }
-                        } else if (cfDetected.get() || !pageTitle.isEmpty()) {
-                            // CF passed or normal page
-                            if (!completed.getAndSet(true)) {
-                                checkAndHandleRedirect(server, finishedUrl);
-                                extractAndSave(view, server, callback);
-                            }
-                        }
-                    });
+                public void updateStatus(String message) {
+                    updateDialogStatus(message);
                 }
 
                 @Override
-                public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
-                    // Allow all redirects (needed for CF)
-                    return false;
+                public void updateProgress(int progress) {
+                    // Optional: Update progress bar if added to dialog
                 }
-            });
+
+                @Override
+                public void onCloudflareDetected() {
+                    Log.d(TAG, "CF challenge detected, waiting...");
+                    updateDialogStatus("⚠️ Cloudflare Detected. Please verify.");
+                }
+
+                @Override
+                public void onPageLoaded(String url) {
+                    // Base loaded, waiting for content check
+                }
+
+                @Override
+                public void onContentReady(String url) {
+                    // Safe content detected (No CF or CF passed)
+                    if (!completed.getAndSet(true)) {
+                        checkAndHandleRedirect(server, url);
+                        extractAndSave(webView, server, callback);
+                    }
+                }
+
+                @Override
+                public void onVideoDetected(String url, java.util.Map<String, String> headers) {
+                    // Not used in Scraper
+                }
+            };
+
+            // Set Clients
+            webView.setWebViewClient(new com.omarflex5.data.scraper.client.ScraperWebViewClient(controller));
+            webView.setWebChromeClient(new com.omarflex5.data.scraper.client.CoreWebChromeClient(controller));
 
             // Timeout handler
             mainHandler.postDelayed(() -> {
@@ -189,12 +218,29 @@ public class WebViewScraperManager {
             }, CF_WAIT_TIMEOUT_MS);
 
             // Clear cookies for clean start if they're expired
+            // Clear cookies for clean start if they're expired
             if (server.needsCookieRefresh()) {
-                CookieManager.getInstance().removeAllCookies(null);
+                Log.d(TAG, "Cookies expired or missing, clearing WebView cookies.");
+                CookieManager.getInstance().removeAllCookies(v -> {
+                    // Safe to load after clear
+                    webView.loadUrl(url);
+                });
+            } else {
+                // Restore valid cookies from DB to ensure WebView has them (Fixes restart
+                // issue)
+                // Now Async: Must wait for completion
+                restoreCookiesToWebView(server, () -> {
+                    webView.loadUrl(url);
+                });
             }
-
-            webView.loadUrl(url);
         });
+    }
+
+    private void updateDialogStatus(String message) {
+        if (webView != null && webView.getTag() instanceof android.widget.TextView) {
+            android.widget.TextView st = (android.widget.TextView) webView.getTag();
+            st.post(() -> st.setText(message));
+        }
     }
 
     private void showWebViewDialog(Activity activity) {
@@ -309,7 +355,11 @@ public class WebViewScraperManager {
     public void saveCookies(ServerEntity server, String cookieString) {
         if (server == null || cookieString == null)
             return;
+
+        Log.d(TAG, ">>> SAVING COOKIES for " + server.getName() + ": " + cookieString);
+
         Map<String, String> cookies = parseCookies(cookieString);
+
         saveCookies(server, cookies);
     }
 
@@ -326,6 +376,9 @@ public class WebViewScraperManager {
         // 2. Update In-Memory Object (Sync) - CRITICAL for next request
         server.setCfCookiesJson(cookiesJson);
         server.setCfCookiesExpireAt(expiresAt);
+
+        // 3. Flush to disk to ensure WebView persistence
+        CookieManager.getInstance().flush();
 
         Log.d(TAG, "External Save: Persisted " + cookies.size() + " cookies for " + server.getName());
     }
@@ -422,7 +475,7 @@ public class WebViewScraperManager {
     }
 
     private Map<String, String> getSavedCookies(ServerEntity server) {
-        if (server.getCfCookiesJson() != null && !server.getCfCookiesJson().isEmpty()) { // FIXED: getCfCookiesJson
+        if (server.getCfCookiesJson() != null && !server.getCfCookiesJson().isEmpty()) {
             try {
                 return gson.fromJson(server.getCfCookiesJson(), new TypeToken<Map<String, String>>() {
                 }.getType());
@@ -431,6 +484,92 @@ public class WebViewScraperManager {
             }
         }
         return new HashMap<>();
+    }
+
+    private void restoreCookiesToWebView(ServerEntity server, Runnable onComplete) {
+        Map<String, String> cookies = getSavedCookies(server);
+        if (!cookies.isEmpty()) {
+            CookieManager cm = CookieManager.getInstance();
+
+            // CRITICAL: Clear existing cookies to prevent duplicates (migrating from Native
+            // to DB session)
+            // Note: removeAllCookies is ASYNC. We must wait for callback.
+            cm.removeAllCookies(success -> {
+                Log.d(TAG, "Cleared all cookies (Async success=" + success + "). Now restoring...");
+
+                String url = server.getBaseUrl();
+                for (Map.Entry<String, String> entry : cookies.entrySet()) {
+                    // Construct cookie string: name=value
+                    // CRITICAL: Force Path=/ to ensure cookie is valid for entire site.
+                    String cookieValue = entry.getKey() + "=" + entry.getValue() + "; Path=/";
+
+                    // CRITICAL: Restore Attributes for sensitive cookies
+                    if (entry.getKey().equals("cf_clearance") || entry.getKey().equals("__cf_bm")) {
+                        cookieValue += "; HttpOnly; Secure";
+                        // Removed SameSite=None
+                    }
+
+                    cm.setCookie(url, cookieValue);
+                    Log.d(TAG, "Restoring Cookie: " + cookieValue + " for URL: " + url);
+                }
+                cm.flush();
+                Log.d(TAG, "<<< RESTORED " + cookies.size() + " cookies to WebView for " + url);
+
+                // Verify what actually stuck
+                String verify = cm.getCookie(url);
+                Log.d(TAG, "VERIFY WebView Cookies after restore: " + verify);
+
+                if (onComplete != null)
+                    onComplete.run();
+            });
+        } else {
+            Log.d(TAG, "No cookies to restore for " + server.getName());
+            if (onComplete != null)
+                onComplete.run();
+        }
+    }
+
+    // ==================== COOKIE RESTORATION ====================
+
+    /**
+     * Async restore cookies for a specific URL's domain.
+     * Useful for SnifferActivity to ensure session before loading.
+     */
+    public void restoreCookiesForUrl(String url, Runnable onComplete) {
+        if (url == null) {
+            onComplete.run();
+            return;
+        }
+
+        try {
+            Uri uri = Uri.parse(url);
+            String host = uri.getHost();
+            if (host == null) {
+                onComplete.run();
+                return;
+            }
+
+            // Remove www. prefix for better matching? Or let DAO handle partials?
+            // Assuming DAO handles strict matching on stored Base URL host or Name
+            // For now, let's try strict host match first.
+
+            serverRepository.findServerByHost(host, server -> {
+                mainHandler.post(() -> {
+                    if (server != null) {
+                        restoreCookiesToWebView(server, onComplete);
+                    } else {
+                        // Fallback: Check if we have any server that *contains* this host?
+                        // Or just log warning.
+                        Log.d(TAG, "No matching server entity found for host: " + host);
+                        onComplete.run();
+                    }
+                });
+            });
+
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to restore cookies for URL: " + url, e);
+            onComplete.run();
+        }
     }
 
     // ==================== HYBRID REQUEST LOGIC ====================
@@ -453,9 +592,12 @@ public class WebViewScraperManager {
         new Thread(() -> {
             try {
                 // 1. Prepare Direct Request
+                String ua = com.omarflex5.util.WebConfig.getUserAgent(context);
+                Log.d(TAG, "OkHttp User-Agent: " + ua);
+
                 okhttp3.Request.Builder builder = new okhttp3.Request.Builder()
                         .url(url)
-                        .header("User-Agent", com.omarflex5.util.WebConfig.getUserAgent(context))
+                        .header("User-Agent", ua)
                         .header("Accept-Language", "en-US,en;q=0.9,ar;q=0.8");
 
                 // Attach cookies if available

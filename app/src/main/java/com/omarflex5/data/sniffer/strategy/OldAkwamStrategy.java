@@ -153,6 +153,11 @@ public class OldAkwamStrategy implements SniffingStrategy {
         return "OldAkwam";
     }
 
+    @Override
+    public SnifferCallback getCallback() {
+        return callback;
+    }
+
     private boolean isAdUrl(String url) {
         if (url == null)
             return false;

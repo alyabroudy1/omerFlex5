@@ -71,6 +71,11 @@ public class CloudflareBypassStrategy implements SniffingStrategy {
         return "CloudflareBypass";
     }
 
+    @Override
+    public SnifferCallback getCallback() {
+        return callback;
+    }
+
     /**
      * Called from JS when CF status is determined.
      */

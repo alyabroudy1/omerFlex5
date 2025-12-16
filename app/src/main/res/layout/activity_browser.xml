@@ -4,9 +4,9 @@
     android:layout_height="match_parent"
     android:background="#FF141414">
 
-    <!-- WebView Container -->
-    <WebView
-        android:id="@+id/webview_browser"
+    <!-- WebView Container (Shared Instance) -->
+    <FrameLayout
+        android:id="@+id/webview_container"
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 

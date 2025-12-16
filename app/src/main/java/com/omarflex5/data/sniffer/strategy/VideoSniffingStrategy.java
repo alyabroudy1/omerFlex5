@@ -41,6 +41,11 @@ public class VideoSniffingStrategy implements SniffingStrategy {
     }
 
     @Override
+    public SnifferCallback getCallback() {
+        return callback;
+    }
+
+    @Override
     public void onPageFinished(WebView view, String url) {
         if (videoFound)
             return;
@@ -158,8 +163,24 @@ public class VideoSniffingStrategy implements SniffingStrategy {
         script.append("           }");
         script.append("       }");
         script.append("       ");
+        script.append("       function checkCloudflare() {");
+        script.append("           try {");
+        script.append("               if (document.querySelector('input[name=\"cf_challenge_response\"]') ||");
+        script.append("                   document.querySelector('div#challenge-stage') ||");
+        script.append("                   document.title.includes('Just a moment') ||");
+        script.append("                   document.querySelector('iframe[title*=\"Cloudflare\"]')) {");
+        script.append("                   console.log('[VideoSniffer] Cloudflare detected!');");
+        script.append("                   if (window.SnifferAndroid && window.SnifferAndroid.onCloudflareDetected) {");
+        script.append("                       window.SnifferAndroid.onCloudflareDetected();");
+        script.append("                   }");
+        script.append("                   return true;");
+        script.append("               }");
+        script.append("           } catch(e) {}");
+        script.append("           return false;");
+        script.append("       }");
+        script.append("       ");
         script.append("       function attemptClick() {");
-        script.append("           if (foundVideo || hasClicked || clickAttempts > 5) return;");
+        script.append("           if (foundVideo || hasClicked || clickAttempts > 5 || checkCloudflare()) return;");
         script.append("           ");
         script.append("           var targets = [");
         script.append("               '.vjs-big-play-button',");
@@ -186,6 +207,8 @@ public class VideoSniffingStrategy implements SniffingStrategy {
         script.append("       ");
         script.append("       function scan() {");
         script.append("           if (foundVideo) return;");
+        script.append("           if (checkCloudflare()) return;");
+        script.append("           ");
 
         // Inject custom script if provided
         if (customScript != null && !customScript.isEmpty()) {

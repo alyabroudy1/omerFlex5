@@ -66,4 +66,9 @@ public interface SniffingStrategy {
      * Returns the strategy name for logging/status.
      */
     String getName();
+
+    /**
+     * Returns the callback used by this strategy.
+     */
+    com.omarflex5.data.sniffer.callback.SnifferCallback getCallback();
 }

@@ -31,6 +31,11 @@ public interface SnifferCallback {
     void onCloudflareBypassComplete(Map<String, String> cookies);
 
     /**
+     * Called when Cloudflare protection is detected active.
+     */
+    void onCloudflareDetected();
+
+    /**
      * Called on progress updates (for status bar).
      *
      * @param message Status message

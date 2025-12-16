@@ -113,6 +113,20 @@ public class BrowserActivity extends com.omarflex5.ui.base.BaseActivity {
         }
 
         initViews();
+
+        // ONE WEBVIEW ARCHITECTURE:
+        // Borrow the persistent WebView from ScraperManager.
+        com.omarflex5.data.scraper.WebViewScraperManager scraperManager = com.omarflex5.data.scraper.WebViewScraperManager
+                .getInstance(this);
+        webView = scraperManager.borrowWebView();
+
+        // Attach to layout
+        android.widget.FrameLayout container = findViewById(R.id.webview_container);
+        if (webView.getParent() != null) {
+            ((android.view.ViewGroup) webView.getParent()).removeView(webView);
+        }
+        container.addView(webView);
+
         setupWebView();
 
         // Defer loading to allow activity to fully render (prevents ANR)
@@ -124,7 +138,7 @@ public class BrowserActivity extends com.omarflex5.ui.base.BaseActivity {
     }
 
     private void initViews() {
-        webView = findViewById(R.id.webview_browser);
+        // webView is initialized via borrowWebView()
         loadingOverlay = findViewById(R.id.loading_overlay);
         textStatus = findViewById(R.id.text_status);
         textTitle = findViewById(R.id.text_title);
@@ -140,43 +154,64 @@ public class BrowserActivity extends com.omarflex5.ui.base.BaseActivity {
 
     @SuppressLint("SetJavaScriptEnabled")
     private void setupWebView() {
-        WebSettings settings = webView.getSettings();
+        // Unified Configuration
+        com.omarflex5.data.scraper.config.WebConfig.configure(webView);
 
-        // Initialize User Agent
-        userAgent = com.omarflex5.util.WebConfig.getUserAgent(this);
+        // Ensure User Agent consistency in local field
+        userAgent = webView.getSettings().getUserAgentString();
 
-        // Configure WebView
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setJavaScriptCanOpenWindowsAutomatically(true);
-        settings.setSupportMultipleWindows(true);
-        settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        settings.setUserAgentString(userAgent);
-
-        // Disable cache for fresh content
-        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
-
-        // Hardware acceleration
-        webView.setLayerType(View.LAYER_TYPE_HARDWARE, null);
-
-        // Cookie management
-        CookieManager cookieManager = CookieManager.getInstance();
-        cookieManager.setAcceptCookie(true);
-        cookieManager.setAcceptThirdPartyCookies(webView, true);
-
-        // WebView debugging
+        // Enable debug
         WebView.setWebContentsDebuggingEnabled(true);
 
-        // Set clients
-        webView.setWebViewClient(new VideoDetectorClient());
-        webView.setWebChromeClient(new WebChromeClient() {
+        // Set clients using Unified Architecture
+        com.omarflex5.data.scraper.client.WebViewController controller = new com.omarflex5.data.scraper.client.WebViewController() {
             @Override
-            public boolean onConsoleMessage(android.webkit.ConsoleMessage consoleMessage) {
-                Log.d(TAG + "_Console", consoleMessage.message());
-                return true;
+            public void updateStatus(String message) {
+                BrowserActivity.this.updateStatus(message);
             }
-        });
+
+            @Override
+            public void updateProgress(int progress) {
+                // No ProgressBar in specific BrowserActivity, status handled via overlay
+            }
+
+            @Override
+            public void onCloudflareDetected() {
+                // Browser mode handles CF naturally by user interaction
+                updateStatus("⚠️ Cloudflare Detected");
+            }
+
+            @Override
+            public void onPageLoaded(String url) {
+                textTitle.setText(url);
+                // Inject auto-click script if needed (preserved logic)
+                webView.postDelayed(() -> injectAutoClickScript(webView), 1000);
+
+                // Hide loading after a delay to let video elements appear
+                webView.postDelayed(() -> {
+                    if (!videoFound && loadingOverlay != null) {
+                        loadingOverlay.setVisibility(View.GONE);
+                    }
+                }, 5000);
+            }
+
+            @Override
+            public void onContentReady(String url) {
+                // Not used in Browser
+            }
+
+            @Override
+            public void onVideoDetected(String url, Map<String, String> headers) {
+                // Add headers to map if needed
+                if (headers != null) {
+                    videoHeadersMap.put(url, new HashMap<>(headers));
+                }
+                BrowserActivity.this.onVideoDetected(url);
+            }
+        };
+
+        webView.setWebViewClient(new com.omarflex5.data.scraper.client.SnifferWebViewClient(this, controller));
+        webView.setWebChromeClient(new com.omarflex5.data.scraper.client.CoreWebChromeClient(controller));
     }
 
     private void updateStatus(String status) {
@@ -242,180 +277,43 @@ public class BrowserActivity extends com.omarflex5.ui.base.BaseActivity {
         super.onDestroy();
         if (webView != null) {
             webView.stopLoading();
-            webView.destroy();
+
+            // ONE WEBVIEW ARCHITECTURE:
+            // Return to manager instead of destroying
+            com.omarflex5.data.scraper.WebViewScraperManager.getInstance(this).returnWebView(webView);
+            webView = null;
         }
     }
 
-    /**
-     * WebViewClient that detects video URLs in network requests.
-     */
-    private class VideoDetectorClient extends WebViewClient {
+    private void injectAutoClickScript(WebView view) {
+        String autoClickJs = "javascript:(function() {" +
+                "console.log('[AutoClick] Starting...');" +
+                // Look for video elements and click them
+                "var videos = document.querySelectorAll('video');" +
+                "for (var i = 0; i < videos.length; i++) {" +
+                "  videos[i].play();" +
+                "  console.log('[AutoClick] Playing video ' + i);" +
+                "}" +
+                // Click on iframes that look like video players
+                "var iframes = document.querySelectorAll('iframe');" +
+                "for (var i = 0; i < iframes.length; i++) {" +
+                "  var src = iframes[i].src || '';" +
+                "  if (src.indexOf('player') >= 0 || src.indexOf('embed') >= 0 || src.indexOf('video') >= 0) {" +
+                "    console.log('[AutoClick] Found player iframe: ' + src);" +
+                "    iframes[i].click();" +
+                "  }" +
+                "}" +
+                // Click on any element with 'play' in its class/id
+                "var playButtons = document.querySelectorAll('[class*=\"play\"],[id*=\"play\"],[class*=\"Play\"],[id*=\"Play\"]');"
+                +
+                "for (var i = 0; i < playButtons.length; i++) {" +
+                "  playButtons[i].click();" +
+                "  console.log('[AutoClick] Clicked play button ' + i);" +
+                "}" +
+                "console.log('[AutoClick] Done');" +
+                "})();";
 
-        @Override
-        public void onPageStarted(WebView view, String url, Bitmap favicon) {
-            super.onPageStarted(view, url, favicon);
-            updateStatus("Loading: " + url);
-            loadingOverlay.setVisibility(View.VISIBLE);
-        }
-
-        @Override
-        public void onPageFinished(WebView view, String url) {
-            super.onPageFinished(view, url);
-            updateStatus("Page loaded, searching for video...");
-
-            // Inject JavaScript to auto-click video player
-            view.postDelayed(() -> injectAutoClickScript(view), 1000);
-
-            // Hide loading after a delay to let video elements appear
-            view.postDelayed(() -> {
-                if (!videoFound) {
-                    loadingOverlay.setVisibility(View.GONE);
-                }
-            }, 5000); // Increased to 5 seconds for video to load
-        }
-
-        private void injectAutoClickScript(WebView view) {
-            String autoClickJs = "javascript:(function() {" +
-                    "console.log('[AutoClick] Starting...');" +
-                    // Look for video elements and click them
-                    "var videos = document.querySelectorAll('video');" +
-                    "for (var i = 0; i < videos.length; i++) {" +
-                    "  videos[i].play();" +
-                    "  console.log('[AutoClick] Playing video ' + i);" +
-                    "}" +
-                    // Click on iframes that look like video players
-                    "var iframes = document.querySelectorAll('iframe');" +
-                    "for (var i = 0; i < iframes.length; i++) {" +
-                    "  var src = iframes[i].src || '';" +
-                    "  if (src.indexOf('player') >= 0 || src.indexOf('embed') >= 0 || src.indexOf('video') >= 0) {" +
-                    "    console.log('[AutoClick] Found player iframe: ' + src);" +
-                    "    iframes[i].click();" +
-                    "  }" +
-                    "}" +
-                    // Click on any element with 'play' in its class/id
-                    "var playButtons = document.querySelectorAll('[class*=\"play\"],[id*=\"play\"],[class*=\"Play\"],[id*=\"Play\"]');"
-                    +
-                    "for (var i = 0; i < playButtons.length; i++) {" +
-                    "  playButtons[i].click();" +
-                    "  console.log('[AutoClick] Clicked play button ' + i);" +
-                    "}" +
-                    "console.log('[AutoClick] Done');" +
-                    "})();";
-
-            view.evaluateJavascript(autoClickJs, null);
-            Log.d(TAG, "Injected auto-click script");
-        }
-
-        @Override
-        public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
-            String url = request.getUrl().toString();
-
-            // Check for video URLs
-            if (isVideoUrl(url)) {
-                Log.d(TAG, "Intercepted video request: " + url);
-
-                // Capture headers
-                Map<String, String> headers = request.getRequestHeaders();
-                if (headers != null && !headers.isEmpty()) {
-                    videoHeadersMap.put(url, new HashMap<>(headers));
-                }
-
-                // Notify video detected
-                onVideoDetected(url);
-
-                // Allow request to proceed (don't block)
-                return null;
-            }
-
-            // Content-Type detection for non-standard URLs
-            if (!isCommonResource(url)) {
-                try {
-                    String contentType = getContentType(url);
-                    if (contentType != null && isVideoContentType(contentType)) {
-                        Log.d(TAG, "Detected video via Content-Type: " + contentType);
-                        onVideoDetected(url);
-                        return new WebResourceResponse("text/plain", "utf-8",
-                                new ByteArrayInputStream("".getBytes()));
-                    }
-                } catch (Exception e) {
-                    // Ignore detection errors
-                }
-            }
-
-            return super.shouldInterceptRequest(view, request);
-        }
-
-        @Override
-        public void onReceivedError(WebView view, int errorCode, String description, String failingUrl) {
-            super.onReceivedError(view, errorCode, description, failingUrl);
-            updateStatus("Error: " + description);
-        }
-
-        private boolean isVideoUrl(String url) {
-            // First check if it's a tracking/analytics URL
-            if (isTrackingUrl(url)) {
-                return false;
-            }
-
-            String lowerUrl = url.toLowerCase();
-            for (String indicator : VIDEO_INDICATORS) {
-                if (lowerUrl.contains(indicator)) {
-                    return true;
-                }
-            }
-            return VIDEO_PATTERN.matcher(url).matches();
-        }
-
-        private boolean isTrackingUrl(String url) {
-            String lowerUrl = url.toLowerCase();
-            for (String blacklisted : TRACKING_BLACKLIST) {
-                if (lowerUrl.contains(blacklisted)) {
-                    Log.d(TAG, "Ignoring tracking URL: " + url.substring(0, Math.min(80, url.length())));
-                    return true;
-                }
-            }
-            return false;
-        }
-
-        private boolean isCommonResource(String url) {
-            String lowerUrl = url.toLowerCase();
-            return lowerUrl.endsWith(".js") || lowerUrl.endsWith(".css") ||
-                    lowerUrl.endsWith(".png") || lowerUrl.endsWith(".jpg") ||
-                    lowerUrl.endsWith(".jpeg") || lowerUrl.endsWith(".gif") ||
-                    lowerUrl.endsWith(".svg") || lowerUrl.endsWith(".ico") ||
-                    lowerUrl.endsWith(".woff") || lowerUrl.endsWith(".woff2") ||
-                    lowerUrl.endsWith(".ttf") || lowerUrl.endsWith(".json");
-        }
-
-        private boolean isVideoContentType(String contentType) {
-            String lowerType = contentType.toLowerCase();
-            return lowerType.startsWith("video/") ||
-                    lowerType.equals("application/vnd.apple.mpegurl") ||
-                    lowerType.equals("application/x-mpegurl") ||
-                    lowerType.equals("application/dash+xml");
-        }
-
-        private String getContentType(String urlString) {
-            try {
-                URL url = new URL(urlString);
-                HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-                connection.setRequestMethod("HEAD");
-                connection.setConnectTimeout(3000);
-                connection.setReadTimeout(3000);
-                connection.setRequestProperty("User-Agent", userAgent);
-
-                String cookies = CookieManager.getInstance().getCookie(urlString);
-                if (cookies != null) {
-                    connection.setRequestProperty("Cookie", cookies);
-                }
-
-                connection.connect();
-                String contentType = connection.getContentType();
-                connection.disconnect();
-                return contentType;
-            } catch (Exception e) {
-                return null;
-            }
-        }
+        view.evaluateJavascript(autoClickJs, null);
+        Log.d(TAG, "Injected auto-click script");
     }
 }

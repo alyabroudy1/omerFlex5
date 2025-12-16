@@ -32,6 +32,13 @@ import com.omarflex5.data.sniffer.strategy.CloudflareBypassStrategy;
 import com.omarflex5.data.sniffer.strategy.SniffingStrategy;
 import com.omarflex5.data.sniffer.strategy.VideoSniffingStrategy;
 
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.Response;
+import okhttp3.Call;
+import okhttp3.Callback;
+import java.io.IOException;
+
 import java.io.Serializable;
 import java.util.HashMap;
 import java.util.Map;
@@ -72,6 +79,7 @@ public class SnifferActivity extends AppCompatActivity {
     private SniffingStrategy strategy;
     private boolean isDestroyed = false;
     private boolean resultDelivered = false;
+    private boolean isCloudflareActive = false;
 
     private String targetUrl;
     private long timeout = 60000;
@@ -99,7 +107,7 @@ public class SnifferActivity extends AppCompatActivity {
         setContentView(R.layout.activity_sniffer);
 
         // Init views
-        webView = findViewById(R.id.sniffer_webview);
+        android.widget.FrameLayout container = findViewById(R.id.webview_container);
         statusText = findViewById(R.id.status_text);
         statusProgress = findViewById(R.id.status_progress);
         btnClose = findViewById(R.id.btn_close);
@@ -113,7 +121,6 @@ public class SnifferActivity extends AppCompatActivity {
         timeout = getIntent().getLongExtra(EXTRA_TIMEOUT, 60000);
 
         // Parse User Agent
-        // Allow caller to override default UA (e.g. for Desktop mode)
         String userAgent = getIntent().getStringExtra("EXTRA_USER_AGENT");
 
         if (rawUrl == null || rawUrl.isEmpty()) {
@@ -141,11 +148,30 @@ public class SnifferActivity extends AppCompatActivity {
             targetUrl = rawUrl;
         }
 
-        // Create strategy based on type
-        strategy = createStrategy(strategyType, customJs);
+        // ONE WEBVIEW ARCHITECTURE:
+        // Borrow the persistent WebView from ScraperManager.
+        // This ensures cookies/CF tokens are shared perfectly.
+        com.omarflex5.data.scraper.WebViewScraperManager scraperManager = com.omarflex5.data.scraper.WebViewScraperManager
+                .getInstance(this);
+        webView = scraperManager.borrowWebView();
 
-        // Setup WebView
-        setupWebView(userAgent != null ? userAgent : SnifferConfig.DEFAULT_USER_AGENT);
+        if (webView.getParent() != null) {
+            ((android.view.ViewGroup) webView.getParent()).removeView(webView);
+        }
+        container.addView(webView);
+
+        // Debug: Confirm User-Agent
+        String finalUa = webView.getSettings().getUserAgentString();
+        Log.d(TAG, "WebView Final User-Agent: " + finalUa);
+
+        // Create strategy based on type
+        strategy =
+
+                createStrategy(strategyType, customJs);
+
+        // Setup WebView (Apply clients but keep core settings)
+        // CRITICAL: Use same dynamic UA as Scraper to avoid CF mismatch
+        setupWebView(userAgent != null ? userAgent : com.omarflex5.util.WebConfig.getUserAgent(this));
 
         // Close button
         btnClose.setOnClickListener(v -> {
@@ -164,101 +190,38 @@ public class SnifferActivity extends AppCompatActivity {
         Log.d(TAG, "Loading URL: " + targetUrl);
         updateStatus("Loading...");
 
-        // INJECT COOKIES (Critical for CF)
-        android.webkit.CookieManager cookieManager = android.webkit.CookieManager.getInstance();
-        cookieManager.setAcceptCookie(true);
-        cookieManager.setAcceptThirdPartyCookies(webView, true);
+        // Check if we already have cookies (Native Persistence)
+        // Note: We used to check CookieManager here, but native persistence proved
+        // unreliable with Cloudflare.
+        // We now enforce a DB restore + OkHttp Pre-fetch for maximum reliability.
+        Log.d(TAG, "Enforcing DB restore for Cloudflare reliability...");
+        scraperManager.restoreCookiesForUrl(targetUrl, () -> {
+            // Debug: Check restored values
+            String ua = webView.getSettings().getUserAgentString();
+            String cookies = CookieManager.getInstance().getCookie(targetUrl);
+            Log.d(TAG, "WebView User-Agent: " + ua);
+            Log.d(TAG, "WebView Cookies: " + (cookies != null ? cookies : "null"));
 
-        // 1. Check cookies from Intent Headers (url|Cookie=...)
-        if (extraHeaders != null && extraHeaders.containsKey("Cookie")) {
-            String cookieStr = extraHeaders.get("Cookie");
-            setCookies(targetUrl, cookieStr);
-            if (!extraHeaders.isEmpty()) {
-                webView.loadUrl(targetUrl, extraHeaders);
-            } else {
-                webView.loadUrl(targetUrl);
-            }
-        } else {
-            // 2. Fallback: try to find server from DB matching this domain (Best Effort)
-            // Ideally we shouldn't do DB ops on main thread, but this is a quick domain
-            // lookup
-            new Thread(() -> {
-                // Create a local copy for thread safety
-                final Map<String, String> threadHeaders = new HashMap<>();
-                if (extraHeaders != null) {
-                    threadHeaders.putAll(extraHeaders);
-                }
-
-                try {
-                    java.net.URI uri = java.net.URI.create(targetUrl);
-                    String host = uri.getHost();
-                    com.omarflex5.data.local.entity.ServerEntity server = com.omarflex5.data.repository.ServerRepository
-                            .getInstance(this).findServerByHost(host);
-
-                    if (server != null && server.getCfCookiesJson() != null) {
-                        Map<String, String> cookies = new com.google.gson.Gson().fromJson(
-                                server.getCfCookiesJson(),
-                                new com.google.gson.reflect.TypeToken<Map<String, String>>() {
-                                }.getType());
-
-                        // 0. Clear existing cookies to prevent duplicates/conflicts (Critical for CF)
-                        cookieManager.removeAllCookies(null);
-                        cookieManager.flush();
-
-                        try {
-                            Thread.sleep(50);
-                        } catch (Exception ignored) {
-                        }
-
-                        for (Map.Entry<String, String> entry : cookies.entrySet()) {
-                            String key = entry.getKey();
-                            String value = entry.getValue();
-                            String cookieVal = key + "=" + value;
-
-                            // 1. Inject into CookieManager
-                            cookieManager.setCookie(targetUrl, cookieVal);
-                        }
-                        cookieManager.flush();
-
-                        // Give it a tiny moment to sync
-                        try {
-                            Thread.sleep(50);
-                        } catch (Exception ignored) {
-                        }
-
-                        Log.d(TAG, "Injected saved cookies for host: " + host);
-                    } else {
-                        Log.w(TAG, "No cookies found in DB for host: " + host);
-                    }
-                } catch (Exception e) {
-                    Log.e(TAG, "Failed to inject saved cookies: " + e.getMessage());
-                }
-
-                // Continue loading on Main Thread
-                handler.post(() -> {
-                    Log.d(TAG, "Starting loadUrl: " + targetUrl);
-                    if (!threadHeaders.isEmpty()) {
-                        webView.loadUrl(targetUrl, threadHeaders);
-                    } else {
-                        webView.loadUrl(targetUrl);
-                    }
-                });
-            }).start();
-            return; // Return early, loadUrl is called in thread
-        }
+            // Try to fetch via OkHttp first.
+            // This bypasses the initial WebView navigation loop which triggers CF
+            // challenges.
+            fetchWithOkHttpAndLoad(targetUrl, extraHeaders);
+        });
 
         // AUTO-CLICK FALLBACK (Native):
-        // If JS clicker fails (due to cross-origin iframe), this physical tap will wake
-        // the player.
         handler.postDelayed(() -> {
             if (!isDestroyed && !resultDelivered) {
-                simulateClick();
+                if (!isCloudflareActive) {
+                    simulateClick();
+                } else {
+                    Log.d(TAG, "Native click blocked by Cloudflare detection");
+                }
             }
         }, 4000); // 4 seconds after load
     }
 
     private void simulateClick() {
-        if (webView == null)
+        if (webView == null || isCloudflareActive)
             return;
 
         long downTime = android.os.SystemClock.uptimeMillis();
@@ -293,6 +256,16 @@ public class SnifferActivity extends AppCompatActivity {
             @Override
             public void onCloudflareBypassComplete(Map<String, String> cookies) {
                 Log.d(TAG, "CF bypass complete with " + cookies.size() + " cookies");
+                isCloudflareActive = false; // Reset flag
+            }
+
+            @Override
+            public void onCloudflareDetected() {
+                if (!isCloudflareActive) {
+                    isCloudflareActive = true;
+                    Log.d(TAG, "Cloudflare protection detected. Pausing auto-clicks.");
+                    updateStatus("⚠️ Cloudflare Detected - Please Verify");
+                }
             }
 
             @Override
@@ -326,44 +299,64 @@ public class SnifferActivity extends AppCompatActivity {
 
     @SuppressLint("SetJavaScriptEnabled")
     private void setupWebView(String userAgent) {
-        WebSettings settings = webView.getSettings();
-        settings.setJavaScriptEnabled(true);
-        settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true); // Add Database Enabled
-        settings.setSupportMultipleWindows(false); // Changed to false to match Scraper
-        // settings.setMediaPlaybackRequiresUserGesture(false); // Scraper doesn't set
-        // this, so let's use default
+        // Unified Configuration
+        com.omarflex5.data.scraper.config.WebConfig.configure(webView);
 
-        // Enforce Common UA if null
-        if (userAgent == null || userAgent.isEmpty()) {
-            userAgent = SnifferConfig.DEFAULT_USER_AGENT;
+        // Ensure User Agent consistency if overridden by Intent
+        if (userAgent != null && !userAgent.isEmpty()) {
+            webView.getSettings().setUserAgentString(userAgent);
         }
-        settings.setUserAgentString(userAgent);
 
-        settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        settings.setBlockNetworkImage(false);
-        settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
-        // settings.setUseWideViewPort(true); // Scraper doesn't use this
-        // settings.setLoadWithOverviewMode(true); // Scraper doesn't use this
-
-        // Critical for performance
-        webView.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null);
-
-        // Cookie support
-        CookieManager cookieManager = CookieManager.getInstance();
-        cookieManager.setAcceptCookie(true);
-        cookieManager.setAcceptThirdPartyCookies(webView, true);
-
-        // Critical: Set exact same UA as Scraper to ensure cookies are valid
-        // Use system default to match WebView engine version (prevents Mismatch Errors)
-        webView.getSettings().setUserAgentString(com.omarflex5.util.WebConfig.getUserAgent(this));
-
-        // Add JS interface
+        // Add JS interface (Unique to Sniffer)
         webView.addJavascriptInterface(jsInterface, "SnifferAndroid");
 
-        // Set clients
-        webView.setWebViewClient(new SnifferWebClient());
-        webView.setWebChromeClient(new WebChromeClient());
+        // Set clients using Unified Architecture
+        com.omarflex5.data.scraper.client.WebViewController controller = new com.omarflex5.data.scraper.client.WebViewController() {
+            @Override
+            public void updateStatus(String message) {
+                SnifferActivity.this.updateStatus(message);
+            }
+
+            @Override
+            public void updateProgress(int progress) {
+                if (statusProgress != null) {
+                    statusProgress.setProgress(progress);
+                    statusProgress.setVisibility(progress < 100 ? View.VISIBLE : View.GONE);
+                }
+            }
+
+            @Override
+            public void onCloudflareDetected() {
+                // SnifferActivity mainly relies on VideoSniffingStrategy (JS) for this,
+                // but if the Client detects it (e.g. if we used ScraperClient logic), handle it
+                // here.
+                if (strategy != null && strategy.getCallback() != null) {
+                    strategy.getCallback().onCloudflareDetected();
+                }
+            }
+
+            @Override
+            public void onPageLoaded(String url) {
+                // Standard page load
+            }
+
+            @Override
+            public void onContentReady(String url) {
+                // Not used in SnifferActivity (relies on JS strategy)
+            }
+
+            @Override
+            public void onVideoDetected(String url, java.util.Map<String, String> headers) {
+                // Native detection (fallback/augmentation to JS)
+                SnifferActivity.this.updateStatus("Video Detected: " + url);
+
+                // Immediately deliver result to calling activity
+                runOnUiThread(() -> deliverVideoResult(url, headers));
+            }
+        };
+
+        webView.setWebViewClient(new com.omarflex5.data.scraper.client.SnifferWebViewClient(this, controller));
+        webView.setWebChromeClient(new com.omarflex5.data.scraper.client.CoreWebChromeClient(controller));
     }
 
     private void updateStatus(String message) {
@@ -430,10 +423,13 @@ public class SnifferActivity extends AppCompatActivity {
         handler.removeCallbacksAndMessages(null);
 
         if (webView != null) {
+            // STOP loading and detach
             webView.stopLoading();
-            webView.setWebViewClient(null);
-            webView.setWebChromeClient(null);
-            webView.destroy();
+
+            // ONE WEBVIEW ARCHITECTURE:
+            // Return to manager instead of destroying
+            com.omarflex5.data.scraper.WebViewScraperManager.getInstance(this).returnWebView(webView);
+            webView = null;
         }
 
         super.onDestroy();
@@ -556,5 +552,96 @@ public class SnifferActivity extends AppCompatActivity {
         }
         cookieManager.flush();
         Log.d(TAG, "Injected manual cookies: " + cookieString);
+    }
+
+    /**
+     * Attempts to fetch the page content using OkHttp (which shares/uses the same
+     * cookies)
+     * and load it directly into WebView. This bypasses the initial WebView
+     * navigation loop.
+     */
+    /**
+     * Attempts to fetch the page content using OkHttp (which shares/uses the same
+     * cookies)
+     * and load it directly into WebView. This bypasses the initial WebView
+     * navigation loop.
+     */
+    private void fetchWithOkHttpAndLoad(String url, Map<String, String> extraHeaders) {
+        updateStatus("Fetching via OkHttp...");
+
+        // 1. Get Cookies from CookieManager (now restored)
+        String cookies = CookieManager.getInstance().getCookie(url);
+        String userAgent = webView.getSettings().getUserAgentString();
+
+        Log.d(TAG, "OkHttp Fetch - Cookies: " + cookies);
+        Log.d(TAG, "OkHttp Fetch - UA: " + userAgent);
+        Log.d(TAG, "OkHttp Fetch - Extra Headers: " + extraHeaders);
+
+        // 2. Build Request
+        // Note: Using a new client or shared one. Ideally shared but for now new one is
+        // fine as cookies are passed via header.
+        OkHttpClient client = new OkHttpClient.Builder()
+                .followRedirects(true)
+                .followSslRedirects(true)
+                .build();
+
+        Request.Builder builder = new Request.Builder()
+                .url(url)
+                .header("User-Agent", userAgent);
+
+        if (cookies != null && !cookies.isEmpty()) {
+            builder.header("Cookie", cookies);
+        }
+
+        // Apply extra headers (Referer, etc.)
+        if (extraHeaders != null) {
+            for (Map.Entry<String, String> entry : extraHeaders.entrySet()) {
+                builder.header(entry.getKey(), entry.getValue());
+            }
+        }
+
+        client.newCall(builder.build()).enqueue(new Callback() {
+            @Override
+            public void onFailure(Call call, IOException e) {
+                Log.e(TAG, "OkHttp Fetch Failed: " + e.getMessage());
+                // Fallback to standard load
+                runOnUiThread(() -> {
+                    Log.d(TAG, "Fallback to standard WebView loadUrl");
+                    if (extraHeaders != null && !extraHeaders.isEmpty()) {
+                        webView.loadUrl(url, extraHeaders);
+                    } else {
+                        webView.loadUrl(url);
+                    }
+                });
+            }
+
+            @Override
+            public void onResponse(Call call, Response response) throws IOException {
+                if (response.isSuccessful()) {
+                    String html = response.body().string(); // Read fully
+                    Log.d(TAG, "OkHttp Fetch Success! Size: " + html.length());
+
+                    runOnUiThread(() -> {
+                        updateStatus("Loading Content...");
+                        // Load data with Base URL so relative links/scripts work
+                        // We must also pass the historyUrl as the targetUrl to ensure relative
+                        // resolution works AND
+                        // so that the WebView internally thinks it's at that URL (for further requests)
+                        webView.loadDataWithBaseURL(url, html, "text/html", "UTF-8", url);
+                    });
+                } else {
+                    Log.e(TAG, "OkHttp Fetch Error: " + response.code());
+                    // Fallback
+                    runOnUiThread(() -> {
+                        if (extraHeaders != null && !extraHeaders.isEmpty()) {
+                            webView.loadUrl(url, extraHeaders);
+                        } else {
+                            webView.loadUrl(url);
+                        }
+                    });
+                }
+                response.close();
+            }
+        });
     }
 }
