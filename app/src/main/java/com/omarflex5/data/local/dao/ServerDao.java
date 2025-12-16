@@ -62,4 +62,7 @@ public interface ServerDao {
 
     @Query("UPDATE servers SET currentPriority = basePriority, consecutiveFailures = 0, consecutiveSuccesses = 0 WHERE id = :id")
     void resetPriority(long id);
+
+    @Query("SELECT * FROM servers WHERE baseUrl LIKE '%' || :host || '%' LIMIT 1")
+    ServerEntity findByHost(String host);
 }

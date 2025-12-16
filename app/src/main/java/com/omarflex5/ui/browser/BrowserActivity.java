@@ -74,8 +74,10 @@ public class BrowserActivity extends com.omarflex5.ui.base.BaseActivity {
             "beacon", "stats.", "log.", "pixel", "impression", "adserver"
     };
 
-    // User agent (matching Cronet for compatibility)
-    private static final String USER_AGENT = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/142.0.7432.0 Mobile Safari/537.36";
+    // User agent (matching Scraper for compatibility)
+    // private static final String USER_AGENT =
+    // com.omarflex5.util.WebConfig.COMMON_USER_AGENT; // Deprecated
+    private String userAgent;
 
     // Views
     private WebView webView;
@@ -140,17 +142,17 @@ public class BrowserActivity extends com.omarflex5.ui.base.BaseActivity {
     private void setupWebView() {
         WebSettings settings = webView.getSettings();
 
-        // Enable JavaScript (required for video players)
+        // Initialize User Agent
+        userAgent = com.omarflex5.util.WebConfig.getUserAgent(this);
+
+        // Configure WebView
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-        settings.setDatabaseEnabled(true);
-        settings.setUseWideViewPort(true);
-        settings.setLoadWithOverviewMode(true);
-        settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
         settings.setSupportMultipleWindows(true);
+        settings.setMediaPlaybackRequiresUserGesture(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
-        settings.setUserAgentString(USER_AGENT);
+        settings.setUserAgentString(userAgent);
 
         // Disable cache for fresh content
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
@@ -400,7 +402,7 @@ public class BrowserActivity extends com.omarflex5.ui.base.BaseActivity {
                 connection.setRequestMethod("HEAD");
                 connection.setConnectTimeout(3000);
                 connection.setReadTimeout(3000);
-                connection.setRequestProperty("User-Agent", USER_AGENT);
+                connection.setRequestProperty("User-Agent", userAgent);
 
                 String cookies = CookieManager.getInstance().getCookie(urlString);
                 if (cookies != null) {

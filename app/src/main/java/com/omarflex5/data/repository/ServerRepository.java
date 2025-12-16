@@ -248,6 +248,10 @@ public class ServerRepository {
                 .addOnFailureListener(e -> Log.e(TAG, "Failed to fetch remote configs: " + e.getMessage()));
     }
 
+    public ServerEntity findServerByHost(String host) {
+        return serverDao.findByHost(host);
+    }
+
     // ==================== CALLBACK INTERFACE ====================
 
     public interface OnResultCallback<T> {

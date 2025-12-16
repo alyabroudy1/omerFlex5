@@ -304,6 +304,13 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode == REQUEST_VIDEO_BROWSER && resultCode == RESULT_OK && data != null) {
             String videoUrl = data.getStringExtra(BrowserActivity.EXTRA_VIDEO_URL);
+
+            // SAVE COOKIES (Fixes Re-Challenge Loop)
+            String cookies = data.getStringExtra(BrowserActivity.EXTRA_COOKIES);
+            if (currentServer != null && cookies != null) {
+                scraperManager.saveCookies(currentServer, cookies);
+            }
+
             if (videoUrl != null) {
                 // Use stored pending title, or fallback to breadcrumb
                 String pendingTitle = getIntent().getStringExtra("pending_title");

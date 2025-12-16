@@ -161,12 +161,90 @@ public class SnifferActivity extends AppCompatActivity {
         };
         handler.postDelayed(timeoutRunnable, timeout);
 
-        // Load URL
-        updateStatus("Loading: " + targetUrl);
-        if (!extraHeaders.isEmpty()) {
-            webView.loadUrl(targetUrl, extraHeaders);
+        Log.d(TAG, "Loading URL: " + targetUrl);
+        updateStatus("Loading...");
+
+        // INJECT COOKIES (Critical for CF)
+        android.webkit.CookieManager cookieManager = android.webkit.CookieManager.getInstance();
+        cookieManager.setAcceptCookie(true);
+        cookieManager.setAcceptThirdPartyCookies(webView, true);
+
+        // 1. Check cookies from Intent Headers (url|Cookie=...)
+        if (extraHeaders != null && extraHeaders.containsKey("Cookie")) {
+            String cookieStr = extraHeaders.get("Cookie");
+            setCookies(targetUrl, cookieStr);
+            if (!extraHeaders.isEmpty()) {
+                webView.loadUrl(targetUrl, extraHeaders);
+            } else {
+                webView.loadUrl(targetUrl);
+            }
         } else {
-            webView.loadUrl(targetUrl);
+            // 2. Fallback: try to find server from DB matching this domain (Best Effort)
+            // Ideally we shouldn't do DB ops on main thread, but this is a quick domain
+            // lookup
+            new Thread(() -> {
+                // Create a local copy for thread safety
+                final Map<String, String> threadHeaders = new HashMap<>();
+                if (extraHeaders != null) {
+                    threadHeaders.putAll(extraHeaders);
+                }
+
+                try {
+                    java.net.URI uri = java.net.URI.create(targetUrl);
+                    String host = uri.getHost();
+                    com.omarflex5.data.local.entity.ServerEntity server = com.omarflex5.data.repository.ServerRepository
+                            .getInstance(this).findServerByHost(host);
+
+                    if (server != null && server.getCfCookiesJson() != null) {
+                        Map<String, String> cookies = new com.google.gson.Gson().fromJson(
+                                server.getCfCookiesJson(),
+                                new com.google.gson.reflect.TypeToken<Map<String, String>>() {
+                                }.getType());
+
+                        // 0. Clear existing cookies to prevent duplicates/conflicts (Critical for CF)
+                        cookieManager.removeAllCookies(null);
+                        cookieManager.flush();
+
+                        try {
+                            Thread.sleep(50);
+                        } catch (Exception ignored) {
+                        }
+
+                        for (Map.Entry<String, String> entry : cookies.entrySet()) {
+                            String key = entry.getKey();
+                            String value = entry.getValue();
+                            String cookieVal = key + "=" + value;
+
+                            // 1. Inject into CookieManager
+                            cookieManager.setCookie(targetUrl, cookieVal);
+                        }
+                        cookieManager.flush();
+
+                        // Give it a tiny moment to sync
+                        try {
+                            Thread.sleep(50);
+                        } catch (Exception ignored) {
+                        }
+
+                        Log.d(TAG, "Injected saved cookies for host: " + host);
+                    } else {
+                        Log.w(TAG, "No cookies found in DB for host: " + host);
+                    }
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to inject saved cookies: " + e.getMessage());
+                }
+
+                // Continue loading on Main Thread
+                handler.post(() -> {
+                    Log.d(TAG, "Starting loadUrl: " + targetUrl);
+                    if (!threadHeaders.isEmpty()) {
+                        webView.loadUrl(targetUrl, threadHeaders);
+                    } else {
+                        webView.loadUrl(targetUrl);
+                    }
+                });
+            }).start();
+            return; // Return early, loadUrl is called in thread
         }
 
         // AUTO-CLICK FALLBACK (Native):
@@ -251,19 +329,34 @@ public class SnifferActivity extends AppCompatActivity {
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
         settings.setDomStorageEnabled(true);
-        settings.setMediaPlaybackRequiresUserGesture(false);
-        settings.setJavaScriptCanOpenWindowsAutomatically(true);
-        settings.setSupportMultipleWindows(true);
+        settings.setDatabaseEnabled(true); // Add Database Enabled
+        settings.setSupportMultipleWindows(false); // Changed to false to match Scraper
+        // settings.setMediaPlaybackRequiresUserGesture(false); // Scraper doesn't set
+        // this, so let's use default
+
+        // Enforce Common UA if null
+        if (userAgent == null || userAgent.isEmpty()) {
+            userAgent = SnifferConfig.DEFAULT_USER_AGENT;
+        }
         settings.setUserAgentString(userAgent);
+
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
+        settings.setBlockNetworkImage(false);
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
-        settings.setUseWideViewPort(true);
-        settings.setLoadWithOverviewMode(true);
+        // settings.setUseWideViewPort(true); // Scraper doesn't use this
+        // settings.setLoadWithOverviewMode(true); // Scraper doesn't use this
+
+        // Critical for performance
+        webView.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null);
 
         // Cookie support
         CookieManager cookieManager = CookieManager.getInstance();
         cookieManager.setAcceptCookie(true);
         cookieManager.setAcceptThirdPartyCookies(webView, true);
+
+        // Critical: Set exact same UA as Scraper to ensure cookies are valid
+        // Use system default to match WebView engine version (prevents Mismatch Errors)
+        webView.getSettings().setUserAgentString(com.omarflex5.util.WebConfig.getUserAgent(this));
 
         // Add JS interface
         webView.addJavascriptInterface(jsInterface, "SnifferAndroid");
@@ -451,5 +544,17 @@ public class SnifferActivity extends AppCompatActivity {
             return url.substring(0, 50) + "...";
         }
         return url;
+    }
+
+    private void setCookies(String url, String cookieString) {
+        if (cookieString == null)
+            return;
+        android.webkit.CookieManager cookieManager = android.webkit.CookieManager.getInstance();
+        String[] parts = cookieString.split(";");
+        for (String part : parts) {
+            cookieManager.setCookie(url, part.trim());
+        }
+        cookieManager.flush();
+        Log.d(TAG, "Injected manual cookies: " + cookieString);
     }
 }

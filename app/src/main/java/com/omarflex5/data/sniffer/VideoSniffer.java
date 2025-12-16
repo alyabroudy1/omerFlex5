@@ -146,9 +146,12 @@ public class VideoSniffer {
                 settings.setMediaPlaybackRequiresUserGesture(false);
                 settings.setJavaScriptCanOpenWindowsAutomatically(true);
                 settings.setSupportMultipleWindows(true);
-                settings.setUserAgentString(USER_AGENT);
+                settings.setUserAgentString(com.omarflex5.util.WebConfig.getUserAgent(context));
                 settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
                 settings.setCacheMode(WebSettings.LOAD_NO_CACHE);
+
+                // Optimization: Enable Hardware Acceleration for video playback
+                webView.setLayerType(android.view.View.LAYER_TYPE_HARDWARE, null);
 
                 // Viewport Settings
                 settings.setUseWideViewPort(true);

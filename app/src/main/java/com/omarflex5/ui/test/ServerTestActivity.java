@@ -484,6 +484,17 @@ public class ServerTestActivity extends AppCompatActivity {
                             playerIntent.putExtra("EXTRA_COOKIE", cookie);
                             log("Passing Cookie to Player: " + cookie.substring(0, Math.min(20, cookie.length()))
                                     + "...");
+
+                            // SAVE COOKIES TO REPO FOR FUTURE REQUESTS (Fixes Re-Challenge Loop)
+                            String currentServerName = (String) spinnerServers.getSelectedItem();
+                            if (currentServerName != null) {
+                                serverRepository.getServerByName(currentServerName, server -> {
+                                    if (server != null) {
+                                        scraperManager.saveCookies(server, cookie);
+                                        log("Updated saved cookies for " + server.getName());
+                                    }
+                                });
+                            }
                         }
                     }
 

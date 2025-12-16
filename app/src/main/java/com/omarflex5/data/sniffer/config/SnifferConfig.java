@@ -9,7 +9,7 @@ import java.util.Map;
  */
 public class SnifferConfig {
 
-    public static final String DEFAULT_USER_AGENT = "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Mobile Safari/537.36";
+    public static final String DEFAULT_USER_AGENT = com.omarflex5.util.WebConfig.COMMON_USER_AGENT_LEGACY;
 
     private final String userAgent;
     private final long timeoutMs;

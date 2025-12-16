@@ -95,9 +95,8 @@ public class WebViewScraperManager {
         settings.setDatabaseEnabled(true);
         settings.setJavaScriptCanOpenWindowsAutomatically(true);
         // CRITICAL: Use MOBILE User-Agent. Cloudflare Turnstile checks for touch events
-        // + mobile UA consistency.
-        settings.setUserAgentString(
-                "Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36");
+        // + mobile UA consistency. Use dynamic UA to match engine version.
+        settings.setUserAgentString(com.omarflex5.util.WebConfig.getUserAgent(context));
         settings.setBlockNetworkImage(false);
         settings.setMixedContentMode(WebSettings.MIXED_CONTENT_ALWAYS_ALLOW);
         settings.setCacheMode(WebSettings.LOAD_NO_CACHE); // Don't cache CF challenges
@@ -272,21 +271,21 @@ public class WebViewScraperManager {
     /**
      * Extract cookies and HTML from loaded page.
      */
+    /**
+     * EXTRACT and SAVE cookies from a WebView instance.
+     */
     private void extractAndSave(WebView view, ServerEntity server, ScraperCallback callback) {
         // Dismiss UI
         dismissDialog();
 
         // Get cookies
         String cookieString = CookieManager.getInstance().getCookie(server.getBaseUrl());
-        Map<String, String> cookies = parseCookies(cookieString);
 
-        // Save cookies to server
-        if (!cookies.isEmpty()) {
-            String cookiesJson = gson.toJson(cookies);
-            long expiresAt = System.currentTimeMillis() + TimeUnit.HOURS.toMillis(24);
-            serverRepository.saveCfCookies(server.getId(), cookiesJson, expiresAt);
-            Log.d(TAG, "Saved " + cookies.size() + " cookies for " + server.getName());
-        }
+        // Save using centralized method
+        saveCookies(server, cookieString);
+
+        // Return success with cookies map
+        Map<String, String> cookies = parseCookies(cookieString);
 
         // Get page HTML
         view.evaluateJavascript(
@@ -302,6 +301,33 @@ public class WebViewScraperManager {
                         serverRepository.recordFailure(server);
                     }
                 });
+    }
+
+    /**
+     * Public method to save cookies from external sources (e.g. SnifferActivity).
+     */
+    public void saveCookies(ServerEntity server, String cookieString) {
+        if (server == null || cookieString == null)
+            return;
+        Map<String, String> cookies = parseCookies(cookieString);
+        saveCookies(server, cookies);
+    }
+
+    public void saveCookies(ServerEntity server, Map<String, String> cookies) {
+        if (server == null || cookies == null || cookies.isEmpty())
+            return;
+
+        String cookiesJson = gson.toJson(cookies);
+        long expiresAt = System.currentTimeMillis() + TimeUnit.HOURS.toMillis(24);
+
+        // 1. Save to DB (Async)
+        serverRepository.saveCfCookies(server.getId(), cookiesJson, expiresAt);
+
+        // 2. Update In-Memory Object (Sync) - CRITICAL for next request
+        server.setCfCookiesJson(cookiesJson);
+        server.setCfCookiesExpireAt(expiresAt);
+
+        Log.d(TAG, "External Save: Persisted " + cookies.size() + " cookies for " + server.getName());
     }
 
     /**
@@ -377,9 +403,18 @@ public class WebViewScraperManager {
             if (!currentUri.getHost().equals(baseUri.getHost())) {
                 // It's a redirect!
                 Log.i(TAG, "Redirect detected: " + base + " -> " + currentUrl);
-                // We could update the DB here if we wanted to be proactive
-                // serverRepository.updateBaseUrl(server.getName(), currentUri.getScheme() +
-                // "://" + currentUri.getHost());
+                // Fix: Update repo with new base URL so subsequent requests use correct
+                // domain/cookies
+                String newBase = currentUri.getScheme() + "://" + currentUri.getHost();
+                if (!newBase.equals(base)) {
+                    // 1. Update DB (Async)
+                    serverRepository.updateBaseUrl(server.getName(), newBase);
+
+                    // 2. Update In-Memory Object (Sync) - CRITICAL for next request
+                    server.setBaseUrl(newBase);
+
+                    Log.i(TAG, "Updated Server Base URL to: " + newBase);
+                }
             }
         } catch (Exception e) {
             Log.w(TAG, "Error checking redirect: " + e.getMessage());
@@ -420,8 +455,8 @@ public class WebViewScraperManager {
                 // 1. Prepare Direct Request
                 okhttp3.Request.Builder builder = new okhttp3.Request.Builder()
                         .url(url)
-                        .header("User-Agent",
-                                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36");
+                        .header("User-Agent", com.omarflex5.util.WebConfig.getUserAgent(context))
+                        .header("Accept-Language", "en-US,en;q=0.9,ar;q=0.8");
 
                 // Attach cookies if available
                 Map<String, String> cookies = getSavedCookies(server);
