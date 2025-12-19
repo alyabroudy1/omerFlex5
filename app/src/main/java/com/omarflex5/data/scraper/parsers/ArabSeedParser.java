@@ -68,12 +68,6 @@ public class ArabSeedParser extends BaseHtmlParser {
                     String poster = imgElem.attr("data-src");
                     String title = imgElem.attr("alt");
 
-                    if (title == null || title.isEmpty() || title.contains("تحميل")) {
-                        continue;
-                    }
-
-                    title = title.replace("مسلسل", "").trim();
-
                     // Category detection for Type
                     boolean isSeries = false;
                     Element catElem = li.selectFirst(".post__category");
@@ -85,29 +79,29 @@ public class ArabSeedParser extends BaseHtmlParser {
 
                     if (catElem != null) {
                         String catText = catElem.text();
-                        // Adopted from ArabSeedServer.java: Filter out non-video content
-                        if (catText.contains("اغاني") ||
-                                catText.contains("كمبيوتر") ||
-                                catText.contains("موبايلات")) {
+                        if (catText.contains("اغاني") || catText.contains("كمبيوتر") || catText.contains("موبايلات")) {
                             continue;
                         }
-
                         if (catText.contains("مسلسل"))
                             isSeries = true;
                     }
 
-                    // Also check URL/Title
+                    // Detection First
                     MediaType type = MediaType.FILM;
-                    if (isSeriesSearch) {
+                    String lowerUrl = url.toLowerCase();
+                    boolean hasSeriesKeywords = lowerUrl.contains("/series") || lowerUrl.contains("/selary/")
+                            || lowerUrl.contains("%d9%85%d8%b3%d9%84%d8%b3%d9%84");
+
+                    if (isSeriesSearch || isSeries || hasSeriesKeywords || title.contains("مسلسل")) {
                         type = MediaType.SERIES;
                     } else if (isMovieSearch) {
                         type = MediaType.FILM;
-                    } else if (isSeries || url.contains("/series") || url.contains("مسلسل")
-                            || title.contains("مسلسل")) {
-                        type = MediaType.SERIES;
-                    } else if (url.contains("/episode") || title.contains("حلقة")) {
+                    } else if (lowerUrl.contains("/episode") || title.contains("حلقة")) {
                         type = MediaType.EPISODE;
                     }
+
+                    // Display Logic Afterwards
+                    title = title.replace("مسلسل", "").trim();
 
                     ParsedItem item = new ParsedItem();
                     item.setTitle(cleanTitle(title));
@@ -226,306 +220,141 @@ public class ArabSeedParser extends BaseHtmlParser {
 
             List<ParsedItem> subItems = new ArrayList<>();
 
-            // Support JSON Responses (AJAX)
-            String rawHtml = (html != null) ? html.trim() : "";
-            if (rawHtml.startsWith("{") && rawHtml.contains("\"type\"") && rawHtml.contains("}")) {
-                Log.d(TAG, "Detected JSON response in raw HTML. Parsing as AJAX content...");
-                parseJsonEpisodes(rawHtml, subItems);
-
-                Log.d(TAG, "JSON AJAX result: " + subItems.size() + " items found.");
-                result.setSubItems(subItems);
-                result.setStatus(ParsedItem.ProcessStatus.SUCCESS);
-                result.setType(MediaType.SERIES);
-                return result; // Always return early for AJAX responses
-            }
-
-            // Fallback for cases where Jsoup already wrapped the JSON
-            String bodyText = doc.body().text().trim();
-            if (bodyText.startsWith("{") && bodyText.contains("\"type\"") && bodyText.contains("}")) {
-                Log.d(TAG, "Detected JSON response in body text. Parsing as AJAX content...");
-                parseJsonEpisodes(bodyText, subItems);
-
-                Log.d(TAG, "JSON AJAX result (body): " + subItems.size() + " items found.");
+            // 1. AJAX / JSON Support (Highest Priority)
+            String rawJson = (html != null) ? html.trim() : "";
+            if (rawJson.startsWith("{") && rawJson.contains("\"type\"")) {
+                Log.d(TAG, "FLOW: AJAX/JSON Response. Parsing episodes.");
+                parseJsonEpisodes(rawJson, subItems);
                 result.setSubItems(subItems);
                 result.setStatus(ParsedItem.ProcessStatus.SUCCESS);
                 result.setType(MediaType.SERIES);
                 return result;
             }
 
-            // Standard HTML Parsing
-            // 1. Check for Server List (Watch Page) & Watch Buttons
-            extractServersAndWatchButtons(doc, subItems);
+            // 2. Strict Type-Based Branching (Zero Detection)
+            MediaType contextType = (sourceItem != null) ? sourceItem.getType() : null;
+            String url = getPageUrl();
 
-            // --- USER FLOW IMPLEMENTATION: "Search -> Episode -> Redirect to Series" ---
-            Log.d(TAG, "Source Item Context: " + (sourceItem != null ? sourceItem.getType() : "null"));
-
-            if (sourceItem != null && sourceItem.getType() == MediaType.SEASON) {
-                Log.d(TAG, "Entered via SEASON context. Checking for Parent Series Link to redirect...");
-                List<ParsedItem> seriesLinks = new ArrayList<>();
-                extractParentSeriesLink(doc, seriesLinks);
-
-                if (!seriesLinks.isEmpty()) {
-                    ParsedItem parent = seriesLinks.get(0);
-                    Log.d(TAG, "Found Parent Series Link: " + parent.getPageUrl() + ". Redirecting...");
-
-                    // Force Redirect
-                    result.setStatus(ParsedItem.ProcessStatus.REDIRECT);
-                    result.setStatusMessage(parent.getPageUrl());
-                    return result;
-                } else {
-                    Log.d(TAG,
-                            "No Parent Series Link found in breadcrumbs/header. Falling back to local Episode extraction.");
-                    // Debug: Dump breadcrumbs to see why we missed it
-                    Elements crumbs = doc.select("div[class*='bread'][class*='rumbs']");
-                    Log.d(TAG, "DEBUG: Breadcrumbs HTML: " + crumbs.outerHtml());
+            if (contextType == MediaType.SERIES) {
+                // Series Click -> Show Seasons
+                Log.d(TAG, "FLOW: [SERIES] Clicked. Extracting Seasons.");
+                extractSeasons(doc, subItems);
+                if (subItems.isEmpty()) {
+                    Log.d(TAG, "FLOW: No seasons found. Fallback to Episodes.");
+                    extractEpisodes(doc, subItems);
                 }
+                result.setType(MediaType.SERIES);
+            } else if (contextType == MediaType.SEASON) {
+                // Season Click -> Show Episodes
+                Log.d(TAG, "FLOW: [SEASON] Clicked. Extracting Episodes.");
+                extractEpisodes(doc, subItems);
+                result.setType(MediaType.SEASON);
+            } else if (contextType == MediaType.EPISODE) {
+                // Episode Click -> Show Servers
+                Log.d(TAG, "FLOW: [EPISODE] Clicked. Extracting Servers.");
+                extractServersAndWatchButtons(doc, subItems);
+
+                // AGGRESSIVE REDIRECT: If no servers found but a Watch Page button exists,
+                // follow it.
+                boolean hasServers = false;
+                ParsedItem navItem = null;
+                for (ParsedItem item : subItems) {
+                    if ("Server".equals(item.getQuality()))
+                        hasServers = true;
+                    if ("Navigation".equals(item.getQuality()))
+                        navItem = item;
+                }
+
+                if (!hasServers && navItem != null) {
+                    Log.d(TAG, "FLOW: [EPISODE] No servers found, but Watch Page exists. Redirecting...");
+                    result.setStatus(ParsedItem.ProcessStatus.REDIRECT);
+                    result.setStatusMessage(navItem.getPageUrl());
+                    return result;
+                }
+                result.setType(MediaType.EPISODE);
+            } else if (contextType == MediaType.FILM) {
+                // Movie/Watch Page Click -> Show Servers
+                Log.d(TAG, "FLOW: [FILM] Clicked. Extracting Servers.");
+                extractServersAndWatchButtons(doc, subItems);
+
+                // AGGRESSIVE REDIRECT: If no servers found but a Watch Page button exists,
+                // follow it.
+                boolean hasServers = false;
+                ParsedItem navItem = null;
+                for (ParsedItem item : subItems) {
+                    if ("Server".equals(item.getQuality()))
+                        hasServers = true;
+                    if ("Navigation".equals(item.getQuality()))
+                        navItem = item;
+                }
+
+                if (!hasServers && navItem != null) {
+                    Log.d(TAG, "FLOW: [FILM] No servers found, but Watch Page exists. Redirecting...");
+                    result.setStatus(ParsedItem.ProcessStatus.REDIRECT);
+                    result.setStatusMessage(navItem.getPageUrl());
+                    return result;
+                }
+                result.setType(MediaType.FILM);
             } else {
-                Log.d(TAG, "Not a SEASON context (or null). Skipping Redirect check.");
+                // FALLBACK for Direct Links or Unknown Search Types
+                Log.d(TAG, "FLOW: [UNKNOWN] Context. Performing Smart Scan.");
+                extractServersAndWatchButtons(doc, subItems);
+                extractEpisodes(doc, subItems);
+                extractSeasons(doc, subItems);
+
+                // Guess type for result based on content
+                if (!subItems.isEmpty()) {
+                    ParsedItem first = subItems.get(0);
+                    if ("Server".equals(first.getQuality()))
+                        result.setType(MediaType.EPISODE);
+                    else if (first.getType() == MediaType.SEASON)
+                        result.setType(MediaType.SERIES);
+                    else
+                        result.setType(MediaType.SERIES);
+                }
             }
 
-            // 2b. Check for Parent Series Link (Series Discovery) - Keep disabled for
-            // normal flow
-            // extractParentSeriesLink(doc, subItems);
+            // 3. Post-Processing: Redirects & Cleanup
 
-            // 3. Check for Episodes (Series)
+            // Auto-Redirect if only one "Watch Page" button found (User convenience)
+            if (subItems.size() == 1 && "Navigation".equals(subItems.get(0).getQuality())) {
+                ParsedItem nav = subItems.get(0);
+                Log.d(TAG, "FLOW: Single navigation button found. Redirecting to " + nav.getPageUrl());
+                result.setStatus(ParsedItem.ProcessStatus.REDIRECT);
+                result.setStatusMessage(nav.getPageUrl());
+                return result;
+            }
 
-            // 3. Check for Episodes (Series)
-            extractEpisodes(doc, subItems);
-
-            // 4. Check for Seasons (Series - New finding)
-            boolean episodesFound = false;
+            // Remove redundant Watch Button if servers/episodes/seasons exist
+            boolean hasContent = false;
             for (ParsedItem item : subItems) {
-                if (item.getType() == MediaType.EPISODE) {
-                    episodesFound = true;
+                if ("Server".equals(item.getQuality()) || item.getType() == MediaType.EPISODE
+                        || item.getType() == MediaType.SEASON) {
+                    hasContent = true;
                     break;
                 }
             }
 
-            if (result.getType() == MediaType.SERIES || episodesFound) {
-                extractSeasons(doc, subItems);
-            }
-
-            // Logic to determine Page Type & List Content
-            boolean hasServers = false;
-            boolean hasEpisodes = false;
-
-            for (ParsedItem item : subItems) {
-                if (item.getQuality() != null && item.getQuality().equals("Server")) {
-                    hasServers = true;
-                }
-                if (item.getType() == MediaType.EPISODE) {
-                    hasEpisodes = true;
-                }
-            }
-
-            // Streamline: Remove "Watch Page" if explicit SERVERS exist.
-            // If we only found Episodes (siblings) but no servers, we MUST keep the
-            // "Navigation" item
-            // (the Watch Button) because that's likely the link to the actual watch page.
-            if (hasServers) {
-                List<ParsedItem> toRemove = new ArrayList<>();
-                for (ParsedItem item : subItems) {
-                    if (item.getQuality() != null && item.getQuality().equals("Navigation")) {
-                        toRemove.add(item);
+            if (hasContent) {
+                java.util.Iterator<ParsedItem> it = subItems.iterator();
+                while (it.hasNext()) {
+                    ParsedItem item = it.next();
+                    if ("Navigation".equals(item.getQuality())) {
+                        it.remove();
                     }
                 }
-                subItems.removeAll(toRemove);
             }
 
-            // Fix: If we are on an Episode Page (hasServers), but we also found siblings
-            // (hasEpisodes),
-            // we MUST include the CURRENT page as an episode in the list so the user can
-            // see/click it.
-            // User reported "First episode is missing".
-            if (hasServers && hasEpisodes) {
-                boolean selfFound = false;
-                String currentUrl = getPageUrl();
-                // Check if current URL is in the list
-                for (ParsedItem item : subItems) {
-                    if (item.getType() == MediaType.EPISODE && item.getPageUrl().equals(currentUrl)) {
-                        selfFound = true;
-                        break;
-                    }
-                }
-
-                if (!selfFound) {
-                    // Create "Self" item
-                    ParsedItem self = new ParsedItem();
-                    String pageTitle = result.getTitle();
-
-                    // Cleanup Title: Extract "Episode X" from full title
-                    // e.g. "Series Name Season 1 Episode 4 Translated" -> "Episode 4"
-                    java.util.regex.Pattern p = java.util.regex.Pattern
-                            .compile("(?i)(?:Episode|Ep|E|الحلقة|حلقة)\\s*(\\d+)");
-                    java.util.regex.Matcher m = p.matcher(pageTitle);
-                    if (m.find()) {
-                        self.setTitle("الحلقة " + m.group(1)); // "Episode 4"
-                    } else {
-                        self.setTitle(pageTitle);
-                    }
-
-                    self.setPageUrl(currentUrl);
-                    self.setType(MediaType.EPISODE);
-                    self.setPosterUrl(result.getPosterUrl());
-                    subItems.add(0, self); // Add to top
-                }
-            }
-
-            // DO NOT group episodes in Detail Page. We want a flat list of playable
-            // episodes.
             result.setSubItems(subItems);
-
-            // Determine Result Type based on Page Title (Strict Workflow)
-            // If the title contains "Episode" or "Ring", it is an EPISODE page.
-            // This ensures we report "No Servers Found" instead of causing a loop by
-            // treating it as a Series.
-            String strictTitle = result.getTitle();
-            boolean isEpisodePage = false;
-            if (strictTitle != null) {
-                java.util.regex.Pattern pType = java.util.regex.Pattern
-                        .compile("(?i)(?:Episode|Ep|E|الحلقة|حلقة)\\s*(\\d+)");
-                if (pType.matcher(strictTitle).find()) {
-                    isEpisodePage = true;
-                }
-            }
-
-            if (isEpisodePage || hasServers) {
-                result.setType(MediaType.EPISODE);
-
-                // STRICT WORKFLOW: If it is an EPISODE, the list MUST NOT contain other
-                // episodes (siblings).
-                // It must only contain SERVERS.
-                // Filter out any items that are likely sibling episodes to prevent "Looping" or
-                // confusion.
-                // We keep "Self" (if it exists) or Servers/Navigation items.
-                if (result.getSubItems() != null) {
-                    java.util.Iterator<ParsedItem> it = result.getSubItems().iterator();
-                    while (it.hasNext()) {
-                        ParsedItem item = it.next();
-                        // Remove sibling episodes to enforce strict "Server Only" list
-                        // If no servers are found, this results in an empty list -> Toast.
-                        if (item.getType() == MediaType.EPISODE) {
-                            it.remove();
-                        }
-                    }
-                }
-
-                // CRITICAL DEBUG: If we are on an Episode Page but found NO servers (and thus
-                // cleared the list),
-                // the user wants to see the HTML to know WHY.
-                if (!hasServers) {
-                    Log.e(TAG,
-                            "CRITICAL FAILURE: Identified as Episode Page but found NO SERVERS. Dumping HTML for debugging...");
-                    String html = doc.html();
-                    // Split into 4000 char chunks to avoid Logcat truncation
-                    for (int i = 0; i < html.length(); i += 4000) {
-                        int end = Math.min(i + 4000, html.length());
-                        Log.e("HTML_DUMP", html.substring(i, end));
-                    }
-                }
-            } else if (hasEpisodes) {
-                result.setType(MediaType.SERIES);
-            } else {
-                result.setType(MediaType.FILM);
-            }
-
-            Log.d(TAG, "Final Page Type: " + result.getType() + " | HasServers: " + hasServers + " | HasEpisodes: "
-                    + hasEpisodes + " | IsEpisodePage: " + isEpisodePage);
-
-            // --- LOGIC REFINEMENT FOR USER REQUESTS ---
-
-            // 1. Fix "Season/Series" Page: Remove "Watch Page" button if we have a list of
-            // episodes.
-            // valid only if we are NOT on an episode page (where episodes are just
-            // siblings).
-            if (hasEpisodes && !isEpisodePage && !hasServers) {
-                List<ParsedItem> toRemove = new ArrayList<>();
-                for (ParsedItem item : subItems) {
-                    if ("Navigation".equals(item.getQuality())) {
-                        toRemove.add(item);
-                    }
-                }
-                subItems.removeAll(toRemove);
-            }
-
-            // 2. Fix "Episode" Page: Auto-Redirect to Watch Page if found (and no servers).
-            // This replaces the "Show Watch Button" behavior with "Go Fetch Servers".
-            if (isEpisodePage && !hasServers) {
-                // Find first Navigation item
-                for (ParsedItem item : subItems) {
-                    if ("Navigation".equals(item.getQuality())) {
-                        result.setStatus(ParsedItem.ProcessStatus.REDIRECT);
-                        result.setStatusMessage(item.getPageUrl());
-                        return result; // Force Redirect immediately
-                    }
-                }
-
-                // If we are here, we are on an episode page, no servers, no navigation link.
-                // We likely have the sibling list still (if we didn't filter it yet).
-                // Let's filter siblings now to ensure we show the user a clean specific error.
-                if (result.getSubItems() != null) {
-                    java.util.Iterator<ParsedItem> it = result.getSubItems().iterator();
-                    while (it.hasNext()) {
-                        ParsedItem item = it.next();
-                        if (item.getType() == MediaType.EPISODE) {
-                            it.remove();
-                        }
-                    }
-                }
-            }
-
-            // --- SORTING LOGIC: Ascending Order (Ep 1, 2, 3...) ---
-            // Fix UI mismatch where Index 1 != Episode 4.
-            if (hasEpisodes && subItems != null && subItems.size() > 1 && !isEpisodePage) {
-                try {
-                    final java.util.regex.Pattern pSort = java.util.regex.Pattern
-                            .compile("(?i)(?:Episode|Ep|E|الحلقة|حلقة)\\s*(\\d+)");
-                    java.util.Collections.sort(subItems, (o1, o2) -> {
-                        if (o1.getType() == MediaType.EPISODE && o2.getType() == MediaType.EPISODE) {
-                            java.util.regex.Matcher m1 = pSort.matcher(o1.getTitle() != null ? o1.getTitle() : "");
-                            java.util.regex.Matcher m2 = pSort.matcher(o2.getTitle() != null ? o2.getTitle() : "");
-
-                            int n1 = m1.find() ? Integer.parseInt(m1.group(1)) : 9999;
-                            int n2 = m2.find() ? Integer.parseInt(m2.group(1)) : 9999;
-                            return Integer.compare(n1, n2);
-                        }
-                        return 0;
-                    });
-                    Log.d(TAG, "Sorted episodes in ascending order.");
-                } catch (Exception e) {
-                    Log.e(TAG, "Error sorting episodes: " + e.getMessage());
-                }
-            }
-            // --- SEPARATION OF CONCERNS LOGIC ---
-
-            // 1. Check for REDIRECT (Single Navigation Item)
-            if (result.getStatus() == ParsedItem.ProcessStatus.SUCCESS && result.getSubItems() != null
-                    && result.getSubItems().size() == 1) {
-                ParsedItem single = result.getSubItems().get(0);
-                if ("Navigation".equals(single.getQuality())) {
-                    result.setStatus(ParsedItem.ProcessStatus.REDIRECT);
-                    result.setStatusMessage(single.getPageUrl());
-                    return result; // Return immediately
-                }
-            }
-
-            // 2. Check for EMPTY_ERROR
-            if (result.getSubItems() == null || result.getSubItems().isEmpty()) {
-                if (result.getType() == MediaType.EPISODE || result.getType() == MediaType.FILM) {
-                    result.setStatus(ParsedItem.ProcessStatus.EMPTY_ERROR);
-                    result.setStatusMessage("No Watch Servers Found");
-                } else {
-                    result.setStatus(ParsedItem.ProcessStatus.EMPTY_ERROR);
-                    result.setStatusMessage("No Episodes Found");
-                }
-            }
-
-            for (ParsedItem sub : result.getSubItems()) {
-                Log.d(TAG, "SubItem: " + sub.getTitle() + " | Type: " + sub.getType() + " | URL: " + sub.getPageUrl());
-            }
+            result.setStatus(
+                    subItems.isEmpty() ? ParsedItem.ProcessStatus.EMPTY_ERROR : ParsedItem.ProcessStatus.SUCCESS);
+            if (subItems.isEmpty())
+                result.setStatusMessage("No content found for this link.");
 
         } catch (Exception e) {
             Log.e(TAG, "Error parsing detail page", e);
+            result.setStatus(ParsedItem.ProcessStatus.EMPTY_ERROR);
+            result.setStatusMessage("Parser Error: " + e.getMessage());
         }
         return result;
     }
@@ -747,6 +576,48 @@ public class ArabSeedParser extends BaseHtmlParser {
             }
         }
         Log.d(TAG, "Found " + episodeCount + " episodes.");
+
+        // --- Universal Sorting Fix ---
+        sortEpisodes(subItems);
+    }
+
+    /**
+     * Universal helper to sort episodes numerically in ascending order.
+     */
+    private void sortEpisodes(List<ParsedItem> subItems) {
+        if (subItems == null || subItems.size() < 2)
+            return;
+
+        boolean hasAnyEpisodes = false;
+        for (ParsedItem item : subItems) {
+            if (item.getType() == MediaType.EPISODE) {
+                hasAnyEpisodes = true;
+                break;
+            }
+        }
+
+        if (hasAnyEpisodes) {
+            try {
+                final java.util.regex.Pattern pSort = java.util.regex.Pattern
+                        .compile("(?i)(?:Episode|Ep|E|الحلقة|حلقة)\\s*(\\d+)");
+                java.util.Collections.sort(subItems, (o1, o2) -> {
+                    // Only sort if BOTH are episodes. Keep other items (like Full Series Page) at
+                    // top.
+                    if (o1.getType() == MediaType.EPISODE && o2.getType() == MediaType.EPISODE) {
+                        java.util.regex.Matcher m1 = pSort.matcher(o1.getTitle() != null ? o1.getTitle() : "");
+                        java.util.regex.Matcher m2 = pSort.matcher(o2.getTitle() != null ? o2.getTitle() : "");
+
+                        int n1 = m1.find() ? Integer.parseInt(m1.group(1)) : 9999;
+                        int n2 = m2.find() ? Integer.parseInt(m2.group(1)) : 9999;
+                        return Integer.compare(n1, n2);
+                    }
+                    return 0;
+                });
+                Log.d(TAG, "Universal Sort: episodes arranged in ascending order.");
+            } catch (Exception e) {
+                Log.e(TAG, "Error sorting episodes: " + e.getMessage());
+            }
+        }
     }
 
     private void extractSeasons(Document doc, List<ParsedItem> subItems) {
