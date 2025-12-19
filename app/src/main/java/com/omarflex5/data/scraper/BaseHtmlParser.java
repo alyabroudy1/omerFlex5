@@ -207,6 +207,7 @@ public abstract class BaseHtmlParser {
         private Integer episodeNumber;
         private String quality;
         private String matchKey;
+        private String postData; // NEW: Support for POST requests
         private List<String> categories = new ArrayList<>();
 
         private List<ParsedItem> subItems = new ArrayList<>();
@@ -297,6 +298,11 @@ public abstract class BaseHtmlParser {
             return this;
         }
 
+        public ParsedItem setPostData(String postData) {
+            this.postData = postData;
+            return this;
+        }
+
         public ParsedItem setSubItems(List<ParsedItem> subItems) {
             this.subItems = subItems;
             return this;
@@ -356,6 +362,10 @@ public abstract class BaseHtmlParser {
 
         public String getMatchKey() {
             return matchKey;
+        }
+
+        public String getPostData() {
+            return postData;
         }
 
         public List<ParsedItem> getSubItems() {

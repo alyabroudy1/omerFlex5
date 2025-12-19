@@ -146,10 +146,15 @@ public class WebViewScraperManager {
         }
     }
 
+    public void loadWithCfBypass(ServerEntity server, String url, Activity activity, ScraperCallback callback) {
+        loadWithCfBypass(server, url, null, activity, callback);
+    }
+
     /**
      * Load a URL and extract CF cookies + page HTML.
      */
-    public void loadWithCfBypass(ServerEntity server, String url, Activity activity, ScraperCallback callback) {
+    public void loadWithCfBypass(ServerEntity server, String url, String postData, Activity activity,
+            ScraperCallback callback) {
         if (!isWebViewReady) {
             initialize();
             // Retry after a short delay
@@ -223,14 +228,22 @@ public class WebViewScraperManager {
                 Log.d(TAG, "Cookies expired or missing, clearing WebView cookies.");
                 CookieManager.getInstance().removeAllCookies(v -> {
                     // Safe to load after clear
-                    webView.loadUrl(url);
+                    if (postData != null) {
+                        webView.postUrl(url, postData.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    } else {
+                        webView.loadUrl(url);
+                    }
                 });
             } else {
                 // Restore valid cookies from DB to ensure WebView has them (Fixes restart
                 // issue)
                 // Now Async: Must wait for completion
                 restoreCookiesToWebView(server, () -> {
-                    webView.loadUrl(url);
+                    if (postData != null) {
+                        webView.postUrl(url, postData.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    } else {
+                        webView.loadUrl(url);
+                    }
                 });
             }
         });
@@ -561,8 +574,10 @@ public class WebViewScraperManager {
     /**
      * Try direct request first. If CF detected, fallback to WebView.
      */
-    public void loadHybrid(ServerEntity server, String url, boolean allowWebViewFallback, Activity activity,
+    public void loadHybrid(ServerEntity server, String url, String postData, boolean allowWebViewFallback,
+            Activity activity,
             ScraperCallback callback) {
+
         new Thread(() -> {
             try {
                 // 1. Prepare Direct Request
@@ -573,6 +588,23 @@ public class WebViewScraperManager {
                         .url(url)
                         .header("User-Agent", ua)
                         .header("Accept-Language", "en-US,en;q=0.9,ar;q=0.8");
+
+                // AJAX Headers for POST
+                if (postData != null) {
+                    builder.header("X-Requested-With", "XMLHttpRequest");
+                    // Use base URL or series URL as referer if possible
+                    String referer = server.getBaseUrl();
+                    if (url.contains("season__episodes")) {
+                        // For ArabSeed, the referer helps bypass "unauthorized"
+                        builder.header("Referer", server.getBaseUrl());
+                    }
+
+                    okhttp3.RequestBody body = okhttp3.RequestBody.create(
+                            postData,
+                            okhttp3.MediaType.parse("application/x-www-form-urlencoded; charset=UTF-8"));
+                    builder.post(body);
+                    Log.d(TAG, "Preparing OkHttp POST request with body: " + postData);
+                }
 
                 // Attach cookies if available
                 Map<String, String> cookies = getSavedCookies(server);
@@ -600,7 +632,7 @@ public class WebViewScraperManager {
                     if (allowWebViewFallback) {
                         // Failover to WebView
                         Log.d(TAG, "Direct request hit Cloudflare (" + code + "). Falling back to WebView.");
-                        mainHandler.post(() -> loadWithCfBypass(server, url, activity, callback));
+                        mainHandler.post(() -> loadWithCfBypass(server, url, postData, activity, callback));
                     } else {
                         // Strict Fast Mode: Fail immediately so caller can queue it
                         Log.d(TAG, "Direct request hit Cloudflare (" + code + "). Reporting CLOUDFLARE_DETECTED.");
@@ -623,12 +655,17 @@ public class WebViewScraperManager {
             } catch (Exception e) {
                 Log.e(TAG, "Direct request failed: " + e.getMessage());
                 if (allowWebViewFallback) {
-                    mainHandler.post(() -> loadWithCfBypass(server, url, activity, callback));
+                    mainHandler.post(() -> loadWithCfBypass(server, url, postData, activity, callback));
                 } else {
                     mainHandler.post(() -> callback.onError("CONNECTION_ERROR"));
                 }
             }
         }).start();
+    }
+
+    public void loadHybrid(ServerEntity server, String url, boolean allowWebViewFallback, Activity activity,
+            ScraperCallback callback) {
+        loadHybrid(server, url, null, allowWebViewFallback, activity, callback);
     }
 
     // ==================== VIDEO SNIFFING ====================

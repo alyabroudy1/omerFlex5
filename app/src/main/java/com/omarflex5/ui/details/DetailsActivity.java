@@ -34,6 +34,7 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
     public static final String EXTRA_TITLE = "extra_title";
     public static final String EXTRA_SERVER_ID = "extra_server_id";
     public static final String EXTRA_BREADCRUMB = "extra_breadcrumb";
+    public static final String EXTRA_POST_DATA = "extra_post_data"; // NEW: Support for POST requests
 
     public static final String EXTRA_TYPE = "extra_type"; // NEW
 
@@ -50,6 +51,7 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
     private String url;
     private String title;
     private String breadcrumb; // Accumulated title hierarchy: "Series - Season - Episode"
+    private String postData; // NEW: Support for POST requests (e.g. seasons)
     private MediaType mediaType; // NEW: Context Type
     private long serverId;
     private ServerEntity currentServer;
@@ -58,16 +60,22 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
     private ServerRepository serverRepository;
 
     public static void start(Context context, String url, String title, long serverId) {
-        start(context, url, title, serverId, null, null);
+        start(context, url, title, serverId, null, null, null);
     }
 
     public static void start(Context context, String url, String title, long serverId, String breadcrumb,
             MediaType type) {
+        start(context, url, title, serverId, breadcrumb, type, null);
+    }
+
+    public static void start(Context context, String url, String title, long serverId, String breadcrumb,
+            MediaType type, String postData) {
         Intent intent = new Intent(context, DetailsActivity.class);
         intent.putExtra(EXTRA_URL, url);
         intent.putExtra(EXTRA_TITLE, title);
         intent.putExtra(EXTRA_SERVER_ID, serverId);
         intent.putExtra(EXTRA_BREADCRUMB, breadcrumb);
+        intent.putExtra(EXTRA_POST_DATA, postData);
         if (type != null) {
             intent.putExtra(EXTRA_TYPE, type.name());
         }
@@ -83,6 +91,7 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
         title = getIntent().getStringExtra(EXTRA_TITLE);
         serverId = getIntent().getLongExtra(EXTRA_SERVER_ID, -1);
         breadcrumb = getIntent().getStringExtra(EXTRA_BREADCRUMB);
+        postData = getIntent().getStringExtra(EXTRA_POST_DATA);
 
         String typeStr = getIntent().getStringExtra(EXTRA_TYPE);
         if (typeStr != null) {
@@ -154,17 +163,18 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
 
         showLoading();
         new Thread(() -> {
-            scraperManager.loadHybrid(currentServer, url, true, this, new WebViewScraperManager.ScraperCallback() {
-                @Override
-                public void onSuccess(String html, Map<String, String> cookies) {
-                    runOnUiThread(() -> parseContent(html));
-                }
+            scraperManager.loadHybrid(currentServer, url, postData, true, this,
+                    new WebViewScraperManager.ScraperCallback() {
+                        @Override
+                        public void onSuccess(String html, Map<String, String> cookies) {
+                            runOnUiThread(() -> parseContent(html));
+                        }
 
-                @Override
-                public void onError(String message) {
-                    runOnUiThread(() -> showError(message));
-                }
-            });
+                        @Override
+                        public void onError(String message) {
+                            runOnUiThread(() -> showError(message));
+                        }
+                    });
         }).start();
     }
 
@@ -297,7 +307,7 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
 
         // If it seems to be a container (Season X, Episode Y, Server Name), open new
         // DetailsActivity
-        DetailsActivity.start(this, itemUrl, itemTitle, serverId, newBreadcrumb, item.getType());
+        DetailsActivity.start(this, itemUrl, itemTitle, serverId, newBreadcrumb, item.getType(), item.getPostData());
     }
 
     private void startSniffer(String url) {

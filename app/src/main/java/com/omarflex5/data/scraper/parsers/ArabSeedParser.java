@@ -10,6 +10,8 @@ import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
 
+import org.json.JSONObject;
+
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -27,6 +29,9 @@ public class ArabSeedParser extends BaseHtmlParser {
         List<ParsedItem> results = new ArrayList<>();
         try {
             Document doc = Jsoup.parse(html);
+            String currentUrl = getPageUrl();
+            boolean isSeriesSearch = currentUrl != null && currentUrl.contains("type=series");
+            boolean isMovieSearch = currentUrl != null && currentUrl.contains("type=movies");
 
             // Adapted from ArabSeedServer.search
             Elements lis = doc.getElementsByClass("MovieBlock");
@@ -93,7 +98,12 @@ public class ArabSeedParser extends BaseHtmlParser {
 
                     // Also check URL/Title
                     MediaType type = MediaType.FILM;
-                    if (isSeries || url.contains("/series") || url.contains("مسلسل") || title.contains("مسلسل")) {
+                    if (isSeriesSearch) {
+                        type = MediaType.SERIES;
+                    } else if (isMovieSearch) {
+                        type = MediaType.FILM;
+                    } else if (isSeries || url.contains("/series") || url.contains("مسلسل")
+                            || title.contains("مسلسل")) {
                         type = MediaType.SERIES;
                     } else if (url.contains("/episode") || title.contains("حلقة")) {
                         type = MediaType.EPISODE;
@@ -189,12 +199,8 @@ public class ArabSeedParser extends BaseHtmlParser {
             Document doc = Jsoup.parse(html);
             result.setPageUrl(getPageUrl());
 
-            // Use sourceItem title if available (passed from clicked item)
-            // This is often cleaner and matches the user's intent better.
+            // Use sourceItem title if available
             if (sourceItem != null && sourceItem.getTitle() != null && !sourceItem.getTitle().isEmpty()) {
-                // Prefer source title, but keep original if needed?
-                // Actually, let's use the source title for strict type checking as it likely
-                // contains "Episode X".
                 result.setTitle(sourceItem.getTitle());
                 result.setOriginalTitle(sourceItem.getTitle());
             } else {
@@ -220,6 +226,33 @@ public class ArabSeedParser extends BaseHtmlParser {
 
             List<ParsedItem> subItems = new ArrayList<>();
 
+            // Support JSON Responses (AJAX)
+            String rawHtml = (html != null) ? html.trim() : "";
+            if (rawHtml.startsWith("{") && rawHtml.contains("\"type\"") && rawHtml.contains("}")) {
+                Log.d(TAG, "Detected JSON response in raw HTML. Parsing as AJAX content...");
+                parseJsonEpisodes(rawHtml, subItems);
+
+                Log.d(TAG, "JSON AJAX result: " + subItems.size() + " items found.");
+                result.setSubItems(subItems);
+                result.setStatus(ParsedItem.ProcessStatus.SUCCESS);
+                result.setType(MediaType.SERIES);
+                return result; // Always return early for AJAX responses
+            }
+
+            // Fallback for cases where Jsoup already wrapped the JSON
+            String bodyText = doc.body().text().trim();
+            if (bodyText.startsWith("{") && bodyText.contains("\"type\"") && bodyText.contains("}")) {
+                Log.d(TAG, "Detected JSON response in body text. Parsing as AJAX content...");
+                parseJsonEpisodes(bodyText, subItems);
+
+                Log.d(TAG, "JSON AJAX result (body): " + subItems.size() + " items found.");
+                result.setSubItems(subItems);
+                result.setStatus(ParsedItem.ProcessStatus.SUCCESS);
+                result.setType(MediaType.SERIES);
+                return result;
+            }
+
+            // Standard HTML Parsing
             // 1. Check for Server List (Watch Page) & Watch Buttons
             extractServersAndWatchButtons(doc, subItems);
 
@@ -258,6 +291,19 @@ public class ArabSeedParser extends BaseHtmlParser {
 
             // 3. Check for Episodes (Series)
             extractEpisodes(doc, subItems);
+
+            // 4. Check for Seasons (Series - New finding)
+            boolean episodesFound = false;
+            for (ParsedItem item : subItems) {
+                if (item.getType() == MediaType.EPISODE) {
+                    episodesFound = true;
+                    break;
+                }
+            }
+
+            if (result.getType() == MediaType.SERIES || episodesFound) {
+                extractSeasons(doc, subItems);
+            }
 
             // Logic to determine Page Type & List Content
             boolean hasServers = false;
@@ -620,6 +666,22 @@ public class ArabSeedParser extends BaseHtmlParser {
             }
         }
 
+        // --- STRATEGY D: Global Item Search (Broad) ---
+        if (episodeLinks.isEmpty()) {
+            Log.d(TAG, "Strategy D: Broad Search for Item Boxes...");
+            Elements boxes = doc.select(".box__xs__2, [class*='box'], [class*='item'], [class*='post']");
+            for (Element box : boxes) {
+                Elements links = box.select("a");
+                episodeLinks.addAll(links);
+            }
+        }
+
+        // --- STRATEGY E: Total Fallback (Global Link Search) ---
+        if (episodeLinks.isEmpty()) {
+            Log.d(TAG, "Strategy E: Global Link Search...");
+            episodeLinks = doc.select("a");
+        }
+
         // --- DEBUG: FULL HTML DUMP IF FAILED ---
         if (episodeLinks.isEmpty()) {
             Log.e(TAG, "CRITICAL: NO EPISODES FOUND. DUMPING HTML...");
@@ -677,12 +739,91 @@ public class ArabSeedParser extends BaseHtmlParser {
                 }
 
                 if (!exists) {
+                    ep.setTitle(cleanHtmlText(epTitle));
+                    ep.setPageUrl(unquoteUrl(href));
                     subItems.add(ep);
                     episodeCount++;
                 }
             }
         }
         Log.d(TAG, "Found " + episodeCount + " episodes.");
+    }
+
+    private void extractSeasons(Document doc, List<ParsedItem> subItems) {
+        Log.d(TAG, "Scanning for Seasons...");
+        Element seasonsList = doc.getElementById("seasons__list");
+        if (seasonsList == null)
+            return;
+
+        String csrfToken = extractCsrfToken(doc);
+        Log.d(TAG, "Found CSRF Token: " + csrfToken);
+
+        Elements seasons = seasonsList.select("li[data-term]");
+        for (Element season : seasons) {
+            String seasonId = season.attr("data-term");
+            String seasonName = season.text();
+            if (seasonName.isEmpty())
+                seasonName = "Season " + seasonId;
+
+            ParsedItem item = new ParsedItem();
+            item.setTitle("📁 " + seasonName);
+            item.setType(MediaType.SEASON);
+            // The AJAX endpoint for episodes
+            item.setPageUrl("https://a.asd.homes/season__episodes/");
+            item.setPostData("season_id=" + seasonId + "&csrf_token=" + csrfToken);
+            item.setPosterUrl(sourceItem != null ? sourceItem.getPosterUrl() : null);
+
+            // Avoid adding current season twice if it's already in the list
+            // (Wait, seasons are distinct from episodes)
+            subItems.add(item);
+        }
+    }
+
+    private String extractCsrfToken(Document doc) {
+        // Try meta tags
+        Element meta = doc.selectFirst("meta[name=csrf_token]");
+        if (meta == null)
+            meta = doc.selectFirst("meta[name=csrf-token]");
+        if (meta == null)
+            meta = doc.selectFirst("meta[name=csrf-nonce]");
+        if (meta != null)
+            return meta.attr("content");
+
+        // Try hidden inputs
+        Element input = doc.selectFirst("input[name=csrf_token]");
+        if (input == null)
+            input = doc.selectFirst("input[name=csrf-token]");
+        if (input == null)
+            input = doc.selectFirst("input[name=_wpnonce]");
+        if (input == null)
+            input = doc.selectFirst("input[id=nonce]");
+        if (input != null)
+            return input.attr("value");
+
+        // Try scripts (regex)
+        String htmlStr = doc.html();
+        // Standard csrf_token or nonce patterns
+        String[] patterns = {
+                "['\"]?csrf__token['\"]?\\s*[:=]\\s*['\"]([^'\"]+)['\"]",
+                "['\"]?csrf_token['\"]?\\s*[:=]\\s*['\"]([^'\"]+)['\"]",
+                "['\"]?csrf-token['\"]?\\s*[:=]\\s*['\"]([^'\"]+)['\"]",
+                "['\"]?nonce['\"]?\\s*[:=]\\s*['\"]([^'\"]+)['\"]",
+                "['\"]?_wpnonce['\"]?\\s*[:=]\\s*['\"]([^'\"]+)['\"]"
+        };
+
+        for (String pattern : patterns) {
+            java.util.regex.Pattern p = java.util.regex.Pattern.compile(pattern,
+                    java.util.regex.Pattern.CASE_INSENSITIVE);
+            java.util.regex.Matcher m = p.matcher(htmlStr);
+            if (m.find()) {
+                String token = m.group(1);
+                Log.d(TAG, "Regex matched pattern [" + pattern + "]. Found token: " + token);
+                return token;
+            }
+        }
+
+        Log.e(TAG, "CRITICAL: FAILED to find CSRF token in HTML scripts.");
+        return "";
     }
 
     private void extractServersAndWatchButtons(Document doc, List<ParsedItem> subItems) {
@@ -944,5 +1085,89 @@ public class ArabSeedParser extends BaseHtmlParser {
             // For safety, let's break on the first good match to avoid clutter.
             break;
         }
+    }
+
+    private void parseJsonEpisodes(String json, List<ParsedItem> subItems) {
+        try {
+            Log.d(TAG, "Raw JSON (first 200 chars): " + json.substring(0, Math.min(200, json.length())));
+            JSONObject obj = new JSONObject(json);
+            String htmlData = "";
+            if (obj.has("html")) {
+                htmlData = obj.getString("html");
+            } else if (obj.has("content")) {
+                htmlData = obj.getString("content");
+            }
+
+            if (!htmlData.isEmpty()) {
+                Log.d(TAG, "Extracted htmlData (first 200 chars): "
+                        + htmlData.substring(0, Math.min(200, htmlData.length())));
+
+                // ArabSeed sometimes sends entity-encoded HTML inside JSON (e.g. &lt;a
+                // href=...)
+                // We must unescape it before parsing with Jsoup.
+                if (htmlData.contains("&lt;") || htmlData.contains("&gt;")) {
+                    Log.d(TAG, "Unescaping entity-encoded HTML fragment...");
+                    htmlData = org.jsoup.parser.Parser.unescapeEntities(htmlData, true);
+                    Log.d(TAG, "Unescaped htmlData (first 200 chars): "
+                            + htmlData.substring(0, Math.min(200, htmlData.length())));
+                }
+
+                // Remove literal double-escaped slashes if they persist (Legacy check)
+                htmlData = htmlData.replace("\\/", "/");
+
+                Log.d(TAG, "Parsing JSON Episode HTML fragment (Length: " + htmlData.length() + ")");
+                // Use parseBodyFragment for fragments to avoid <html><head><body> wrap issues
+                Document fragmentDoc = Jsoup.parseBodyFragment(htmlData);
+
+                // Log if we found any <a> tags at all in the fragment
+                Elements allLinks = fragmentDoc.select("a");
+                Log.d(TAG, "Total <a> tags found in fragment before filtering: " + allLinks.size());
+                if (allLinks.size() > 0) {
+                    Log.d(TAG, "First <a> tag: " + allLinks.first().outerHtml());
+                } else {
+                    Log.w(TAG, "NO <a> TAGS FOUND IN FRAGMENT. BODY HTML: " + fragmentDoc.body().html());
+                }
+
+                extractEpisodes(fragmentDoc, subItems);
+            } else {
+                Log.w(TAG, "JSON response received but no 'html' or 'content' field found. Full JSON: " + json);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to parse JSON episodes: " + e.getMessage());
+            Log.e(TAG, "JSON suspected of error: " + json);
+        }
+    }
+
+    private String cleanHtmlText(String text) {
+        if (text == null)
+            return "";
+        // 1. Parse as HTML to strip all tags (SVG, b, span, etc.) and unescape entities
+        String cleaned = Jsoup.parse(text).text();
+        // 2. Remove non-breaking spaces and other junk
+        cleaned = cleaned.replace("\u00A0", " ")
+                .replace("\r", "")
+                .replace("\n", "")
+                .replace("\t", "")
+                .replace("\\r", "")
+                .replace("\\n", "")
+                .replace("\\t", "");
+        return cleaned.trim();
+    }
+
+    private String unquoteUrl(String url) {
+        if (url == null)
+            return "";
+        String cleaned = url.trim();
+
+        // 1. Unescape JSON-style backslashes
+        cleaned = cleaned.replace("\\\"", "\"").replace("\\/", "/").replace("\\", "");
+
+        // 2. Remove literal quotes if they surround the URL
+        if (cleaned.startsWith("\"") && cleaned.endsWith("\"")) {
+            cleaned = cleaned.substring(1, cleaned.length() - 1);
+        } else if (cleaned.startsWith("'") && cleaned.endsWith("'")) {
+            cleaned = cleaned.substring(1, cleaned.length() - 1);
+        }
+        return cleaned.trim();
     }
 }
