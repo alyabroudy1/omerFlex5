@@ -41,4 +41,12 @@ public interface EpisodeDao {
 
     @Query("DELETE FROM episodes WHERE seasonId = :seasonId")
     void deleteBySeasonId(long seasonId);
+
+    // Count total episodes in a season
+    @Query("SELECT COUNT(*) FROM episodes WHERE seasonId = :seasonId")
+    int getEpisodeCountForSeasonSync(long seasonId);
+
+    // Count total episodes in a series
+    @Query("SELECT COUNT(e.id) FROM episodes e JOIN seasons s ON e.seasonId = s.id WHERE s.mediaId = :mediaId")
+    int getEpisodeCountForMediaSync(long mediaId);
 }

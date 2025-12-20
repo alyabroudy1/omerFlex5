@@ -66,4 +66,9 @@ public interface MediaSourceDao {
 
     @Query("DELETE FROM media_sources WHERE serverId = :serverId")
     void deleteByServerId(long serverId);
+
+    // Find by External URL (Relative Path) and Server ID
+    // Used for "Aggressive Search Sync" to link search results to existing DB items
+    @Query("SELECT * FROM media_sources WHERE externalUrl = :url AND serverId = :serverId LIMIT 1")
+    MediaSourceEntity findByExternalUrlAndServer(String url, long serverId);
 }

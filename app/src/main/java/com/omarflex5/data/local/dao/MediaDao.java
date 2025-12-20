@@ -89,4 +89,8 @@ public interface MediaDao {
     @Query("SELECT * FROM media WHERE originalLanguage = :language ORDER BY CASE WHEN releaseDate IS NULL THEN 1 ELSE 0 END, releaseDate DESC, id DESC LIMIT :limit")
     LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getMediaByLanguageLiveData(String language,
             int limit);
+
+    @androidx.room.Transaction
+    @Query("SELECT * FROM media m INNER JOIN user_media_state u ON m.id = u.mediaId WHERE u.watchProgress > 0 AND u.episodeId IS NULL ORDER BY u.lastWatchedAt DESC LIMIT :limit")
+    LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getContinueWatchingLiveData(int limit);
 }

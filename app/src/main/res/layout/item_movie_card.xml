@@ -24,6 +24,17 @@
             android:contentDescription="@string/app_name"
             android:scaleType="centerCrop" />
 
+        <ProgressBar
+            android:id="@+id/progress_watch"
+            style="@android:style/Widget.ProgressBar.Horizontal"
+            android:layout_width="match_parent"
+            android:layout_height="4dp"
+            android:layout_alignParentBottom="true"
+            android:progressTint="#E50914"
+            android:progressBackgroundTint="#00000000"
+            android:visibility="gone"
+            android:max="100" />
+
         <View
             android:layout_width="match_parent"
             android:layout_height="match_parent"

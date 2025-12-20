@@ -46,6 +46,9 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
 
     public static final String EXTRA_VIDEO_URL = "extra_video_url";
     public static final String EXTRA_VIDEO_TITLE = "extra_video_title";
+    public static final String EXTRA_MEDIA_ID = "extra_media_id";
+    public static final String EXTRA_SEASON_ID = "extra_season_id";
+    public static final String EXTRA_EPISODE_ID = "extra_episode_id";
 
     private PlayerView playerView;
     private ProgressBar loadingIndicator;
@@ -53,6 +56,10 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
     private TextView seekOverlayText;
     private TextView castDeviceIndicator;
     private ExoPlayer player;
+    private com.omarflex5.data.repository.MediaRepository mediaRepository;
+    private long mediaId = -1;
+    private Long seasonId = null;
+    private Long episodeId = null;
 
     // Swipe Seek
     private androidx.core.view.GestureDetectorCompat gestureDetector;
@@ -135,6 +142,19 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
             Toast.makeText(this, "No video URL provided", Toast.LENGTH_SHORT).show();
             finish();
             return;
+        }
+
+        mediaRepository = com.omarflex5.data.repository.MediaRepository.getInstance(getApplication());
+        mediaId = getIntent().getLongExtra(EXTRA_MEDIA_ID, -1);
+        if (getIntent().hasExtra(EXTRA_SEASON_ID)) {
+            seasonId = getIntent().getLongExtra(EXTRA_SEASON_ID, -1);
+            if (seasonId == -1)
+                seasonId = null;
+        }
+        if (getIntent().hasExtra(EXTRA_EPISODE_ID)) {
+            episodeId = getIntent().getLongExtra(EXTRA_EPISODE_ID, -1);
+            if (episodeId == -1)
+                episodeId = null;
         }
 
         initViews();
@@ -394,12 +414,21 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
 
     @Override
     protected void onPause() {
+        saveProgress();
         super.onPause();
         if (castContext != null && sessionManagerListener != null) {
             castContext.getSessionManager().removeSessionManagerListener(sessionManagerListener,
                     com.google.android.gms.cast.framework.CastSession.class);
         }
-        // Do not pause if resuming cast
+    }
+
+    @Override
+    protected void onStop() {
+        saveProgress();
+        super.onStop();
+        if (player != null) {
+            player.setPlayWhenReady(false);
+        }
     }
 
     @Override
@@ -411,6 +440,7 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
             castPlayer = null;
         }
         if (player != null) {
+            saveProgress();
             player.release();
             player = null;
         }
@@ -728,7 +758,42 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
         // Load and play video
         player.setMediaSource(mediaSource);
         player.prepare();
-        player.setPlayWhenReady(true);
+
+        // RESUME LOGIC: Check for saved progress
+        if (mediaId != -1) {
+            new Thread(() -> {
+                com.omarflex5.data.local.entity.UserMediaStateEntity state = mediaRepository.getWatchStateSync(mediaId,
+                        seasonId, episodeId);
+                if (state != null && state.getWatchProgress() > 0) {
+                    runOnUiThread(() -> {
+                        if (player != null) {
+                            player.seekTo(state.getWatchProgress());
+                            player.setPlayWhenReady(true);
+                            Toast.makeText(this, "Resuming from " +
+                                    com.omarflex5.util.TimeUtils.formatTime(state.getWatchProgress()),
+                                    Toast.LENGTH_SHORT).show();
+                        }
+                    });
+                } else {
+                    runOnUiThread(() -> {
+                        if (player != null)
+                            player.setPlayWhenReady(true);
+                    });
+                }
+            }).start();
+        } else {
+            player.setPlayWhenReady(true);
+        }
+    }
+
+    private void saveProgress() {
+        if (player != null && mediaId != -1) {
+            long progress = player.getCurrentPosition();
+            long duration = player.getDuration();
+            if (duration > 0) {
+                mediaRepository.updateWatchProgress(mediaId, seasonId, episodeId, progress, duration);
+            }
+        }
     }
 
     /**
@@ -809,14 +874,6 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
         super.onStart();
         if (player != null) {
             player.setPlayWhenReady(true);
-        }
-    }
-
-    @Override
-    protected void onStop() {
-        super.onStop();
-        if (player != null) {
-            player.setPlayWhenReady(false);
         }
     }
 

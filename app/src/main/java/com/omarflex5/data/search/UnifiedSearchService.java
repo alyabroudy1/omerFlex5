@@ -128,9 +128,12 @@ public class UnifiedSearchService {
                 // Get all searchable servers
                 serverRepository.getSearchableServers(servers -> {
                     if (servers == null || servers.isEmpty()) {
+                        Log.e(TAG, "Search failed: No servers found in DB query.");
                         searchState.postValue(SearchState.error(currentQuery, "No servers available"));
                         return;
                     }
+
+                    Log.d(TAG, "Found " + servers.size() + " searchable servers in DB.");
 
                     // Strict Production Filter (Fasel Only) & Active Servers Check
                     List<ServerEntity> activeServers = new ArrayList<>();

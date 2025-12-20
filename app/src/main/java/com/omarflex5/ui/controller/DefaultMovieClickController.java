@@ -90,6 +90,21 @@ public class DefaultMovieClickController implements MovieClickController {
             Intent intent = new Intent(context, PlayerActivity.class);
             intent.putExtra(PlayerActivity.EXTRA_VIDEO_URL, videoUrl);
             intent.putExtra(PlayerActivity.EXTRA_VIDEO_TITLE, movie.getTitle());
+
+            try {
+                long mediaId = Long.parseLong(movie.getId());
+                intent.putExtra(PlayerActivity.EXTRA_MEDIA_ID, mediaId);
+            } catch (NumberFormatException e) {
+                // Ignore if ID is not a long
+            }
+
+            if (movie.getSeasonId() != null) {
+                intent.putExtra(PlayerActivity.EXTRA_SEASON_ID, (long) movie.getSeasonId());
+            }
+            if (movie.getEpisodeId() != null) {
+                intent.putExtra(PlayerActivity.EXTRA_EPISODE_ID, (long) movie.getEpisodeId());
+            }
+
             context.startActivity(intent);
         } else {
             Toast.makeText(context,

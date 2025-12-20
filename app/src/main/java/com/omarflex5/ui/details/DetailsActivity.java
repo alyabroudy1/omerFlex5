@@ -17,6 +17,7 @@ import androidx.recyclerview.widget.RecyclerView;
 import com.omarflex5.R;
 import com.omarflex5.data.local.entity.MediaType;
 import com.omarflex5.data.local.entity.ServerEntity;
+import com.omarflex5.data.repository.MediaRepository;
 import com.omarflex5.data.repository.ServerRepository;
 import com.omarflex5.data.scraper.BaseHtmlParser;
 import com.omarflex5.data.scraper.ParserFactory;
@@ -37,6 +38,9 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
     public static final String EXTRA_POST_DATA = "extra_post_data"; // NEW: Support for POST requests
 
     public static final String EXTRA_TYPE = "extra_type"; // NEW
+    public static final String EXTRA_MEDIA_ID = "extra_media_id";
+    public static final String EXTRA_SEASON_ID = "extra_season_id";
+    public static final String EXTRA_EPISODE_ID = "extra_episode_id";
 
     private static final int REQUEST_VIDEO_BROWSER = 1002;
 
@@ -55,9 +59,13 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
     private MediaType mediaType; // NEW: Context Type
     private long serverId;
     private ServerEntity currentServer;
+    private long mediaId = -1;
+    private Long seasonId = null;
+    private Long episodeId = null;
 
     private WebViewScraperManager scraperManager;
     private ServerRepository serverRepository;
+    private MediaRepository mediaRepository;
 
     public static void start(Context context, String url, String title, long serverId) {
         start(context, url, title, serverId, null, null, null);
@@ -70,12 +78,22 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
 
     public static void start(Context context, String url, String title, long serverId, String breadcrumb,
             MediaType type, String postData) {
+        start(context, url, title, serverId, breadcrumb, type, postData, -1, null, null);
+    }
+
+    public static void start(Context context, String url, String title, long serverId, String breadcrumb,
+            MediaType type, String postData, long mediaId, Long seasonId, Long episodeId) {
         Intent intent = new Intent(context, DetailsActivity.class);
         intent.putExtra(EXTRA_URL, url);
         intent.putExtra(EXTRA_TITLE, title);
         intent.putExtra(EXTRA_SERVER_ID, serverId);
         intent.putExtra(EXTRA_BREADCRUMB, breadcrumb);
         intent.putExtra(EXTRA_POST_DATA, postData);
+        intent.putExtra(EXTRA_MEDIA_ID, mediaId);
+        if (seasonId != null)
+            intent.putExtra(EXTRA_SEASON_ID, (long) seasonId);
+        if (episodeId != null)
+            intent.putExtra(EXTRA_EPISODE_ID, (long) episodeId);
         if (type != null) {
             intent.putExtra(EXTRA_TYPE, type.name());
         }
@@ -104,6 +122,14 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
             mediaType = MediaType.FILM;
         }
 
+        mediaId = getIntent().getLongExtra(EXTRA_MEDIA_ID, -1);
+        if (getIntent().hasExtra(EXTRA_SEASON_ID)) {
+            seasonId = getIntent().getLongExtra(EXTRA_SEASON_ID, -1);
+        }
+        if (getIntent().hasExtra(EXTRA_EPISODE_ID)) {
+            episodeId = getIntent().getLongExtra(EXTRA_EPISODE_ID, -1);
+        }
+
         // Initialize breadcrumb with first title if not set
         if (breadcrumb == null || breadcrumb.isEmpty()) {
             breadcrumb = title;
@@ -111,6 +137,7 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
 
         scraperManager = WebViewScraperManager.getInstance(this);
         serverRepository = ServerRepository.getInstance(this);
+        mediaRepository = MediaRepository.getInstance(this);
 
         initViews();
         setupRecyclerView();
@@ -167,7 +194,7 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
                     new WebViewScraperManager.ScraperCallback() {
                         @Override
                         public void onSuccess(String html, Map<String, String> cookies) {
-                            runOnUiThread(() -> parseContent(html));
+                            new Thread(() -> parseContent(html)).start();
                         }
 
                         @Override
@@ -187,52 +214,95 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
             sourceItem.setPageUrl(url);
             sourceItem.setTitle(title);
             sourceItem.setType(mediaType); // CRITICAL FIX: Pass the type!
+            sourceItem.setMediaId(mediaId);
+            sourceItem.setSeasonId(seasonId);
+            sourceItem.setEpisodeId(episodeId);
             parser.setSourceItem(sourceItem);
 
             BaseHtmlParser.ParsedItem result = parser.parseDetailPage();
 
-            // --- SEPARATION OF CONCERNS ---
-            // The Activity now only renders what the Parser tells it to.
-            // No business logic here.
-
-            switch (result.getStatus()) {
-                case EMPTY_ERROR:
-                    android.widget.Toast.makeText(this, result.getStatusMessage(), android.widget.Toast.LENGTH_LONG)
-                            .show();
-                    showError(result.getStatusMessage());
-                    break;
-
-                case REDIRECT:
-                    android.util.Log.d("DetailsActivity", "Parser requested REDIRECT to: " + result.getStatusMessage());
-                    this.url = result.getStatusMessage();
-                    runOnUiThread(this::loadContent); // Trigger fetch on Main Thread
-                    break;
-
-                case SUCCESS:
-                default:
-                    List<BaseHtmlParser.ParsedItem> subItems = result.getSubItems();
-                    if (subItems != null && !subItems.isEmpty()) {
-                        showContent();
-                        adapter.setItems(subItems);
-
-                        // Auto-trigger video sniffing if first item is ready-to-watch (Optimization)
-                        // This technically interacts with Sniffer, but it's UI behavior (auto-click).
-                        // Consider moving to User settings later.
-                        BaseHtmlParser.ParsedItem firstItem = subItems.get(0);
-                        boolean isServer = "Server".equals(firstItem.getQuality());
-                        if (isServer || needsVideoSniffing(firstItem.getPageUrl())) {
-                            new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
-                                onItemClicked(firstItem);
-                            }, 300);
-                        }
-                    } else {
-                        // Fallback safety (should be caught by EMPTY_ERROR)
-                        showError("No Content Found (Unknown Error)");
-                    }
-                    break;
+            List<BaseHtmlParser.ParsedItem> subItems = result.getSubItems();
+            if (subItems != null && !subItems.isEmpty()) {
+                // Attach watch history from DB (Background)
+                mediaRepository.attachWatchHistory(subItems, mediaId, seasonId);
             }
+
+            runOnUiThread(() -> {
+                switch (result.getStatus()) {
+                    case EMPTY_ERROR:
+                        android.widget.Toast.makeText(this, result.getStatusMessage(), android.widget.Toast.LENGTH_LONG)
+                                .show();
+                        showError(result.getStatusMessage());
+                        break;
+
+                    case REDIRECT:
+                        android.util.Log.d("DetailsActivity",
+                                "Parser requested REDIRECT to: " + result.getStatusMessage());
+                        this.url = result.getStatusMessage();
+                        loadContent();
+                        break;
+
+                    case SUCCESS:
+                    default:
+                        if (subItems != null && !subItems.isEmpty()) {
+                            showContent();
+                            adapter.setItems(subItems);
+
+                            // Auto-scroll/Focus logic
+                            handleAutoScroll(subItems);
+
+                            // Optimization: Auto-trigger if it's a server list
+                            BaseHtmlParser.ParsedItem firstItem = subItems.get(0);
+                            boolean isServer = "Server".equals(firstItem.getQuality());
+                            if (isServer || needsVideoSniffing(firstItem.getPageUrl())) {
+                                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                                    onItemClicked(firstItem);
+                                }, 300);
+                            }
+                        } else {
+                            showError("No Content Found (Unknown Error)");
+                        }
+                        break;
+                }
+            });
         } catch (Exception e) {
-            showError("Parsing Error: " + e.getMessage());
+            runOnUiThread(() -> showError("Parsing Error: " + e.getMessage()));
+        }
+    }
+
+    /**
+     * Finds the last watched item and scrolls to it.
+     */
+    private void handleAutoScroll(List<BaseHtmlParser.ParsedItem> items) {
+        if (items == null || items.isEmpty())
+            return;
+
+        int targetIndex = -1;
+        long latestWatchTime = -1;
+
+        for (int i = 0; i < items.size(); i++) {
+            BaseHtmlParser.ParsedItem item = items.get(i);
+            if (item.getWatchProgress() > 0) {
+                // If we found an item with progress, it's a candidate
+                // For now, let's just pick the last one in the list that has progress
+                // (usually the most recently watched episode if they are in order)
+                targetIndex = i;
+            }
+        }
+
+        if (targetIndex != -1) {
+            final int index = targetIndex;
+            recyclerView.post(() -> {
+                recyclerView.scrollToPosition(index);
+                // Also try to give it focus if we are on TV
+                android.view.View view = recyclerView.getLayoutManager().findViewByPosition(index);
+                if (view != null) {
+                    view.requestFocus();
+                } else {
+                    // If view is not yet laid out, we might need a small delay or a scroll listener
+                    recyclerView.smoothScrollToPosition(index);
+                }
+            });
         }
     }
 
@@ -268,7 +338,8 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
         // Check for direct video extensions or known patterns
         if (isDirectVideo(itemUrl)) {
             android.util.Log.d("DetailsDebug", "Direct video detected, launching player.");
-            launchPlayer(itemUrl, fullTitle, null, null, null);
+            launchPlayer(itemUrl, fullTitle, null, null, null,
+                    item.getMediaId(), item.getSeasonId(), item.getEpisodeId());
             return;
         }
 
@@ -293,7 +364,8 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
             } else {
                 // It's a resolution (e.g. "720p"). if url is not direct video, sniff it.
                 if (isDirectVideo(itemUrl)) {
-                    launchPlayer(itemUrl, fullTitle, null, null, null);
+                    launchPlayer(itemUrl, fullTitle, null, null, null,
+                            item.getMediaId(), item.getSeasonId(), item.getEpisodeId());
                 } else {
                     getIntent().putExtra("pending_title", fullTitle);
                     startSniffer(itemUrl);
@@ -307,7 +379,9 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
 
         // If it seems to be a container (Season X, Episode Y, Server Name), open new
         // DetailsActivity
-        DetailsActivity.start(this, itemUrl, itemTitle, serverId, newBreadcrumb, item.getType(), item.getPostData());
+        DetailsActivity.start(this, itemUrl, itemTitle, serverId, newBreadcrumb,
+                item.getType(), item.getPostData(),
+                item.getMediaId(), item.getSeasonId(), item.getEpisodeId());
     }
 
     private void startSniffer(String url) {
@@ -366,10 +440,17 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
                 || url.contains("/embed/") || url.contains("player_token");
     }
 
-    private void launchPlayer(String videoUrl, String title, String referer, String userAgent, String cookie) {
+    private void launchPlayer(String videoUrl, String title, String referer, String userAgent, String cookie,
+            long mediaId, Long seasonId, Long episodeId) {
         Intent intent = new Intent(this, PlayerActivity.class);
         intent.putExtra(PlayerActivity.EXTRA_VIDEO_URL, videoUrl);
         intent.putExtra(PlayerActivity.EXTRA_VIDEO_TITLE, title != null ? title : "Video");
+
+        intent.putExtra(PlayerActivity.EXTRA_MEDIA_ID, mediaId);
+        if (seasonId != null)
+            intent.putExtra(PlayerActivity.EXTRA_SEASON_ID, (long) seasonId);
+        if (episodeId != null)
+            intent.putExtra(PlayerActivity.EXTRA_EPISODE_ID, (long) episodeId);
 
         if (referer != null)
             intent.putExtra("EXTRA_REFERER", referer);
@@ -416,7 +497,8 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
                 String playerTitle = (pendingTitle != null && !pendingTitle.isEmpty())
                         ? pendingTitle
                         : (breadcrumb != null ? breadcrumb : title);
-                launchPlayer(videoUrl, playerTitle, referer, userAgent, cookies);
+                launchPlayer(videoUrl, playerTitle, referer, userAgent, cookies,
+                        mediaId, seasonId, episodeId);
             }
         }
     }

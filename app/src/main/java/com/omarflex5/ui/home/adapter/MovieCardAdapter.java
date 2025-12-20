@@ -8,6 +8,7 @@ import android.view.ViewGroup;
 import android.view.animation.AccelerateDecelerateInterpolator;
 import android.widget.ImageView;
 import android.widget.LinearLayout;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -232,6 +233,7 @@ public class MovieCardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
         TextView titleText, yearText, ratingText, serverBadge;
         LinearLayout categoriesLayout;
         CardView cardView;
+        ProgressBar watchProgress;
         AnimatorSet pulseAnimator;
 
         public MovieViewHolder(@NonNull View itemView) {
@@ -243,6 +245,7 @@ public class MovieCardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             ratingText = itemView.findViewById(R.id.text_rating);
             categoriesLayout = itemView.findViewById(R.id.layout_categories_badge);
             serverBadge = itemView.findViewById(R.id.text_server_badge);
+            watchProgress = itemView.findViewById(R.id.progress_watch);
 
             // Focus change - only visual animation (scale + pulse)
             cardView.setOnFocusChangeListener((v, hasFocus) -> {
@@ -424,6 +427,19 @@ public class MovieCardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
                     serverBadge.setVisibility(View.VISIBLE);
                 } else {
                     serverBadge.setVisibility(View.GONE);
+                }
+            }
+
+            // Watch Progress Bar (YouTube style)
+            if (watchProgress != null) {
+                if (movie.getDuration() > 0 && movie.getWatchProgress() > 0) {
+                    int percent = (int) ((movie.getWatchProgress() * 100) / movie.getDuration());
+                    // Clamp to 1-100%
+                    percent = Math.max(1, Math.min(100, percent));
+                    watchProgress.setProgress(percent);
+                    watchProgress.setVisibility(View.VISIBLE);
+                } else {
+                    watchProgress.setVisibility(View.GONE);
                 }
             }
 

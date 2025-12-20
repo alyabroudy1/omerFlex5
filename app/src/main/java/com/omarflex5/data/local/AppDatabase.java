@@ -34,7 +34,7 @@ import java.util.concurrent.Executors;
         MediaSourceEntity.class,
         SearchQueueEntity.class,
         UserMediaStateEntity.class
-}, version = 7, exportSchema = true)
+}, version = 8, exportSchema = true)
 @TypeConverters({ Converters.class })
 public abstract class AppDatabase extends RoomDatabase {
 
@@ -80,13 +80,27 @@ public abstract class AppDatabase extends RoomDatabase {
         @Override
         public void onCreate(@NonNull SupportSQLiteDatabase db) {
             super.onCreate(db);
+            android.util.Log.d("AppDatabase", "onCreate: Database created. Prepopulating...");
 
-            // Insert default servers on first database creation
-            Executors.newSingleThreadExecutor().execute(() -> {
-                if (INSTANCE != null) {
-                    insertDefaultServers(INSTANCE.serverDao());
-                }
-            });
+            android.util.Log.d("AppDatabase", "onCreate: Database created. Prepopulating...");
+            // Run synchronously to ensure data is ready for the first query
+            if (INSTANCE != null) {
+                insertDefaultServers(INSTANCE.serverDao());
+                android.util.Log.d("AppDatabase", "Prepopulation completed.");
+            } else {
+                android.util.Log.e("AppDatabase", "Prepopulation failed: INSTANCE is null");
+            }
+        }
+
+        @Override
+        public void onDestructiveMigration(@NonNull SupportSQLiteDatabase db) {
+            super.onDestructiveMigration(db);
+            android.util.Log.w("AppDatabase", "onDestructiveMigration: Database reset. Prepopulating...");
+            // Same as onCreate for destructive migration - Run synchronously
+            if (INSTANCE != null) {
+                insertDefaultServers(INSTANCE.serverDao());
+                android.util.Log.d("AppDatabase", "Prepopulation after migration completed.");
+            }
         }
     }
 
@@ -94,148 +108,162 @@ public abstract class AppDatabase extends RoomDatabase {
      * Insert the 9 default servers with their configurations.
      */
     private static void insertDefaultServers(ServerDao serverDao) {
+        android.util.Log.d("AppDatabase", "Starting insertDefaultServers...");
         long now = System.currentTimeMillis();
         // Server 1: MyCima
-        ServerEntity mycima = new ServerEntity();
-        mycima.setName("mycima");
-        mycima.setLabel("ماي سيما");
-        mycima.setBaseUrl("https://my-cima.me");
-        mycima.setBasePriority(1);
-        mycima.setCurrentPriority(1);
-        mycima.setEnabled(false); // Disabled for Production
-        mycima.setSearchable(false);
-        mycima.setRequiresWebView(true); // CF protected
-        mycima.setSearchUrlPattern("/search/{query}");
-        mycima.setParseStrategy("HTML");
-        mycima.setCreatedAt(now);
-        mycima.setUpdatedAt(now);
-        serverDao.insert(mycima);
+        try {
+            ServerEntity mycima = new ServerEntity();
+            mycima.setName("mycima");
+            mycima.setLabel("ماي سيما");
+            mycima.setBaseUrl("https://my-cima.me");
+            mycima.setBasePriority(1);
+            mycima.setCurrentPriority(1);
+            mycima.setEnabled(false); // Disabled for Production
+            mycima.setSearchable(false);
+            mycima.setRequiresWebView(true); // CF protected
+            mycima.setSearchUrlPattern("/search/{query}");
+            mycima.setParseStrategy("HTML");
+            mycima.setCreatedAt(now);
+            mycima.setUpdatedAt(now);
+            serverDao.insert(mycima);
+            android.util.Log.d("AppDatabase", "Inserted MyCima");
 
-        // Server 2: FaselHD
-        ServerEntity faselhd = new ServerEntity();
-        faselhd.setName("faselhd");
-        faselhd.setLabel("فاصل");
-        faselhd.setBaseUrl("https://www.faselhds.biz");
-        faselhd.setBasePriority(2);
-        faselhd.setCurrentPriority(2);
-        faselhd.setEnabled(false); // Enabled for Production
-        faselhd.setSearchable(false);
-        faselhd.setRequiresWebView(true); // CF protected
-        faselhd.setSearchUrlPattern("/?s={query}");
-        faselhd.setParseStrategy("HTML");
-        faselhd.setCreatedAt(now);
-        faselhd.setUpdatedAt(now);
-        serverDao.insert(faselhd);
+            // Server 2: FaselHD
+            ServerEntity faselhd = new ServerEntity();
+            faselhd.setName("faselhd");
+            faselhd.setLabel("فاصل");
+            faselhd.setBaseUrl("https://www.faselhds.biz");
+            faselhd.setBasePriority(2);
+            faselhd.setCurrentPriority(2);
+            faselhd.setEnabled(true); // Enabled for Production
+            faselhd.setSearchable(true);
+            faselhd.setRequiresWebView(true); // CF protected
+            faselhd.setSearchUrlPattern("/?s={query}");
+            faselhd.setParseStrategy("HTML");
+            faselhd.setCreatedAt(now);
+            faselhd.setUpdatedAt(now);
+            serverDao.insert(faselhd);
+            android.util.Log.d("AppDatabase", "Inserted FaselHD");
 
-        // Server 3: ArabSeed
-        ServerEntity arabseed = new ServerEntity();
-        arabseed.setName("arabseed");
-        arabseed.setLabel("عرب سيد");
-        arabseed.setBaseUrl("https://arabseed.show");
-        arabseed.setBasePriority(3);
-        arabseed.setCurrentPriority(3);
-        arabseed.setEnabled(true); // Enabled for Production
-        arabseed.setSearchable(true);
-        arabseed.setRequiresWebView(true); // Sometimes CF
-        arabseed.setSearchUrlPattern("/?s={query}");
-        arabseed.setParseStrategy("HTML");
-        arabseed.setCreatedAt(now);
-        arabseed.setUpdatedAt(now);
-        serverDao.insert(arabseed);
+            // Server 3: ArabSeed
+            ServerEntity arabseed = new ServerEntity();
+            arabseed.setName("arabseed");
+            arabseed.setLabel("عرب سيد");
+            arabseed.setBaseUrl("https://arabseed.show");
+            arabseed.setBasePriority(3);
+            arabseed.setCurrentPriority(3);
+            arabseed.setEnabled(true); // Enabled for Production
+            arabseed.setSearchable(true);
+            arabseed.setRequiresWebView(true); // Sometimes CF
+            arabseed.setSearchUrlPattern("/?s={query}");
+            arabseed.setParseStrategy("HTML");
+            arabseed.setCreatedAt(now);
+            arabseed.setUpdatedAt(now);
+            serverDao.insert(arabseed);
+            android.util.Log.d("AppDatabase", "Inserted ArabSeed");
 
-        // Server 4: CimaNow
-        ServerEntity cimanow = new ServerEntity();
-        cimanow.setName("cimanow");
-        cimanow.setLabel("سيماناو");
-        cimanow.setBaseUrl("https://cimanow.cc");
-        cimanow.setBasePriority(4);
-        cimanow.setCurrentPriority(4);
-        cimanow.setEnabled(false); // Enabled for Production
-        cimanow.setSearchable(false);
-        cimanow.setRequiresWebView(true); // CF protected
-        cimanow.setSearchUrlPattern("/?s={query}");
-        cimanow.setParseStrategy("HTML");
-        cimanow.setCreatedAt(now);
-        cimanow.setUpdatedAt(now);
-        serverDao.insert(cimanow);
+            // Server 4: CimaNow
+            ServerEntity cimanow = new ServerEntity();
+            cimanow.setName("cimanow");
+            cimanow.setLabel("سيماناو");
+            cimanow.setBaseUrl("https://cimanow.cc");
+            cimanow.setBasePriority(4);
+            cimanow.setCurrentPriority(4);
+            cimanow.setEnabled(false); // Enabled for Production
+            cimanow.setSearchable(false);
+            cimanow.setRequiresWebView(true); // CF protected
+            cimanow.setSearchUrlPattern("/?s={query}");
+            cimanow.setParseStrategy("HTML");
+            cimanow.setCreatedAt(now);
+            cimanow.setUpdatedAt(now);
+            serverDao.insert(cimanow);
+            android.util.Log.d("AppDatabase", "Inserted CimaNow");
 
-        // Server 5: Koora (no search, home only)
-        ServerEntity koora = new ServerEntity();
-        koora.setName("koora");
-        koora.setLabel("كورة");
-        koora.setBaseUrl("https://www.koraa-live.com");
-        koora.setBasePriority(99); // No priority (not searchable)
-        koora.setCurrentPriority(99);
-        koora.setEnabled(false); // Disabled for Production
-        koora.setSearchable(false); // Home page only
-        koora.setRequiresWebView(true);
-        koora.setParseStrategy("HTML");
-        koora.setCreatedAt(now);
-        koora.setUpdatedAt(now);
-        serverDao.insert(koora);
+            // Server 5: Koora
+            ServerEntity koora = new ServerEntity();
+            koora.setName("koora");
+            koora.setLabel("كورة");
+            koora.setBaseUrl("https://www.koraa-live.com");
+            koora.setBasePriority(99);
+            koora.setCurrentPriority(99);
+            koora.setEnabled(false);
+            koora.setSearchable(false);
+            koora.setRequiresWebView(true);
+            koora.setParseStrategy("HTML");
+            koora.setCreatedAt(now);
+            koora.setUpdatedAt(now);
+            serverDao.insert(koora);
+            android.util.Log.d("AppDatabase", "Inserted Koora");
 
-        // Server 6: IPTV (local, to be implemented later)
-        ServerEntity iptv = new ServerEntity();
-        iptv.setName("iptv");
-        iptv.setLabel("قنوات");
-        iptv.setBaseUrl("local://iptv");
-        iptv.setBasePriority(3);
-        iptv.setCurrentPriority(3);
-        iptv.setEnabled(false); // Disabled until implemented
-        iptv.setSearchable(false);
-        iptv.setRequiresWebView(false); // Local parsing
-        iptv.setParseStrategy("LOCAL");
-        iptv.setCreatedAt(now);
-        iptv.setUpdatedAt(now);
-        serverDao.insert(iptv);
+            // Server 6: IPTV
+            ServerEntity iptv = new ServerEntity();
+            iptv.setName("iptv");
+            iptv.setLabel("قنوات");
+            iptv.setBaseUrl("local://iptv");
+            iptv.setBasePriority(3);
+            iptv.setCurrentPriority(3);
+            iptv.setEnabled(false);
+            iptv.setSearchable(false);
+            iptv.setRequiresWebView(false);
+            iptv.setParseStrategy("LOCAL");
+            iptv.setCreatedAt(now);
+            iptv.setUpdatedAt(now);
+            serverDao.insert(iptv);
+            android.util.Log.d("AppDatabase", "Inserted IPTV");
 
-        // Server 7: Akwam
-        ServerEntity akwam = new ServerEntity();
-        akwam.setName("akwam");
-        akwam.setLabel("أكوام");
-        akwam.setBaseUrl("https://ak.sv");
-        akwam.setBasePriority(5);
-        akwam.setCurrentPriority(5);
-        akwam.setEnabled(false); // Enabled for Production
-        akwam.setSearchable(false);
-        akwam.setRequiresWebView(true); // CF protected
-        akwam.setSearchUrlPattern("/search?q={query}");
-        akwam.setParseStrategy("HTML");
-        akwam.setCreatedAt(now);
-        akwam.setUpdatedAt(now);
-        serverDao.insert(akwam);
+            // Server 7: Akwam
+            ServerEntity akwam = new ServerEntity();
+            akwam.setName("akwam");
+            akwam.setLabel("أكوام");
+            akwam.setBaseUrl("https://ak.sv");
+            akwam.setBasePriority(5);
+            akwam.setCurrentPriority(5);
+            akwam.setEnabled(true); // Enabled for Production
+            akwam.setSearchable(true);
+            akwam.setRequiresWebView(true);
+            akwam.setSearchUrlPattern("/search?q={query}");
+            akwam.setParseStrategy("HTML");
+            akwam.setCreatedAt(now);
+            akwam.setUpdatedAt(now);
+            serverDao.insert(akwam);
+            android.util.Log.d("AppDatabase", "Inserted Akwam");
 
-        // Server 8: Old Akwam
-        // Server 8: Old Akwam
-        ServerEntity oldAkwam = new ServerEntity();
-        oldAkwam.setName("oldakwam");
-        oldAkwam.setLabel("اكوام القديم");
-        oldAkwam.setBaseUrl("https://ak.sv"); // Try current active domain
-        oldAkwam.setBasePriority(6);
-        oldAkwam.setCurrentPriority(6);
-        oldAkwam.setEnabled(false);
-        oldAkwam.setSearchable(false);
-        oldAkwam.setRequiresWebView(true);
-        oldAkwam.setSearchUrlPattern("/old/advanced-search/{query}");
-        oldAkwam.setParseStrategy("HTML");
-        oldAkwam.setCreatedAt(now);
-        oldAkwam.setUpdatedAt(now);
-        serverDao.insert(oldAkwam);
+            // Server 8: Old Akwam
+            ServerEntity oldAkwam = new ServerEntity();
+            oldAkwam.setName("oldakwam");
+            oldAkwam.setLabel("اكوام القديم");
+            oldAkwam.setBaseUrl("https://ak.sv");
+            oldAkwam.setBasePriority(6);
+            oldAkwam.setCurrentPriority(6);
+            oldAkwam.setEnabled(false);
+            oldAkwam.setSearchable(false);
+            oldAkwam.setRequiresWebView(true);
+            oldAkwam.setSearchUrlPattern("/old/advanced-search/{query}");
+            oldAkwam.setParseStrategy("HTML");
+            oldAkwam.setCreatedAt(now);
+            oldAkwam.setUpdatedAt(now);
+            serverDao.insert(oldAkwam);
+            android.util.Log.d("AppDatabase", "Inserted OldAkwam");
 
-        // Server 9: WatanFlix
-        ServerEntity watanflix = new ServerEntity();
-        watanflix.setName("watanflix");
-        watanflix.setLabel("watan");
-        watanflix.setBaseUrl("https://watanflix.com");
-        watanflix.setBasePriority(7);
-        watanflix.setCurrentPriority(7);
-        watanflix.setEnabled(false); // Enabled for Production
-        watanflix.setSearchable(false);
-        watanflix.setRequiresWebView(false); // Sometimes no CF
-        watanflix.setSearchUrlPattern("/?s={query}");
-        watanflix.setParseStrategy("HTML");
-        watanflix.setCreatedAt(now);
-        watanflix.setUpdatedAt(now);
-        serverDao.insert(watanflix);
+            // Server 9: WatanFlix
+            ServerEntity watanflix = new ServerEntity();
+            watanflix.setName("watanflix");
+            watanflix.setLabel("watan");
+            watanflix.setBaseUrl("https://watanflix.com");
+            watanflix.setBasePriority(7);
+            watanflix.setCurrentPriority(7);
+            watanflix.setEnabled(false);
+            watanflix.setSearchable(false);
+            watanflix.setRequiresWebView(false);
+            watanflix.setSearchUrlPattern("/?s={query}");
+            watanflix.setParseStrategy("HTML");
+            watanflix.setCreatedAt(now);
+            watanflix.setUpdatedAt(now);
+            serverDao.insert(watanflix);
+            android.util.Log.d("AppDatabase", "Inserted WatanFlix");
+
+        } catch (Exception e) {
+            android.util.Log.e("AppDatabase", "Error during prepopulation: " + e.getMessage());
+        }
     }
 }

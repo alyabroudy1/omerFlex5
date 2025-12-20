@@ -55,8 +55,79 @@ public class ServerRepository {
     public void getSearchableServers(OnResultCallback<List<ServerEntity>> callback) {
         executor.execute(() -> {
             List<ServerEntity> servers = serverDao.getSearchableByPriority();
+            if (servers.isEmpty()) {
+                Log.w(TAG, "No searchable servers found. Attempting to ensure defaults...");
+                ensureDefaultServersSync();
+                servers = serverDao.getSearchableByPriority();
+            }
             callback.onResult(servers);
         });
+    }
+
+    /**
+     * Ensures default servers are present in the database.
+     */
+    public void ensureDefaultServersSync() {
+        List<ServerEntity> all = serverDao.getSearchableByPriority();
+        if (all.isEmpty()) {
+            Log.i(TAG, "Database empty. Injecting default servers...");
+            long now = System.currentTimeMillis();
+
+            // Re-using the logic from AppDatabase but here for safety
+            try {
+                // ArabSeed
+                ServerEntity arabseed = new ServerEntity();
+                arabseed.setName("arabseed");
+                arabseed.setLabel("عرب سيد");
+                arabseed.setBaseUrl("https://arabseed.show");
+                arabseed.setBasePriority(3);
+                arabseed.setCurrentPriority(3);
+                arabseed.setEnabled(true);
+                arabseed.setSearchable(true);
+                arabseed.setRequiresWebView(true);
+                arabseed.setSearchUrlPattern("/?s={query}");
+                arabseed.setParseStrategy("HTML");
+                arabseed.setCreatedAt(now);
+                arabseed.setUpdatedAt(now);
+                serverDao.insert(arabseed);
+
+                // FaselHD
+                ServerEntity faselhd = new ServerEntity();
+                faselhd.setName("faselhd");
+                faselhd.setLabel("فاصل");
+                faselhd.setBaseUrl("https://www.faselhds.biz");
+                faselhd.setBasePriority(2);
+                faselhd.setCurrentPriority(2);
+                faselhd.setEnabled(true);
+                faselhd.setSearchable(true);
+                faselhd.setRequiresWebView(true);
+                faselhd.setSearchUrlPattern("/?s={query}");
+                faselhd.setParseStrategy("HTML");
+                faselhd.setCreatedAt(now);
+                faselhd.setUpdatedAt(now);
+                serverDao.insert(faselhd);
+
+                // Akwam
+                ServerEntity akwam = new ServerEntity();
+                akwam.setName("akwam");
+                akwam.setLabel("أكوام");
+                akwam.setBaseUrl("https://ak.sv");
+                akwam.setBasePriority(5);
+                akwam.setCurrentPriority(5);
+                akwam.setEnabled(true);
+                akwam.setSearchable(true);
+                akwam.setRequiresWebView(true);
+                akwam.setSearchUrlPattern("/search?q={query}");
+                akwam.setParseStrategy("HTML");
+                akwam.setCreatedAt(now);
+                akwam.setUpdatedAt(now);
+                serverDao.insert(akwam);
+
+                Log.d(TAG, "Default servers injected successfully.");
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to inject default servers: " + e.getMessage());
+            }
+        }
     }
 
     public void getServerByName(String name, OnResultCallback<ServerEntity> callback) {

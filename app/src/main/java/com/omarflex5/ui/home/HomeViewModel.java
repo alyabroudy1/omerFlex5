@@ -70,50 +70,11 @@ public class HomeViewModel extends AndroidViewModel {
         allMedia.observeForever(mediaItems -> {
             if (mediaItems != null) {
                 java.util.List<Movie> mappedMovies = new java.util.ArrayList<>();
-
                 for (com.omarflex5.data.local.model.MediaWithUserState item : mediaItems) {
-                    boolean isFav = item.userState != null && item.userState.isFavorite();
-                    boolean isWatched = item.userState != null && item.userState.isWatched();
-
-                    MediaEntity entity = item.media;
-                    if (entity == null)
-                        continue;
-
-                    // Parse categories from JSON
-                    java.util.List<String> categories = new java.util.ArrayList<>();
-                    if (entity.getCategoriesJson() != null) {
-                        try {
-                            org.json.JSONArray jsonArray = new org.json.JSONArray(entity.getCategoriesJson());
-                            for (int i = 0; i < jsonArray.length(); i++) {
-                                categories.add(jsonArray.getString(i));
-                            }
-                        } catch (Exception e) {
-                            // ignore parse error
-                        }
-                    }
-
-                    // Map Entity to Movie Model
-                    Movie movie = new Movie(
-                            String.valueOf(entity.getId()), // ID
-                            entity.getTitle(), // Title (localized Arabic)
-                            entity.getOriginalTitle(), // Original Title (English for search)
-                            entity.getDescription(), // Desc
-                            entity.getBackdropUrl(), // Background
-                            entity.getPosterUrl(), // Poster
-                            null, // Trailer (fetched on demand)
-                            null, // Video URL
-                            String.valueOf(entity.getYear()), // Year
-                            String.valueOf(entity.getRating()), // Rating
-                            com.omarflex5.data.model.MovieActionType.EXOPLAYER,
-                            entity.getType() == com.omarflex5.data.local.entity.MediaType.SERIES,
-                            categories, // Categories (Parsed)
-                            "TMDB", // Source
-                            isFav, // Favorite
-                            isWatched // Watched
-                    );
-                    mappedMovies.add(movie);
+                    Movie movie = mapToMovie(item);
+                    if (movie != null)
+                        mappedMovies.add(movie);
                 }
-
                 movies.setValue(mappedMovies);
                 uiState.setValue(UiState.success());
             } else {
@@ -122,6 +83,50 @@ public class HomeViewModel extends AndroidViewModel {
         });
 
         loadCategories();
+    }
+
+    private Movie mapToMovie(com.omarflex5.data.local.model.MediaWithUserState item) {
+        MediaEntity entity = item.media;
+        if (entity == null)
+            return null;
+
+        boolean isFav = item.userState != null && item.userState.isFavorite();
+        boolean isWatched = item.userState != null && item.userState.isWatched();
+        long progress = item.userState != null ? item.userState.getWatchProgress() : 0;
+        long duration = item.userState != null ? item.userState.getDuration() : 0;
+
+        // Parse categories from JSON
+        java.util.List<String> categories = new java.util.ArrayList<>();
+        if (entity.getCategoriesJson() != null) {
+            try {
+                org.json.JSONArray jsonArray = new org.json.JSONArray(entity.getCategoriesJson());
+                for (int i = 0; i < jsonArray.length(); i++) {
+                    categories.add(jsonArray.getString(i));
+                }
+            } catch (Exception e) {
+                // ignore parse error
+            }
+        }
+
+        return new Movie(
+                String.valueOf(entity.getId()), // ID
+                entity.getTitle(), // Title (localized Arabic)
+                entity.getOriginalTitle(), // Original Title (English for search)
+                entity.getDescription(), // Desc
+                entity.getBackdropUrl(), // Background
+                entity.getPosterUrl(), // Poster
+                null, // Trailer (fetched on demand)
+                null, // Video URL
+                String.valueOf(entity.getYear()), // Year
+                String.valueOf(entity.getRating()), // Rating
+                com.omarflex5.data.model.MovieActionType.EXOPLAYER,
+                entity.getType() == com.omarflex5.data.local.entity.MediaType.SERIES,
+                categories, // Categories (Parsed)
+                "TMDB", // Source
+                isFav, // Favorite
+                isWatched, // Watched
+                progress,
+                duration);
     }
 
     public LiveData<UiState> getUiState() {
@@ -170,6 +175,9 @@ public class HomeViewModel extends AndroidViewModel {
     private void loadCategories() {
         java.util.List<Category> catList = new java.util.ArrayList<>();
 
+        // Add "Continue Watching" category at the very top
+        catList.add(new Category("continue", "متابعة المشاهدة", new java.util.ArrayList<>()));
+
         // Add "All" category
         catList.add(new Category("all", "الكل", new java.util.ArrayList<>()));
 
@@ -184,6 +192,7 @@ public class HomeViewModel extends AndroidViewModel {
         categories.setValue(catList);
 
         // Initialize pagination state for each category
+        categoryPageSizes.put("continue", 15); // Smaller limit for continue watching
         categoryPageSizes.put("all", 30);
         categoryPageSizes.put("arabic", 30);
         for (String genre : PREDEFINED_GENRES) {
@@ -203,7 +212,9 @@ public class HomeViewModel extends AndroidViewModel {
         currentPageSize.setValue(pageSize);
 
         // Switch data source based on category
-        if ("all".equals(selectedGenre)) {
+        if ("continue".equals(selectedGenre)) {
+            allMedia = repository.getContinueWatching(pageSize);
+        } else if ("all".equals(selectedGenre)) {
             allMedia = repository.getPagedMedia(currentPageSize);
         } else if ("arabic".equals(selectedGenre)) {
             allMedia = repository.getMediaByLanguage("ar", currentPageSize);
@@ -215,50 +226,11 @@ public class HomeViewModel extends AndroidViewModel {
         allMedia.observeForever(mediaItems -> {
             if (mediaItems != null) {
                 java.util.List<Movie> mappedMovies = new java.util.ArrayList<>();
-
                 for (com.omarflex5.data.local.model.MediaWithUserState item : mediaItems) {
-                    boolean isFav = item.userState != null && item.userState.isFavorite();
-                    boolean isWatched = item.userState != null && item.userState.isWatched();
-
-                    MediaEntity entity = item.media;
-                    if (entity == null)
-                        continue;
-
-                    // Parse categories from JSON
-                    java.util.List<String> categories = new java.util.ArrayList<>();
-                    if (entity.getCategoriesJson() != null) {
-                        try {
-                            org.json.JSONArray jsonArray = new org.json.JSONArray(entity.getCategoriesJson());
-                            for (int i = 0; i < jsonArray.length(); i++) {
-                                categories.add(jsonArray.getString(i));
-                            }
-                        } catch (Exception e) {
-                            // ignore parse error
-                        }
-                    }
-
-                    // Map Entity to Movie Model
-                    Movie movie = new Movie(
-                            String.valueOf(entity.getId()), // ID
-                            entity.getTitle(), // Title (localized Arabic)
-                            entity.getOriginalTitle(), // Original Title (English for search)
-                            entity.getDescription(), // Desc
-                            entity.getBackdropUrl(), // Background
-                            entity.getPosterUrl(), // Poster
-                            null, // Trailer (fetched on demand)
-                            null, // Video URL
-                            String.valueOf(entity.getYear()), // Year
-                            String.valueOf(entity.getRating()), // Rating
-                            com.omarflex5.data.model.MovieActionType.EXOPLAYER,
-                            entity.getType() == com.omarflex5.data.local.entity.MediaType.SERIES,
-                            categories, // Categories (Parsed)
-                            "TMDB", // Source
-                            isFav, // Favorite
-                            isWatched // Watched
-                    );
-                    mappedMovies.add(movie);
+                    Movie movie = mapToMovie(item);
+                    if (movie != null)
+                        mappedMovies.add(movie);
                 }
-
                 movies.setValue(mappedMovies);
                 uiState.setValue(UiState.success());
             } else {

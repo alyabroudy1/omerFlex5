@@ -19,11 +19,16 @@ public class Movie {
     private final String sourceName;
     private final boolean isFavorite;
     private final boolean isWatched;
+    private final long watchProgress;
+    private final long duration;
+    private final Long seasonId;
+    private final Long episodeId;
 
     public Movie(String id, String title, String originalTitle, String description,
             String backgroundUrl, String posterUrl, String trailerUrl, String videoUrl,
             String year, String rating, MovieActionType actionType, boolean isTvShow,
-            java.util.List<String> categories, String sourceName, boolean isFavorite, boolean isWatched) {
+            java.util.List<String> categories, String sourceName, boolean isFavorite, boolean isWatched,
+            long watchProgress, long duration, Long seasonId, Long episodeId) {
         this.id = id;
         this.title = title;
         this.originalTitle = originalTitle != null ? originalTitle : title;
@@ -40,6 +45,20 @@ public class Movie {
         this.sourceName = sourceName != null ? sourceName : "TMDB";
         this.isFavorite = isFavorite;
         this.isWatched = isWatched;
+        this.watchProgress = watchProgress;
+        this.duration = duration;
+        this.seasonId = seasonId;
+        this.episodeId = episodeId;
+    }
+
+    public Movie(String id, String title, String originalTitle, String description,
+            String backgroundUrl, String posterUrl, String trailerUrl, String videoUrl,
+            String year, String rating, MovieActionType actionType, boolean isTvShow,
+            java.util.List<String> categories, String sourceName, boolean isFavorite, boolean isWatched,
+            long watchProgress, long duration) {
+        this(id, title, originalTitle, description, backgroundUrl, posterUrl, trailerUrl, videoUrl,
+                year, rating, actionType, isTvShow, categories, sourceName, isFavorite, isWatched,
+                watchProgress, duration, null, null);
     }
 
     public Movie(String id, String title, String originalTitle, String description,
@@ -47,7 +66,7 @@ public class Movie {
             String year, String rating, MovieActionType actionType, boolean isTvShow,
             java.util.List<String> categories, String sourceName) {
         this(id, title, originalTitle, description, backgroundUrl, posterUrl, trailerUrl, videoUrl,
-                year, rating, actionType, isTvShow, categories, sourceName, false, false);
+                year, rating, actionType, isTvShow, categories, sourceName, false, false, 0, 0);
     }
 
     public Movie(String id, String title, String originalTitle, String description,
@@ -69,14 +88,16 @@ public class Movie {
     public Movie(String id, String title, String description, String backgroundUrl, String posterUrl,
             String trailerUrl, String year, String rating) {
         this(id, title, title, description, backgroundUrl, posterUrl, trailerUrl, trailerUrl,
-                year, rating, MovieActionType.EXOPLAYER, false, new java.util.ArrayList<>(), "TMDB");
+                year, rating, MovieActionType.EXOPLAYER, false, new java.util.ArrayList<>(), "TMDB",
+                false, false, 0, 0);
     }
 
     // Legacy 10-arg constructor
     public Movie(String id, String title, String description, String backgroundUrl, String posterUrl,
             String trailerUrl, String videoUrl, String year, String rating, MovieActionType actionType) {
         this(id, title, title, description, backgroundUrl, posterUrl, trailerUrl, videoUrl,
-                year, rating, actionType, false, new java.util.ArrayList<>(), "TMDB");
+                year, rating, actionType, false, new java.util.ArrayList<>(), "TMDB",
+                false, false, 0, 0);
     }
 
     public String getId() {
@@ -151,6 +172,22 @@ public class Movie {
 
     public boolean isWatched() {
         return isWatched;
+    }
+
+    public long getWatchProgress() {
+        return watchProgress;
+    }
+
+    public long getDuration() {
+        return duration;
+    }
+
+    public Long getSeasonId() {
+        return seasonId;
+    }
+
+    public Long getEpisodeId() {
+        return episodeId;
     }
 
     @Override

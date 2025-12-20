@@ -3,6 +3,7 @@ package com.omarflex5.ui.details;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.ProgressBar;
 import android.widget.TextView;
 
 import androidx.annotation.NonNull;
@@ -84,6 +85,18 @@ public class DetailsAdapter extends RecyclerView.Adapter<DetailsAdapter.ViewHold
         }
         holder.textInfo.setText(info);
 
+        // Watch Progress Bar
+        if (holder.progressWatch != null) {
+            if (item.getDuration() > 0 && item.getWatchProgress() > 0) {
+                int percent = (int) ((item.getWatchProgress() * 100) / item.getDuration());
+                percent = Math.max(1, Math.min(100, percent));
+                holder.progressWatch.setProgress(percent);
+                holder.progressWatch.setVisibility(View.VISIBLE);
+            } else {
+                holder.progressWatch.setVisibility(View.GONE);
+            }
+        }
+
         // Click listener
         holder.itemView.setOnClickListener(v -> listener.onClick(item));
 
@@ -117,12 +130,14 @@ public class DetailsAdapter extends RecyclerView.Adapter<DetailsAdapter.ViewHold
 
     static class ViewHolder extends RecyclerView.ViewHolder {
         TextView textBadge, textName, textInfo;
+        ProgressBar progressWatch;
 
         ViewHolder(View itemView) {
             super(itemView);
             textBadge = itemView.findViewById(R.id.text_quality_badge);
             textName = itemView.findViewById(R.id.text_server_name);
             textInfo = itemView.findViewById(R.id.text_server_info);
+            progressWatch = itemView.findViewById(R.id.progress_watch);
         }
     }
 }

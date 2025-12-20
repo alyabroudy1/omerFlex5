@@ -210,6 +210,16 @@ public abstract class BaseHtmlParser {
         private String postData; // NEW: Support for POST requests
         private List<String> categories = new ArrayList<>();
 
+        // Transient fields for UI (synced from DB)
+        private long watchProgress;
+        private long duration;
+        private boolean isWatched;
+
+        // Database IDs (for watch history hierarchy)
+        private long mediaId = -1;
+        private Long seasonId;
+        private Long episodeId;
+
         private List<ParsedItem> subItems = new ArrayList<>();
 
         public ProcessStatus getStatus() {
@@ -225,9 +235,33 @@ public abstract class BaseHtmlParser {
             return statusMessage;
         }
 
-        public ParsedItem setStatusMessage(String message) {
-            this.statusMessage = message;
+        public ParsedItem setStatusMessage(String statusMessage) {
+            this.statusMessage = statusMessage;
             return this;
+        }
+
+        public long getMediaId() {
+            return mediaId;
+        }
+
+        public void setMediaId(long mediaId) {
+            this.mediaId = mediaId;
+        }
+
+        public Long getSeasonId() {
+            return seasonId;
+        }
+
+        public void setSeasonId(Long seasonId) {
+            this.seasonId = seasonId;
+        }
+
+        public Long getEpisodeId() {
+            return episodeId;
+        }
+
+        public void setEpisodeId(Long episodeId) {
+            this.episodeId = episodeId;
         }
 
         // Builder pattern
@@ -370,6 +404,33 @@ public abstract class BaseHtmlParser {
 
         public List<ParsedItem> getSubItems() {
             return subItems;
+        }
+
+        public long getWatchProgress() {
+            return watchProgress;
+        }
+
+        public ParsedItem setWatchProgress(long watchProgress) {
+            this.watchProgress = watchProgress;
+            return this;
+        }
+
+        public long getDuration() {
+            return duration;
+        }
+
+        public ParsedItem setDuration(long duration) {
+            this.duration = duration;
+            return this;
+        }
+
+        public boolean isWatched() {
+            return isWatched;
+        }
+
+        public ParsedItem setWatched(boolean watched) {
+            isWatched = watched;
+            return this;
         }
     }
 }

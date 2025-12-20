@@ -14,15 +14,34 @@ public interface UserMediaStateDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     void insertOrUpdate(UserMediaStateEntity state);
 
-    @Query("SELECT * FROM user_media_state WHERE mediaId = :mediaId")
+    // Get Series/Movie State (episodeId IS NULL)
+    @Query("SELECT * FROM user_media_state WHERE mediaId = :mediaId AND episodeId IS NULL")
     LiveData<UserMediaStateEntity> getStateForMedia(long mediaId);
 
-    @Query("SELECT * FROM user_media_state WHERE mediaId = :mediaId")
+    @Query("SELECT * FROM user_media_state WHERE mediaId = :mediaId AND episodeId IS NULL")
     UserMediaStateEntity getStateForMediaSync(long mediaId);
 
-    @Query("SELECT * FROM user_media_state WHERE isFavorite = 1 ORDER BY updatedAt DESC")
+    // Get Specific Episode State
+    @Query("SELECT * FROM user_media_state WHERE episodeId = :episodeId")
+    UserMediaStateEntity getStateForEpisodeSync(long episodeId);
+
+    // Get Specific Season State
+    @Query("SELECT * FROM user_media_state WHERE seasonId = :seasonId AND episodeId IS NULL")
+    UserMediaStateEntity getStateForSeasonSync(long seasonId);
+
+    // Get Last Watched Episode for a Series (for Auto-Focus)
+    @Query("SELECT * FROM user_media_state WHERE mediaId = :mediaId AND episodeId IS NOT NULL ORDER BY lastWatchedAt DESC LIMIT 1")
+    UserMediaStateEntity getLastWatchedEpisodeSync(long mediaId);
+
+    @Query("SELECT * FROM user_media_state WHERE isFavorite = 1 AND episodeId IS NULL ORDER BY updatedAt DESC")
     LiveData<java.util.List<UserMediaStateEntity>> getFavorites();
 
-    @Query("SELECT * FROM user_media_state WHERE watchProgress > 0 ORDER BY lastWatchedAt DESC")
-    LiveData<java.util.List<UserMediaStateEntity>> getContinueWatching();
+    // Count watched episodes in a season
+    @Query("SELECT COUNT(*) FROM user_media_state WHERE seasonId = :seasonId AND episodeId IS NOT NULL AND isWatched = 1")
+    int getWatchedCountForSeasonSync(long seasonId);
+
+    // Count watched episodes in a series
+    @Query("SELECT COUNT(*) FROM user_media_state WHERE mediaId = :mediaId AND episodeId IS NOT NULL AND isWatched = 1")
+    int getWatchedCountForMediaSync(long mediaId);
+
 }
