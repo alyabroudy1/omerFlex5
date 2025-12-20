@@ -147,6 +147,37 @@ public class MyCimaParser extends BaseHtmlParser {
         }
         item.setDescription(stripHtml(desc));
 
+        // Additional Metadata using Jsoup for robustness
+        try {
+            org.jsoup.nodes.Document doc = org.jsoup.Jsoup.parse(html);
+
+            // Rating
+            org.jsoup.nodes.Element rateElem = doc.selectFirst(".rating, .imdb-rating, .rate");
+            if (rateElem != null) {
+                String rStr = rateElem.text().replaceAll("[^0-9.]", "");
+                if (!rStr.isEmpty())
+                    item.setRating(Float.parseFloat(rStr));
+            }
+
+            // Categories
+            org.jsoup.select.Elements catLinks = doc.select(".cats a, a[href*='genre']");
+            for (org.jsoup.nodes.Element cat : catLinks) {
+                item.addCategory(cat.text().trim());
+            }
+
+            // Year (if not already extracted from title)
+            if (item.getYear() == null || item.getYear() == 0) {
+                org.jsoup.nodes.Element yearElem = doc.selectFirst(".year, a[href*='release-year']");
+                if (yearElem != null) {
+                    String yStr = yearElem.text().replaceAll("[^0-9]", "");
+                    if (yStr.length() == 4)
+                        item.setYear(Integer.parseInt(yStr));
+                }
+            }
+        } catch (Exception e) {
+            android.util.Log.e("MyCimaParser", "Error extracting metadata", e);
+        }
+
         // Type detection
         item.setType(detectMediaType(html, title != null ? title : ""));
 

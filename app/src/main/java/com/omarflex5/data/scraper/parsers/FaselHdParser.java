@@ -40,6 +40,17 @@ public class FaselHdParser extends BaseHtmlParser {
                 String img = post.select("img").attr("data-src");
                 if (img.isEmpty())
                     img = post.select("img").attr("src");
+                if (img.isEmpty())
+                    img = post.select("img").attr("data-lazy-src");
+
+                if (img.isEmpty()) {
+                    Element posterDiv = post.selectFirst(".postImg, .poster, .image");
+                    if (posterDiv != null) {
+                        img = posterDiv.select("img").attr("data-src");
+                        if (img.isEmpty())
+                            img = posterDiv.select("img").attr("src");
+                    }
+                }
 
                 if (!href.isEmpty() && !title.isEmpty()) {
                     MediaType type = detectType(href, title);
@@ -60,6 +71,16 @@ public class FaselHdParser extends BaseHtmlParser {
                         }
                     }
 
+                    // Year Badge
+                    Element yearElem = post.selectFirst(".year, .date");
+                    if (yearElem != null) {
+                        String yStr = yearElem.text().replaceAll("[^0-9]", "");
+                        if (yStr.length() == 4)
+                            item.setYear(Integer.parseInt(yStr));
+                    }
+                    if (item.getYear() == null)
+                        item.setYear(extractYear(title));
+
                     items.add(item);
                 }
             }
@@ -75,12 +96,15 @@ public class FaselHdParser extends BaseHtmlParser {
         try {
             Document doc = Jsoup.parse(html);
             String url = getPageUrl();
+            result.setPageUrl(url); // CRITICAL: Preserve URL for DB Sync
 
             // 1. Basic Info
-            Element posterElem = doc.selectFirst(".posterImg img");
-            String poster = posterElem != null
-                    ? (posterElem.hasAttr("data-src") ? posterElem.attr("data-src") : posterElem.attr("src"))
-                    : "";
+            Element posterElem = doc.selectFirst(".posterImg img, .poster img, .image img, img[class*='poster']");
+            String poster = "";
+            if (posterElem != null) {
+                poster = posterElem.hasAttr("data-src") ? posterElem.attr("data-src")
+                        : (posterElem.hasAttr("src") ? posterElem.attr("src") : posterElem.attr("data-lazy-src"));
+            }
 
             String desc = doc.select(".singleDesc p").text();
             if (desc.isEmpty())
@@ -88,6 +112,33 @@ public class FaselHdParser extends BaseHtmlParser {
 
             result.setPosterUrl(poster);
             result.setDescription(desc);
+
+            // Metadata: Rating, Year, Categories
+            try {
+                // Rating (e.g. <span class="rating">8.5</span>)
+                Element rateElem = doc.selectFirst(".rating, .imdb-rating, .rate");
+                if (rateElem != null) {
+                    String rStr = rateElem.text().replaceAll("[^0-9.]", "");
+                    if (!rStr.isEmpty())
+                        result.setRating(Float.parseFloat(rStr));
+                }
+
+                // Year
+                Element yearLink = doc.selectFirst("a[href*='release-year'], .year, .date");
+                if (yearLink != null) {
+                    String yStr = yearLink.text().replaceAll("[^0-9]", "");
+                    if (yStr.length() == 4)
+                        result.setYear(Integer.parseInt(yStr));
+                }
+
+                // Categories
+                Elements catLinks = doc.select(".cat a, .genres a, a[href*='genre']");
+                for (Element cat : catLinks) {
+                    result.addCategory(cat.text().trim());
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error extracting extra metadata", e);
+            }
             // Use Original Title for detection before cleaning?
             // The reference uses 'movie.getTitle()' which might be raw.
             // We'll use doc.title() as broad check.
@@ -198,24 +249,7 @@ public class FaselHdParser extends BaseHtmlParser {
         if (url.startsWith("http"))
             return url;
 
-        String domain = "https://www.faselhds.biz"; // Fallback
-
-        // Try to extract domain from BaseHtmlParser.pageUrl
-        String currentUrl = getPageUrl();
-        if (currentUrl != null && currentUrl.startsWith("http")) {
-            try {
-                java.net.URI uri = new java.net.URI(currentUrl);
-                domain = uri.getScheme() + "://" + uri.getHost();
-            } catch (Exception e) {
-                // Ignore, use fallback
-            }
-        }
-
-        if (url.startsWith("/")) {
-            return domain + url;
-        } else {
-            return domain + "/" + url;
-        }
+        return com.omarflex5.util.UrlHelper.restore(getBaseUrl(), url);
     }
 
     private void parseSeason(Document doc, ParsedItem result) {

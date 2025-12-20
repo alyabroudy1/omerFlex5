@@ -163,7 +163,8 @@ public class WebViewScraperManager {
         }
 
         mainHandler.post(() -> {
-            Log.d(TAG, "Loading URL with CF Bypass: " + url);
+            String resolvedUrl = com.omarflex5.util.UrlHelper.restore(server.getBaseUrl(), url);
+            Log.d(TAG, "Loading URL with CF Bypass: " + resolvedUrl + " (Original: " + url + ")");
 
             // Show Dialog if Activity provided
             if (activity != null && !activity.isFinishing()) {
@@ -229,9 +230,9 @@ public class WebViewScraperManager {
                 CookieManager.getInstance().removeAllCookies(v -> {
                     // Safe to load after clear
                     if (postData != null) {
-                        webView.postUrl(url, postData.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        webView.postUrl(resolvedUrl, postData.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                     } else {
-                        webView.loadUrl(url);
+                        webView.loadUrl(resolvedUrl);
                     }
                 });
             } else {
@@ -240,9 +241,9 @@ public class WebViewScraperManager {
                 // Now Async: Must wait for completion
                 restoreCookiesToWebView(server, () -> {
                     if (postData != null) {
-                        webView.postUrl(url, postData.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                        webView.postUrl(resolvedUrl, postData.getBytes(java.nio.charset.StandardCharsets.UTF_8));
                     } else {
-                        webView.loadUrl(url);
+                        webView.loadUrl(resolvedUrl);
                     }
                 });
             }
@@ -580,12 +581,15 @@ public class WebViewScraperManager {
 
         new Thread(() -> {
             try {
-                // 1. Prepare Direct Request
+                // 1. Resolve URL
+                String resolvedUrl = com.omarflex5.util.UrlHelper.restore(server.getBaseUrl(), url);
+
+                // 2. Prepare Direct Request
                 String ua = com.omarflex5.util.WebConfig.getUserAgent(context);
-                Log.d(TAG, "OkHttp User-Agent: " + ua);
+                Log.d(TAG, "OkHttp User-Agent: " + ua + " | Targeting: " + resolvedUrl);
 
                 okhttp3.Request.Builder builder = new okhttp3.Request.Builder()
-                        .url(url)
+                        .url(resolvedUrl)
                         .header("User-Agent", ua)
                         .header("Accept-Language", "en-US,en;q=0.9,ar;q=0.8");
 

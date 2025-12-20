@@ -71,4 +71,8 @@ public interface MediaSourceDao {
     // Used for "Aggressive Search Sync" to link search results to existing DB items
     @Query("SELECT * FROM media_sources WHERE externalUrl = :url AND serverId = :serverId LIMIT 1")
     MediaSourceEntity findByExternalUrlAndServer(String url, long serverId);
+
+    // Find by Media ID and Server ID
+    @Query("SELECT * FROM media_sources WHERE mediaId = :mediaId AND serverId = :serverId LIMIT 1")
+    MediaSourceEntity findByMediaAndServer(long mediaId, long serverId);
 }

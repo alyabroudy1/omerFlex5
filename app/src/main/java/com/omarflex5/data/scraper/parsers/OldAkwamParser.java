@@ -263,18 +263,6 @@ public class OldAkwamParser extends BaseHtmlParser {
         if (url.startsWith("http"))
             return url;
 
-        // Old Akwam typically shares base with Akwam
-        String domain = "https://akwam.cc";
-        if (getPageUrl() != null && getPageUrl().startsWith("http")) {
-            try {
-                java.net.URL u = new java.net.URL(getPageUrl());
-                domain = u.getProtocol() + "://" + u.getHost();
-            } catch (Exception e) {
-            }
-        }
-
-        if (!url.startsWith("/"))
-            return domain + "/" + url;
-        return domain + url;
+        return com.omarflex5.util.UrlHelper.restore(getBaseUrl(), url);
     }
 }

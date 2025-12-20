@@ -27,6 +27,7 @@ public class HomeViewModel extends AndroidViewModel {
     private final MutableLiveData<List<Movie>> movies = new MutableLiveData<>();
 
     private final MutableLiveData<Movie> selectedMovie = new MutableLiveData<>();
+    private final MutableLiveData<String> selectedCategoryTrigger = new MutableLiveData<>("all");
     private final MutableLiveData<String> trailerUrl = new MutableLiveData<>();
     private final MutableLiveData<String> error = new MutableLiveData<>();
     private final MutableLiveData<UiState> uiState = new MutableLiveData<>(UiState.loading());
@@ -60,11 +61,22 @@ public class HomeViewModel extends AndroidViewModel {
         // Trigger Background Sync
         repository.syncFromGlobal();
 
-        // Limit controller
-        currentPageSize.setValue(30);
+        // Observe Local DB with Pagination using SwitchMap
+        allMedia = androidx.lifecycle.Transformations.switchMap(selectedCategoryTrigger, id -> {
+            Integer pageSize = categoryPageSizes.get(id);
+            if (pageSize == null)
+                pageSize = 30;
 
-        // Observe Local DB with Pagination
-        allMedia = repository.getPagedMedia(currentPageSize);
+            if ("continue".equals(id)) {
+                return repository.getContinueWatching(pageSize);
+            } else if ("all".equals(id)) {
+                return repository.getPagedMedia(currentPageSize);
+            } else if ("arabic".equals(id)) {
+                return repository.getMediaByLanguage("ar", currentPageSize);
+            } else {
+                return repository.getMediaByGenre(id, currentPageSize);
+            }
+        });
 
         // Transform Entity -> Legacy Movie Model for UI
         allMedia.observeForever(mediaItems -> {
@@ -108,25 +120,53 @@ public class HomeViewModel extends AndroidViewModel {
             }
         }
 
+        String yearStr = (entity.getYear() != null && entity.getYear() > 0) ? String.valueOf(entity.getYear()) : "";
+        String ratingStr = (entity.getRating() != null && entity.getRating() > 0)
+                ? String.format("%.1f", entity.getRating())
+                : "";
+
+        String sourceUrl = null;
+        if (entity.getPrimaryServerId() != null) {
+            if (item.sources != null && !item.sources.isEmpty()) {
+                for (com.omarflex5.data.local.entity.MediaSourceEntity source : item.sources) {
+                    if (source.getServerId() == entity.getPrimaryServerId()) {
+                        sourceUrl = source.getExternalUrl();
+                        break;
+                    }
+                }
+                if (sourceUrl == null) {
+                    android.util.Log.d("FLOW", "mapToMovie: No source found for PrimaryServerID: "
+                            + entity.getPrimaryServerId() + " in " + item.sources.size() + " sources.");
+                }
+            } else {
+                android.util.Log.d("FLOW", "mapToMovie: item.sources is EMPTY for MediaID: " + entity.getId());
+            }
+        }
+
         return new Movie(
                 String.valueOf(entity.getId()), // ID
                 entity.getTitle(), // Title (localized Arabic)
                 entity.getOriginalTitle(), // Original Title (English for search)
                 entity.getDescription(), // Desc
-                entity.getBackdropUrl(), // Background
+                entity.getBackdropUrl() != null ? entity.getBackdropUrl() : entity.getPosterUrl(), // Background (Poster
+                                                                                                   // Fallback)
                 entity.getPosterUrl(), // Poster
                 null, // Trailer (fetched on demand)
-                null, // Video URL
-                String.valueOf(entity.getYear()), // Year
-                String.valueOf(entity.getRating()), // Rating
-                com.omarflex5.data.model.MovieActionType.EXOPLAYER,
+                sourceUrl, // Video URL (Now populated to simulate search flow)
+                yearStr, // Year
+                ratingStr, // Rating
+                com.omarflex5.data.model.MovieActionType.DETAILS,
                 entity.getType() == com.omarflex5.data.local.entity.MediaType.SERIES,
                 categories, // Categories (Parsed)
-                "TMDB", // Source
+                item.server != null ? item.server.getLabel() : "TMDB", // Source (Dynamic)
                 isFav, // Favorite
                 isWatched, // Watched
                 progress,
-                duration);
+                duration,
+                item.userState != null ? item.userState.getSeasonId() : null, // seasonId (Inherit from progress)
+                item.userState != null ? item.userState.getEpisodeId() : null, // episodeId (Inherit from progress)
+                entity.getTmdbId(),
+                item.server != null ? item.server.getId() : null);
     }
 
     public LiveData<UiState> getUiState() {
@@ -203,7 +243,7 @@ public class HomeViewModel extends AndroidViewModel {
     public void selectCategory(Category category) {
         selectedGenre = category.getId();
 
-        // Get or initialize page size for this category
+        // Update page size reference for this category if needed
         Integer pageSize = categoryPageSizes.get(selectedGenre);
         if (pageSize == null) {
             pageSize = 30;
@@ -211,32 +251,8 @@ public class HomeViewModel extends AndroidViewModel {
         }
         currentPageSize.setValue(pageSize);
 
-        // Switch data source based on category
-        if ("continue".equals(selectedGenre)) {
-            allMedia = repository.getContinueWatching(pageSize);
-        } else if ("all".equals(selectedGenre)) {
-            allMedia = repository.getPagedMedia(currentPageSize);
-        } else if ("arabic".equals(selectedGenre)) {
-            allMedia = repository.getMediaByLanguage("ar", currentPageSize);
-        } else {
-            allMedia = repository.getMediaByGenre(selectedGenre, currentPageSize);
-        }
-
-        // Re-observe to update UI
-        allMedia.observeForever(mediaItems -> {
-            if (mediaItems != null) {
-                java.util.List<Movie> mappedMovies = new java.util.ArrayList<>();
-                for (com.omarflex5.data.local.model.MediaWithUserState item : mediaItems) {
-                    Movie movie = mapToMovie(item);
-                    if (movie != null)
-                        mappedMovies.add(movie);
-                }
-                movies.setValue(mappedMovies);
-                uiState.setValue(UiState.success());
-            } else {
-                uiState.setValue(UiState.success()); // Empty but successful
-            }
-        });
+        // Trigger the switchMap in constructor
+        selectedCategoryTrigger.setValue(selectedGenre);
     }
 
     // Called by UI

@@ -30,6 +30,14 @@ public class SearchActivity extends com.omarflex5.ui.base.BaseActivity {
     public static final String EXTRA_QUERY = "extra_query";
     public static final String EXTRA_MOVIE_TITLE = "extra_movie_title";
 
+    // Inheritance Extras
+    public static final String EXTRA_DESCRIPTION = "extra_description";
+    public static final String EXTRA_RATING = "extra_rating";
+    public static final String EXTRA_CATEGORIES = "extra_categories";
+    public static final String EXTRA_TRAILER = "extra_trailer";
+    public static final String EXTRA_YEAR = "extra_year";
+    public static final String EXTRA_TMDB_ID = "extra_tmdb_id";
+
     private SearchViewModel viewModel;
     private SearchResultAdapter adapter;
 
@@ -50,17 +58,41 @@ public class SearchActivity extends com.omarflex5.ui.base.BaseActivity {
         setupRecyclerView();
         setupViewModel();
 
-        // Get query from intent
+        // Get query and inheritance extras from intent
         String query = getIntent().getStringExtra(EXTRA_QUERY);
         String movieTitle = getIntent().getStringExtra(EXTRA_MOVIE_TITLE);
+
+        com.omarflex5.data.search.UnifiedSearchService.MetadataContext context = null;
+        if (getIntent().hasExtra(EXTRA_DESCRIPTION)) {
+            context = new com.omarflex5.data.search.UnifiedSearchService.MetadataContext();
+            context.description = getIntent().getStringExtra(EXTRA_DESCRIPTION);
+            context.trailerUrl = getIntent().getStringExtra(EXTRA_TRAILER);
+            context.year = getIntent().getIntExtra(EXTRA_YEAR, 0);
+            if (context.year == 0)
+                context.year = null;
+
+            float rating = getIntent().getFloatExtra(EXTRA_RATING, -1f);
+            if (rating >= 0)
+                context.rating = rating;
+
+            java.util.ArrayList<String> categories = getIntent().getStringArrayListExtra(EXTRA_CATEGORIES);
+            if (categories != null) {
+                context.categories = categories;
+            }
+
+            int tmdbId = getIntent().getIntExtra(EXTRA_TMDB_ID, -1);
+            if (tmdbId != -1) {
+                context.tmdbId = tmdbId;
+            }
+        }
 
         if (movieTitle != null && !movieTitle.isEmpty()) {
             textTitle.setText("البحث عن: " + movieTitle);
         }
 
         if (query != null && !query.isEmpty()) {
-            Log.d(TAG, "Starting search for: " + query);
-            viewModel.search(query);
+            Log.d(TAG, "Starting search for: " + query + (context != null ? " with TMDB context" : ""));
+            viewModel.search(query, context);
         } else {
             textStatus.setText("لا يوجد استعلام بحث");
             textStatus.setVisibility(View.VISIBLE);
@@ -93,7 +125,8 @@ public class SearchActivity extends com.omarflex5.ui.base.BaseActivity {
                     // Default to FILM
                 }
             }
-            DetailsActivity.start(this, result.pageUrl, result.title, result.serverId, null, type);
+            DetailsActivity.start(this, result.pageUrl, result.title, result.serverId, null, type, null, result.mediaId,
+                    null, null);
         });
 
         int spanCount = getResources()

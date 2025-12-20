@@ -45,11 +45,11 @@ public interface MediaDao {
     List<com.omarflex5.data.local.model.MediaWithUserState> getAllMediaWithState();
 
     @androidx.room.Transaction
-    @Query("SELECT * FROM media ORDER BY CASE WHEN releaseDate IS NULL THEN 1 ELSE 0 END, releaseDate DESC, id DESC LIMIT :limit")
+    @Query("SELECT m.* FROM media m ORDER BY CASE WHEN m.releaseDate IS NULL THEN 1 ELSE 0 END, m.releaseDate DESC, m.id DESC LIMIT :limit")
     LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getAllMediaWithStateLiveData(int limit);
 
     @androidx.room.Transaction
-    @Query("SELECT * FROM media ORDER BY CASE WHEN releaseDate IS NULL THEN 1 ELSE 0 END, releaseDate DESC, id DESC")
+    @Query("SELECT m.* FROM media m ORDER BY CASE WHEN m.releaseDate IS NULL THEN 1 ELSE 0 END, m.releaseDate DESC, m.id DESC")
     LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getAllMediaWithStateLiveData();
 
     @Query("SELECT MAX(tmdbId) FROM media")
@@ -81,16 +81,16 @@ public interface MediaDao {
 
     // Genre-based filtering for categories
     @androidx.room.Transaction
-    @Query("SELECT * FROM media WHERE categoriesJson LIKE '%' || :genre || '%' ORDER BY CASE WHEN releaseDate IS NULL THEN 1 ELSE 0 END, releaseDate DESC, id DESC LIMIT :limit")
+    @Query("SELECT m.* FROM media m WHERE m.categoriesJson LIKE '%' || :genre || '%' ORDER BY CASE WHEN m.releaseDate IS NULL THEN 1 ELSE 0 END, m.releaseDate DESC, m.id DESC LIMIT :limit")
     LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getMediaByGenreLiveData(String genre, int limit);
 
     // Language-based filtering for Arabic category
     @androidx.room.Transaction
-    @Query("SELECT * FROM media WHERE originalLanguage = :language ORDER BY CASE WHEN releaseDate IS NULL THEN 1 ELSE 0 END, releaseDate DESC, id DESC LIMIT :limit")
+    @Query("SELECT m.* FROM media m WHERE m.originalLanguage = :language ORDER BY CASE WHEN m.releaseDate IS NULL THEN 1 ELSE 0 END, m.releaseDate DESC, m.id DESC LIMIT :limit")
     LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getMediaByLanguageLiveData(String language,
             int limit);
 
     @androidx.room.Transaction
-    @Query("SELECT * FROM media m INNER JOIN user_media_state u ON m.id = u.mediaId WHERE u.watchProgress > 0 AND u.episodeId IS NULL ORDER BY u.lastWatchedAt DESC LIMIT :limit")
+    @Query("SELECT m.* FROM media m INNER JOIN user_media_state u ON m.id = u.mediaId WHERE u.watchProgress > 0 AND u.episodeId IS NULL ORDER BY u.lastWatchedAt DESC LIMIT :limit")
     LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getContinueWatchingLiveData(int limit);
 }

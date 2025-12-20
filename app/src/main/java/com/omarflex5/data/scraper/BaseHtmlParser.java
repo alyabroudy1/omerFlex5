@@ -35,6 +35,24 @@ public abstract class BaseHtmlParser {
         return pageUrl;
     }
 
+    /**
+     * Extracts the base URL (scheme + host) from the current page URL.
+     */
+    public String getBaseUrl() {
+        if (pageUrl == null || !pageUrl.startsWith("http"))
+            return "";
+        try {
+            java.net.URI uri = new java.net.URI(pageUrl);
+            return uri.getScheme() + "://" + uri.getHost();
+        } catch (Exception e) {
+            // Manual fallback
+            int idx = pageUrl.indexOf("/", 8); // after http:// or https://
+            if (idx != -1)
+                return pageUrl.substring(0, idx);
+            return pageUrl;
+        }
+    }
+
     public void setSourceItem(ParsedItem item) {
         this.sourceItem = item;
     }
@@ -202,12 +220,18 @@ public abstract class BaseHtmlParser {
         private String pageUrl;
         private String description;
         private Integer year;
+        private Float rating;
+        private String backdropUrl;
+        private String originalLanguage;
+        private String releaseDate;
         private MediaType type;
         private Integer seasonNumber;
         private Integer episodeNumber;
         private String quality;
         private String matchKey;
         private String postData; // NEW: Support for POST requests
+        private String trailerUrl;
+        private Integer tmdbId;
         private List<String> categories = new ArrayList<>();
 
         // Transient fields for UI (synced from DB)
@@ -307,6 +331,26 @@ public abstract class BaseHtmlParser {
             return this;
         }
 
+        public ParsedItem setRating(Float rating) {
+            this.rating = rating;
+            return this;
+        }
+
+        public ParsedItem setBackdropUrl(String backdropUrl) {
+            this.backdropUrl = backdropUrl;
+            return this;
+        }
+
+        public ParsedItem setOriginalLanguage(String originalLanguage) {
+            this.originalLanguage = originalLanguage;
+            return this;
+        }
+
+        public ParsedItem setReleaseDate(String releaseDate) {
+            this.releaseDate = releaseDate;
+            return this;
+        }
+
         public ParsedItem setType(MediaType type) {
             this.type = type;
             return this;
@@ -334,6 +378,16 @@ public abstract class BaseHtmlParser {
 
         public ParsedItem setPostData(String postData) {
             this.postData = postData;
+            return this;
+        }
+
+        public ParsedItem setTrailerUrl(String trailerUrl) {
+            this.trailerUrl = trailerUrl;
+            return this;
+        }
+
+        public ParsedItem setTmdbId(Integer tmdbId) {
+            this.tmdbId = tmdbId;
             return this;
         }
 
@@ -378,6 +432,22 @@ public abstract class BaseHtmlParser {
             return year;
         }
 
+        public Float getRating() {
+            return rating;
+        }
+
+        public String getBackdropUrl() {
+            return backdropUrl;
+        }
+
+        public String getOriginalLanguage() {
+            return originalLanguage;
+        }
+
+        public String getReleaseDate() {
+            return releaseDate;
+        }
+
         public MediaType getType() {
             return type;
         }
@@ -400,6 +470,14 @@ public abstract class BaseHtmlParser {
 
         public String getPostData() {
             return postData;
+        }
+
+        public Integer getTmdbId() {
+            return tmdbId;
+        }
+
+        public String getTrailerUrl() {
+            return trailerUrl;
         }
 
         public List<ParsedItem> getSubItems() {

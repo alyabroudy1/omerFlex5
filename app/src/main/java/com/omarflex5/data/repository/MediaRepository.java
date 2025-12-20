@@ -63,6 +63,19 @@ public class MediaRepository {
         return mediaDao.getMediaByTmdbId(tmdbId);
     }
 
+    public void getMediaById(long mediaId, com.omarflex5.data.source.DataSourceCallback<MediaEntity> callback) {
+        executorService.execute(() -> {
+            MediaEntity media = mediaDao.getById(mediaId);
+            new android.os.Handler(android.os.Looper.getMainLooper()).post(() -> {
+                if (media != null) {
+                    callback.onSuccess(media);
+                } else {
+                    callback.onError(new Exception("Media not found"));
+                }
+            });
+        });
+    }
+
     public LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getAllMedia() {
         return mediaDao.getAllMediaWithStateLiveData();
     }
@@ -131,6 +144,15 @@ public class MediaRepository {
         } else {
             return userMediaStateDao.getStateForMediaSync(mediaId);
         }
+    }
+
+    public com.omarflex5.data.local.entity.MediaSourceEntity getSourceForMediaAndServerSync(long mediaId,
+            long serverId) {
+        return mediaSourceDao.findByMediaAndServer(mediaId, serverId);
+    }
+
+    public void updateMedia(MediaEntity media) {
+        new Thread(() -> mediaDao.update(media)).start();
     }
 
     /**
@@ -262,9 +284,22 @@ public class MediaRepository {
             // Let's implement the fetch using a helper or assume a callback from UI?
             // No, Repos should handle data.
 
-            if (localMedia == null || localMedia.getTmdbId() == null) {
+            if (localMedia == null) {
                 new android.os.Handler(android.os.Looper.getMainLooper())
-                        .post(() -> callback.onError(new Exception("Invalid Media")));
+                        .post(() -> callback.onError(new Exception("Media not found")));
+                return;
+            }
+
+            if (localMedia.getTmdbId() == null) {
+                // If it was previously inherited but not saved correctly yet, it might still
+                // have trailerUrl
+                if (localMedia.getTrailerUrl() != null && !localMedia.getTrailerUrl().isEmpty()) {
+                    new android.os.Handler(android.os.Looper.getMainLooper())
+                            .post(() -> callback.onSuccess(localMedia.getTrailerUrl()));
+                    return;
+                }
+                new android.os.Handler(android.os.Looper.getMainLooper())
+                        .post(() -> callback.onSuccess(null)); // SILENT FAIL
                 return;
             }
 
@@ -382,6 +417,9 @@ public class MediaRepository {
                     // Set season percentage
                     if (totalEpInSeason > 0) {
                         long percent = (watchedEpInSeason * 100L) / totalEpInSeason;
+                        // Hack: Ensure at least 1% if any episode is in progress/watched
+                        if (percent == 0)
+                            percent = 1;
                         seasonState.setWatchProgress(percent);
                         seasonState.setDuration(100);
                     }
@@ -402,6 +440,9 @@ public class MediaRepository {
                     // Set series percentage
                     if (totalEpInSeries > 0) {
                         long percent = (watchedEpInSeries * 100L) / totalEpInSeries;
+                        // Hack: Ensure at least 1% if any episode is in progress/watched
+                        if (percent == 0)
+                            percent = 1;
                         seriesState.setWatchProgress(percent);
                         seriesState.setDuration(100);
                     }
@@ -445,18 +486,34 @@ public class MediaRepository {
                 String fullUrl = item.getPageUrl();
                 String normalizedUrl = com.omarflex5.util.UrlHelper.normalize(fullUrl);
 
+                if (normalizedUrl == null || normalizedUrl.isEmpty()) {
+                    android.util.Log.e("SYNC", "Skipping source for " + item.getTitle() + " - Empty URL");
+                    continue;
+                }
+
                 // 1. Check DB for this source
                 com.omarflex5.data.local.entity.MediaSourceEntity existingSource = mediaSourceDao
                         .findByExternalUrlAndServer(normalizedUrl, serverId);
 
                 if (existingSource != null) {
                     // Match found! Get watch history.
-                    // Note: existingSource could link to season/episode/media.
-                    // If it links to Media (Series/Film), we get general state.
-
                     Long mediaId = existingSource.getMediaId();
 
                     if (mediaId != null) {
+                        item.setMediaId(mediaId);
+
+                        // ENRICH: If record exists, update it with CURRENT scraper metadata (Overwrites
+                        // TMDB if any)
+                        MediaEntity existingMedia = mediaDao.getById(mediaId);
+                        if (existingMedia != null) {
+                            // Always update primaryServerId to latest interaction
+                            existingMedia.setPrimaryServerId(serverId);
+
+                            if (enrichMediaFromItem(existingMedia, item)) {
+                                mediaDao.update(existingMedia);
+                            }
+                        }
+
                         UserMediaStateEntity state = userMediaStateDao.getStateForMediaSync(mediaId);
                         if (state != null) {
                             item.setWatched(state.isWatched());
@@ -464,8 +521,6 @@ public class MediaRepository {
                             item.setDuration(state.getDuration());
                         }
                     }
-                    // TODO: Handle if it matches an Episode directly (rare in search results,
-                    // usually series-level search)
 
                 } else {
                     // Not found -> Aggressive Save
@@ -479,8 +534,11 @@ public class MediaRepository {
                     newMedia.setCreatedAt(System.currentTimeMillis());
                     newMedia.setUpdatedAt(System.currentTimeMillis());
                     newMedia.setCategoriesJson(new org.json.JSONArray(item.getCategories()).toString());
+                    newMedia.setPrimaryServerId(serverId); // Set original source server
+                    enrichMediaFromItem(newMedia, item); // Set description, rating, etc.
 
                     long mediaId = mediaDao.insert(newMedia);
+                    item.setMediaId(mediaId);
 
                     // Create MediaSourceEntity
                     com.omarflex5.data.local.entity.MediaSourceEntity newSource = new com.omarflex5.data.local.entity.MediaSourceEntity();
@@ -497,5 +555,84 @@ public class MediaRepository {
                 e.printStackTrace();
             }
         }
+    }
+
+    /**
+     * Helper to populate MediaEntity from ParsedItem metadata if missing.
+     * Returns true if any field was changed.
+     */
+    private boolean enrichMediaFromItem(MediaEntity entity, com.omarflex5.data.scraper.BaseHtmlParser.ParsedItem item) {
+        boolean changed = false;
+
+        if (item.getTitle() != null && !item.getTitle().isEmpty()) {
+            if (!item.getTitle().equals(entity.getTitle())) {
+                entity.setTitle(item.getTitle());
+                changed = true;
+            }
+        }
+
+        if (item.getPosterUrl() != null && !item.getPosterUrl().isEmpty()) {
+            if (!item.getPosterUrl().equals(entity.getPosterUrl())) {
+                entity.setPosterUrl(item.getPosterUrl());
+                changed = true;
+            }
+        }
+
+        if (item.getDescription() != null && !item.getDescription().isEmpty()) {
+            if (entity.getDescription() == null || entity.getDescription().length() < item.getDescription().length()) {
+                entity.setDescription(item.getDescription());
+                changed = true;
+            }
+        }
+
+        if (entity.getRating() == null || entity.getRating() == 0) {
+            if (item.getRating() != null && item.getRating() > 0) {
+                entity.setRating(item.getRating());
+                changed = true;
+            }
+        }
+
+        if (entity.getYear() == null || entity.getYear() == 0) {
+            if (item.getYear() != null && item.getYear() > 0) {
+                entity.setYear(item.getYear());
+                changed = true;
+            }
+        }
+
+        if (entity.getBackdropUrl() == null || entity.getBackdropUrl().isEmpty()) {
+            if (item.getBackdropUrl() != null && !item.getBackdropUrl().isEmpty()) {
+                entity.setBackdropUrl(item.getBackdropUrl());
+                changed = true;
+            }
+        }
+
+        if (item.getCategories() != null && !item.getCategories().isEmpty()) {
+            String newCats = new org.json.JSONArray(item.getCategories()).toString();
+            // Prefer existing JSON if it's already complex, but overwrite if new one is
+            // from
+            // TMDB context (which we check via length for now)
+            if (entity.getCategoriesJson() == null || entity.getCategoriesJson().length() < newCats.length()) {
+                entity.setCategoriesJson(newCats);
+                changed = true;
+            }
+        }
+
+        if (item.getTrailerUrl() != null && !item.getTrailerUrl().isEmpty()) {
+            if (entity.getTrailerUrl() == null || entity.getTrailerUrl().isEmpty()) {
+                entity.setTrailerUrl(item.getTrailerUrl());
+                changed = true;
+            }
+        }
+
+        if (item.getTmdbId() != null && (entity.getTmdbId() == null || entity.getTmdbId() == 0)) {
+            entity.setTmdbId(item.getTmdbId());
+            changed = true;
+        }
+
+        if (changed) {
+            entity.setUpdatedAt(System.currentTimeMillis());
+        }
+
+        return changed;
     }
 }

@@ -73,6 +73,12 @@ public class AkwamParser extends BaseHtmlParser {
                             .setType(type);
 
                     item.setYear(extractYear(title));
+
+                    // Akwam Categories in Search (typically inside .box or siblings)
+                    Elements genres = link.select(".genres a, .categories a");
+                    for (Element genre : genres) {
+                        item.addCategory(genre.text().trim());
+                    }
                     items.add(item);
                 }
             }
@@ -89,6 +95,7 @@ public class AkwamParser extends BaseHtmlParser {
         try {
             Document doc = Jsoup.parse(html);
             String url = getPageUrl();
+            result.setPageUrl(url); // CRITICAL: Preserve URL for DB Sync
 
             // 1. Basic Info - From AkwamServer.java logic
             // Attempt to find poster/background
@@ -136,6 +143,33 @@ public class AkwamParser extends BaseHtmlParser {
             result.setDescription(desc);
             result.setTitle(cleanTitle(rawTitle));
             result.setOriginalTitle(rawTitle);
+
+            // Metadata: Rating, Year, Categories
+            try {
+                // Rating
+                Element rateElem = doc.selectFirst(".rating, .imdb-rating, .rate");
+                if (rateElem != null) {
+                    String rStr = rateElem.text().replaceAll("[^0-9.]", "");
+                    if (!rStr.isEmpty())
+                        result.setRating(Float.parseFloat(rStr));
+                }
+
+                // Year
+                Element yearElem = doc.selectFirst(".release-year, .year, a[href*='year']");
+                if (yearElem != null) {
+                    String yStr = yearElem.text().replaceAll("[^0-9]", "");
+                    if (yStr.length() == 4)
+                        result.setYear(Integer.parseInt(yStr));
+                }
+
+                // Categories
+                Elements catLinks = doc.select(".genres a, .categories a, a[href*='genre']");
+                for (Element cat : catLinks) {
+                    result.addCategory(cat.text().trim());
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error extracting extra metadata", e);
+            }
 
             // DETECT TYPE
             MediaType type = detectMediaType(url, rawTitle);
@@ -316,20 +350,7 @@ public class AkwamParser extends BaseHtmlParser {
         if (url.startsWith("http"))
             return url;
 
-        String domain = "https://akwam.cc"; // Default base
-        if (getPageUrl() != null && getPageUrl().startsWith("http")) {
-            try {
-                java.net.URI uri = new java.net.URI(getPageUrl());
-                domain = uri.getScheme() + "://" + uri.getHost();
-            } catch (Exception e) {
-            }
-        }
-
-        if (url.startsWith("/")) {
-            return domain + url;
-        } else {
-            return domain + "/" + url;
-        }
+        return com.omarflex5.util.UrlHelper.restore(getBaseUrl(), url);
     }
 
     private MediaType detectType(String url, String title) {

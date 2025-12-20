@@ -10,7 +10,7 @@ import com.omarflex5.data.local.AppDatabase;
 import com.omarflex5.data.local.dao.MediaSourceDao;
 import com.omarflex5.data.local.entity.MediaSourceEntity;
 import com.omarflex5.data.local.entity.ServerEntity;
-import com.omarflex5.data.repository.MediaLocalRepository;
+import com.omarflex5.data.repository.MediaRepository;
 import com.omarflex5.data.repository.ServerRepository;
 import com.omarflex5.data.scraper.BaseHtmlParser;
 import com.omarflex5.data.scraper.ParserFactory;
@@ -46,7 +46,7 @@ public class UnifiedSearchService {
 
     private final Context context;
     private final ServerRepository serverRepository;
-    private final MediaLocalRepository mediaRepository;
+    private final MediaRepository mediaRepository;
     private final MediaSourceDao mediaSourceDao;
     private final WebViewScraperManager scraperManager;
     private final ExecutorService executor;
@@ -54,6 +54,7 @@ public class UnifiedSearchService {
     // Search state
     private final MutableLiveData<SearchState> searchState = new MutableLiveData<>(SearchState.idle());
     private String currentQuery = null;
+    private MetadataContext currentContext = null;
 
     // Track tasks that failed Direct Search due to Cloudflare
     private final List<SearchTask> lastFailedTasks = new ArrayList<>();
@@ -71,7 +72,7 @@ public class UnifiedSearchService {
     private UnifiedSearchService(Context context) {
         this.context = context.getApplicationContext();
         this.serverRepository = ServerRepository.getInstance(context);
-        this.mediaRepository = MediaLocalRepository.getInstance(context);
+        this.mediaRepository = MediaRepository.getInstance(context);
         this.mediaSourceDao = AppDatabase.getInstance(context).mediaSourceDao();
         this.scraperManager = WebViewScraperManager.getInstance(context);
         this.executor = Executors.newFixedThreadPool(4);
@@ -112,16 +113,21 @@ public class UnifiedSearchService {
      * 3. If Fast Mode yields 0 results, Auto-Trigger Queue for failed servers.
      */
     public void search(String query) {
+        search(query, null);
+    }
+
+    public void search(String query, MetadataContext context) {
         if (query == null || query.trim().isEmpty()) {
             searchState.postValue(SearchState.idle());
             return;
         }
 
         currentQuery = query.trim();
+        currentContext = context;
         searchState.postValue(SearchState.loading(currentQuery));
         lastFailedTasks.clear(); // Clear previous session failures
 
-        Log.d(TAG, "Starting search: " + currentQuery);
+        Log.d(TAG, "Starting search: " + currentQuery + (context != null ? " with context" : ""));
 
         executor.execute(() -> {
             try {
@@ -157,7 +163,7 @@ public class UnifiedSearchService {
                                     + " servers.");
 
                     // Execute Fast Search (Strict Mode: allowFallback=false)
-                    List<SearchResult> allResults = searchFastTasks(allTasks);
+                    List<SearchResult> allResults = searchFastTasks(allTasks, context);
 
                     // Deduplicate results
                     List<SearchResult> deduped = deduplicateResults(allResults);
@@ -174,7 +180,7 @@ public class UnifiedSearchService {
                         }
 
                         // Auto-queue logic
-                        processNextQueuedTask(toQueue, 0, deduped, new ArrayList<>());
+                        processNextQueuedTask(toQueue, 0, deduped, new ArrayList<>(), context);
 
                     } else if (!lastFailedTasks.isEmpty()) {
                         // We have results, but some tasks failed. Allow "Load More".
@@ -198,7 +204,7 @@ public class UnifiedSearchService {
     /**
      * Search fast servers in parallel.
      */
-    private List<SearchResult> searchFastTasks(List<SearchTask> tasks) {
+    private List<SearchResult> searchFastTasks(List<SearchTask> tasks, MetadataContext context) {
         List<SearchResult> allResults = new ArrayList<>();
         CountDownLatch latch = new CountDownLatch(tasks.size());
         Object lock = new Object();
@@ -207,7 +213,7 @@ public class UnifiedSearchService {
             executor.execute(() -> {
                 try {
                     // Try to search FAST (allowFallback = false)
-                    List<SearchResult> results = searchSingleTask(task, false);
+                    List<SearchResult> results = searchSingleTask(task, false, context);
                     synchronized (lock) {
                         allResults.addAll(results);
                     }
@@ -231,14 +237,14 @@ public class UnifiedSearchService {
     /**
      * Search a single server using WebView scraper.
      */
-    private List<SearchResult> searchSingleTask(SearchTask task, boolean allowFallback) {
+    private List<SearchResult> searchSingleTask(SearchTask task, boolean allowFallback, MetadataContext context) {
         List<SearchResult> results = new ArrayList<>();
         CountDownLatch latch = new CountDownLatch(1);
 
         scraperManager.search(task.server, task.url, allowFallback, null, new WebViewScraperManager.ScraperCallback() {
             @Override
             public void onSuccess(String html, Map<String, String> cookies) {
-                results.addAll(parseResults(task.server, html));
+                results.addAll(parseResults(task.server, html, context));
                 serverRepository.recordSuccess(task.server);
                 latch.countDown();
             }
@@ -288,7 +294,7 @@ public class UnifiedSearchService {
 
         if (!toProcess.isEmpty()) {
             Log.d(TAG, "Processing cached failed tasks: " + toProcess.size());
-            processNextQueuedTask(toProcess, 0, baseResults, new ArrayList<>());
+            processNextQueuedTask(toProcess, 0, baseResults, new ArrayList<>(), currentContext);
         } else {
             // Fallback (edge case)
             serverRepository.getSearchableServers(servers -> {
@@ -304,14 +310,14 @@ public class UnifiedSearchService {
                 if (fallbackQueue.isEmpty()) {
                     searchState.postValue(SearchState.complete(currentQuery, baseResults));
                 } else {
-                    processNextQueuedTask(fallbackQueue, 0, baseResults, new ArrayList<>());
+                    processNextQueuedTask(fallbackQueue, 0, baseResults, new ArrayList<>(), currentContext);
                 }
             });
         }
     }
 
     private void processNextQueuedTask(List<SearchTask> tasks, int index,
-            List<SearchResult> baseResults, List<SearchResult> accumulated) {
+            List<SearchResult> baseResults, List<SearchResult> accumulated, MetadataContext context) {
 
         if (index >= tasks.size()) {
             // All done - merge final results
@@ -329,7 +335,7 @@ public class UnifiedSearchService {
         scraperManager.search(task.server, task.url, true, null, new WebViewScraperManager.ScraperCallback() {
             @Override
             public void onSuccess(String html, Map<String, String> cookies) {
-                List<SearchResult> results = parseResults(task.server, html);
+                List<SearchResult> results = parseResults(task.server, html, context);
                 accumulated.addAll(results);
 
                 // Update progress (approximate by unique servers or just tasks)
@@ -343,14 +349,14 @@ public class UnifiedSearchService {
                         deduplicateResults(currentDisplay), remaining));
 
                 // Process next
-                processNextQueuedTask(tasks, index + 1, baseResults, accumulated);
+                processNextQueuedTask(tasks, index + 1, baseResults, accumulated, context);
             }
 
             @Override
             public void onError(String message) {
                 Log.e(TAG, "Queued task failed (" + task.url + "): " + message);
                 // Continue with next task
-                processNextQueuedTask(tasks, index + 1, baseResults, accumulated);
+                processNextQueuedTask(tasks, index + 1, baseResults, accumulated, context);
             }
         });
     }
@@ -358,12 +364,33 @@ public class UnifiedSearchService {
     /**
      * Parse HTML results from a server.
      */
-    private List<SearchResult> parseResults(ServerEntity server, String html) {
+    private List<SearchResult> parseResults(ServerEntity server, String html, MetadataContext context) {
         List<SearchResult> results = new ArrayList<>();
 
         try {
             BaseHtmlParser parser = ParserFactory.getParser(server.getName(), html, server.getBaseUrl());
             List<BaseHtmlParser.ParsedItem> items = parser.parseSearchResults();
+
+            // Enrich items with context if available
+            if (context != null) {
+                for (BaseHtmlParser.ParsedItem item : items) {
+                    if (context.description != null)
+                        item.setDescription(context.description);
+                    if (context.rating != null)
+                        item.setRating(context.rating);
+                    if (context.year != null)
+                        item.setYear(context.year);
+                    if (context.trailerUrl != null)
+                        item.setTrailerUrl(context.trailerUrl);
+                    if (context.categories != null && !context.categories.isEmpty())
+                        item.setCategories(context.categories);
+                    if (context.tmdbId != null)
+                        item.setTmdbId(context.tmdbId);
+                }
+            }
+
+            // AGGRESSIVE SYNC: Save all items to DB immediately and link to watch progress
+            mediaRepository.syncSearchResults(items, server.getId());
 
             for (BaseHtmlParser.ParsedItem item : items) {
                 SearchResult result = new SearchResult();
@@ -377,6 +404,7 @@ public class UnifiedSearchService {
                 result.serverName = server.getName();
                 result.serverLabel = server.getLabel();
                 result.categories = item.getCategories();
+                result.mediaId = item.getMediaId(); // Propagate Media ID
                 results.add(result);
             }
 
@@ -501,6 +529,7 @@ public class UnifiedSearchService {
         public String serverLabel;
         public List<String> categories;
         public List<SourceInfo> alternativeSources;
+        public long mediaId = -1;
     }
 
     public static class SourceInfo {
@@ -515,5 +544,14 @@ public class UnifiedSearchService {
             this.serverLabel = serverLabel;
             this.pageUrl = pageUrl;
         }
+    }
+
+    public static class MetadataContext {
+        public String description;
+        public Float rating;
+        public Integer year;
+        public String trailerUrl;
+        public List<String> categories;
+        public Integer tmdbId;
     }
 }

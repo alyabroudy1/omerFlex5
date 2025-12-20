@@ -12,4 +12,10 @@ public class MediaWithUserState {
 
     @Relation(parentColumn = "id", entityColumn = "mediaId")
     public UserMediaStateEntity userState;
+
+    @Relation(parentColumn = "primaryServerId", entityColumn = "id")
+    public com.omarflex5.data.local.entity.ServerEntity server;
+
+    @Relation(parentColumn = "id", entityColumn = "mediaId")
+    public java.util.List<com.omarflex5.data.local.entity.MediaSourceEntity> sources;
 }

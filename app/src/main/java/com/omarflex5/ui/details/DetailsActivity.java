@@ -3,6 +3,7 @@ package com.omarflex5.ui.details;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
+import android.util.Log;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
@@ -16,6 +17,7 @@ import androidx.recyclerview.widget.RecyclerView;
 
 import com.omarflex5.R;
 import com.omarflex5.data.local.entity.MediaType;
+import com.omarflex5.data.local.entity.MediaEntity;
 import com.omarflex5.data.local.entity.ServerEntity;
 import com.omarflex5.data.repository.MediaRepository;
 import com.omarflex5.data.repository.ServerRepository;
@@ -135,6 +137,13 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
             breadcrumb = title;
         }
 
+        Log.d("FLOW", "DetailsActivity Started:");
+        Log.d("FLOW", "  - URL: " + url);
+        Log.d("FLOW", "  - Title: " + title);
+        Log.d("FLOW", "  - Server ID: " + serverId);
+        Log.d("FLOW", "  - Media ID: " + mediaId);
+        Log.d("FLOW", "  - Type: " + mediaType);
+
         scraperManager = WebViewScraperManager.getInstance(this);
         serverRepository = ServerRepository.getInstance(this);
         mediaRepository = MediaRepository.getInstance(this);
@@ -144,9 +153,87 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
 
         if (serverId != -1) {
             loadServerAndContent();
+        } else if (mediaId != -1) {
+            // Resolve serverId from local DB
+            resolveServerFromMedia();
         } else {
-            showError("Missing Server ID");
+            showError("Missing Server ID or Media ID");
         }
+    }
+
+    private void resolveServerFromMedia() {
+        showLoading();
+        mediaRepository.getMediaById(mediaId, new com.omarflex5.data.source.DataSourceCallback<MediaEntity>() {
+            @Override
+            public void onSuccess(MediaEntity media) {
+                if (media != null) {
+                    if (media.getPrimaryServerId() != null && media.getPrimaryServerId() != -1) {
+                        serverId = media.getPrimaryServerId();
+                        proceedWithResolution();
+                    } else {
+                        // Fallback: Check media_sources for ANY server
+                        new Thread(() -> {
+                            com.omarflex5.data.local.entity.MediaSourceEntity anySource = com.omarflex5.data.local.AppDatabase
+                                    .getInstance(DetailsActivity.this)
+                                    .mediaSourceDao()
+                                    .getByMediaId(mediaId).stream().findFirst().orElse(null);
+
+                            runOnUiThread(() -> {
+                                if (anySource != null) {
+                                    serverId = anySource.getServerId();
+                                    // Also update media entity so we don't have to do this again
+                                    new Thread(() -> {
+                                        media.setPrimaryServerId(serverId);
+                                        mediaRepository.updateMedia(media);
+                                    }).start();
+                                    proceedWithResolution();
+                                } else {
+                                    showError("Cannot resolve server for this item");
+                                }
+                            });
+                        }).start();
+                    }
+                } else {
+                    runOnUiThread(() -> showError("Media not found in local database"));
+                }
+            }
+
+            @Override
+            public void onError(Throwable t) {
+                runOnUiThread(() -> showError("Cannot resolve server: " + t.getMessage()));
+            }
+        });
+    }
+
+    private void proceedWithResolution() {
+        if (url == null || url.isEmpty()) {
+            // Try to restore URL from MediaSource if available
+            restoreUrlAndLoad();
+        } else {
+            loadServerAndContent();
+        }
+    }
+
+    private void restoreUrlAndLoad() {
+        // Find most relevant source for this server
+        new Thread(() -> {
+            com.omarflex5.data.local.entity.MediaSourceEntity source = com.omarflex5.data.local.AppDatabase
+                    .getInstance(this)
+                    .mediaSourceDao()
+                    .findByMediaAndServer(mediaId, serverId);
+
+            runOnUiThread(() -> {
+                if (source != null) {
+                    this.url = source.getExternalUrl();
+                    android.util.Log.d("DetailsActivity", "Restored URL: " + this.url + " for Server: " + serverId);
+                    loadServerAndContent();
+                } else {
+                    android.util.Log.w("DetailsActivity",
+                            "Source NOT found for Media: " + mediaId + " Server: " + serverId);
+                    showError("Source URL not found");
+                }
+            });
+        }).start();
     }
 
     private void initViews() {
@@ -177,8 +264,29 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
         serverRepository.getServerById(serverId, server -> {
             if (server != null) {
                 currentServer = server;
-                loadContent();
+                Log.d("FLOW", "Server Resolved: " + server.getName() + " BASE: " + server.getBaseUrl());
+
+                if (url == null || url.isEmpty()) {
+                    Log.d("FLOW", "URL missing in Intent. Attempting DB resolution for MediaID: " + mediaId);
+                    new Thread(() -> {
+                        com.omarflex5.data.local.entity.MediaSourceEntity source = mediaRepository
+                                .getSourceForMediaAndServerSync(mediaId, serverId);
+                        if (source != null && source.getExternalUrl() != null && !source.getExternalUrl().isEmpty()) {
+                            url = com.omarflex5.util.UrlHelper.restore(currentServer.getBaseUrl(),
+                                    source.getExternalUrl());
+                            Log.d("FLOW", "DB Resolution Success. Absolute URL: " + url);
+                            runOnUiThread(this::loadContent);
+                        } else {
+                            Log.e("FLOW", "DB Resolution Failed: Source missing or empty URL for Media=" + mediaId
+                                    + " Server=" + serverId);
+                            runOnUiThread(() -> showError("Source URL not found"));
+                        }
+                    }).start();
+                } else {
+                    loadContent();
+                }
             } else {
+                Log.e("FLOW", "CRITICAL: Could not resolve server with ID: " + serverId);
                 runOnUiThread(() -> showError("Server not found"));
             }
         });
@@ -219,7 +327,29 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
             sourceItem.setEpisodeId(episodeId);
             parser.setSourceItem(sourceItem);
 
+            Log.d("FLOW", "Starting Parser Flow:");
+            Log.d("FLOW", "  - Parser: " + parser.getClass().getSimpleName());
+            Log.d("FLOW", "  - HTML Length: " + (html != null ? html.length() : 0));
+            Log.d("FLOW", "  - SourceItem Context: ID=" + mediaId + " TYPE=" + mediaType);
+
             BaseHtmlParser.ParsedItem result = parser.parseDetailPage();
+
+            Log.d("FLOW", "Parser Returned Result:");
+            Log.d("FLOW", "  - Status: " + result.getStatus());
+            Log.d("FLOW", "  - StatusMessage: " + result.getStatusMessage());
+            Log.d("FLOW", "  - SubItems Count: " + (result.getSubItems() != null ? result.getSubItems().size() : 0));
+
+            // --- Aggressive Sync for Main Item ---
+            // If we came from search (mediaId == -1), ensure this item exists in Local DB
+            if (mediaId == -1) {
+                java.util.List<BaseHtmlParser.ParsedItem> syncList = new java.util.ArrayList<>();
+                syncList.add(result);
+                mediaRepository.syncSearchResults(syncList, serverId);
+                mediaId = result.getMediaId(); // Update local ID
+
+                // Update Intent so sub-activities/rotations get the right ID
+                getIntent().putExtra(EXTRA_MEDIA_ID, mediaId);
+            }
 
             List<BaseHtmlParser.ParsedItem> subItems = result.getSubItems();
             if (subItems != null && !subItems.isEmpty()) {

@@ -23,12 +23,14 @@ public class Movie {
     private final long duration;
     private final Long seasonId;
     private final Long episodeId;
+    private final Integer tmdbId;
+    private final Long serverId;
 
     public Movie(String id, String title, String originalTitle, String description,
             String backgroundUrl, String posterUrl, String trailerUrl, String videoUrl,
             String year, String rating, MovieActionType actionType, boolean isTvShow,
             java.util.List<String> categories, String sourceName, boolean isFavorite, boolean isWatched,
-            long watchProgress, long duration, Long seasonId, Long episodeId) {
+            long watchProgress, long duration, Long seasonId, Long episodeId, Integer tmdbId, Long serverId) {
         this.id = id;
         this.title = title;
         this.originalTitle = originalTitle != null ? originalTitle : title;
@@ -49,6 +51,8 @@ public class Movie {
         this.duration = duration;
         this.seasonId = seasonId;
         this.episodeId = episodeId;
+        this.tmdbId = tmdbId;
+        this.serverId = serverId;
     }
 
     public Movie(String id, String title, String originalTitle, String description,
@@ -58,7 +62,7 @@ public class Movie {
             long watchProgress, long duration) {
         this(id, title, originalTitle, description, backgroundUrl, posterUrl, trailerUrl, videoUrl,
                 year, rating, actionType, isTvShow, categories, sourceName, isFavorite, isWatched,
-                watchProgress, duration, null, null);
+                watchProgress, duration, null, null, null, null);
     }
 
     public Movie(String id, String title, String originalTitle, String description,
@@ -188,6 +192,14 @@ public class Movie {
 
     public Long getEpisodeId() {
         return episodeId;
+    }
+
+    public Integer getTmdbId() {
+        return tmdbId;
+    }
+
+    public Long getServerId() {
+        return serverId;
     }
 
     @Override

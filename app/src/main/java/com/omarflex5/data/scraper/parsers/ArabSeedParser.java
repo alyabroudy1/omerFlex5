@@ -55,18 +55,29 @@ public class ArabSeedParser extends BaseHtmlParser {
 
             for (Element li : lis) {
                 try {
+                    List<String> itemCategories = new ArrayList<>();
                     Element linkElem = li.getElementsByAttribute("href").first();
                     if (linkElem == null)
                         continue;
 
                     String url = linkElem.attr("href");
 
-                    Element imgElem = li.getElementsByAttribute("data-src").first();
-                    if (imgElem == null)
-                        continue;
+                    Element imgElem = li.selectFirst("img");
+                    String posterUrl = "";
+                    String movieTitle = "";
 
-                    String poster = imgElem.attr("data-src");
-                    String title = imgElem.attr("alt");
+                    if (imgElem != null) {
+                        posterUrl = imgElem.hasAttr("data-src") ? imgElem.attr("data-src")
+                                : (imgElem.hasAttr("src") ? imgElem.attr("src") : imgElem.attr("data-lazy-src"));
+                        movieTitle = imgElem.attr("alt");
+                    }
+
+                    if (movieTitle == null || movieTitle.isEmpty()) {
+                        movieTitle = li.select(".Title, .h1, .post-title").text();
+                    }
+
+                    if (movieTitle == null || movieTitle.isEmpty())
+                        continue; // Still need a title
 
                     // Category detection for Type
                     boolean isSeries = false;
@@ -84,6 +95,9 @@ public class ArabSeedParser extends BaseHtmlParser {
                         }
                         if (catText.contains("مسلسل"))
                             isSeries = true;
+
+                        // Add to item categories
+                        itemCategories.add(catText);
                     }
 
                     // Detection First
@@ -92,24 +106,37 @@ public class ArabSeedParser extends BaseHtmlParser {
                     boolean hasSeriesKeywords = lowerUrl.contains("/series") || lowerUrl.contains("/selary/")
                             || lowerUrl.contains("%d9%85%d8%b3%d9%84%d8%b3%d9%84");
 
-                    if (isSeriesSearch || isSeries || hasSeriesKeywords || title.contains("مسلسل")) {
+                    if (isSeriesSearch || isSeries || hasSeriesKeywords || movieTitle.contains("مسلسل")) {
                         type = MediaType.SERIES;
                     } else if (isMovieSearch) {
                         type = MediaType.FILM;
-                    } else if (lowerUrl.contains("/episode") || title.contains("حلقة")) {
+                    } else if (lowerUrl.contains("/episode") || movieTitle.contains("حلقة")) {
                         type = MediaType.EPISODE;
                     }
 
                     // Display Logic Afterwards
-                    title = title.replace("مسلسل", "").trim();
+                    movieTitle = movieTitle.replace("مسلسل", "").trim();
 
                     ParsedItem item = new ParsedItem();
-                    item.setTitle(cleanTitle(title));
-                    item.setOriginalTitle(title);
+                    item.setTitle(cleanTitle(movieTitle));
+                    item.setOriginalTitle(movieTitle);
                     item.setPageUrl(url);
-                    item.setPosterUrl(poster);
+                    item.setPosterUrl(posterUrl);
                     item.setType(type);
-                    item.setYear(extractYear(title));
+                    item.setYear(extractYear(movieTitle));
+                    item.setCategories(itemCategories); // Add categories
+
+                    // Extract rating if present (e.g. <span class="imdb">8.5</span>)
+                    Element ratingElem = li.selectFirst(".imdb, .rating, .Quality");
+                    if (ratingElem != null) {
+                        String rText = ratingElem.text().replaceAll("[^0-9.]", "");
+                        if (!rText.isEmpty()) {
+                            try {
+                                item.setRating(Float.parseFloat(rText));
+                            } catch (Exception ignored) {
+                            }
+                        }
+                    }
 
                     results.add(item);
 
@@ -193,12 +220,28 @@ public class ArabSeedParser extends BaseHtmlParser {
             Document doc = Jsoup.parse(html);
             result.setPageUrl(getPageUrl());
 
+            Log.d("FLOW", "ArabSeedParser.parseDetailPage TRACE:");
+            Log.d("FLOW", "  - Page URL: " + getPageUrl());
+            Log.d("FLOW", "  - Base URL resolved to: " + getBaseUrl());
+            Log.d("FLOW", "  - HTML Length: " + (html != null ? html.length() : 0));
+            Log.d("FLOW", "  - SourceItem Type: " + (sourceItem != null ? sourceItem.getType() : "NULL"));
+
             // Use sourceItem title if available
             if (sourceItem != null && sourceItem.getTitle() != null && !sourceItem.getTitle().isEmpty()) {
                 result.setTitle(sourceItem.getTitle());
                 result.setOriginalTitle(sourceItem.getTitle());
             } else {
                 result.setTitle(doc.title());
+            }
+
+            // Poster Fallback
+            Element posterElem = doc.selectFirst(".poster img, .image img, img[class*='poster']");
+            if (posterElem != null) {
+                String poster = posterElem.hasAttr("data-src") ? posterElem.attr("data-src")
+                        : (posterElem.hasAttr("src") ? posterElem.attr("src") : posterElem.attr("data-lazy-src"));
+                result.setPosterUrl(poster);
+            } else if (sourceItem != null) {
+                result.setPosterUrl(sourceItem.getPosterUrl());
             }
 
             // Description
@@ -217,6 +260,33 @@ public class ArabSeedParser extends BaseHtmlParser {
                     description = postStory.text();
             }
             result.setDescription(description);
+
+            // Extract Rating, Year, Categories from Detail Page
+            try {
+                // Year
+                Element yearLink = doc.selectFirst("a[href*='release-year'], .year, .date");
+                if (yearLink != null) {
+                    String yStr = yearLink.text().replaceAll("[^0-9]", "");
+                    if (yStr.length() == 4)
+                        result.setYear(Integer.parseInt(yStr));
+                }
+
+                // Rating
+                Element rateElem = doc.selectFirst(".imdb, .rating, .rate");
+                if (rateElem != null) {
+                    String rStr = rateElem.text().replaceAll("[^0-9.]", "");
+                    if (!rStr.isEmpty())
+                        result.setRating(Float.parseFloat(rStr));
+                }
+
+                // Categories
+                Elements catLinks = doc.select(".post__category a, a[href*='category']");
+                for (Element cat : catLinks) {
+                    result.addCategory(cat.text().trim());
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error extracting extra metadata", e);
+            }
 
             List<ParsedItem> subItems = new ArrayList<>();
 
@@ -348,11 +418,16 @@ public class ArabSeedParser extends BaseHtmlParser {
             result.setSubItems(subItems);
             result.setStatus(
                     subItems.isEmpty() ? ParsedItem.ProcessStatus.EMPTY_ERROR : ParsedItem.ProcessStatus.SUCCESS);
-            if (subItems.isEmpty())
+
+            if (subItems.isEmpty()) {
+                Log.e("FLOW", "ArabSeedParser TRACE RESULT: No sub-items found!");
                 result.setStatusMessage("No content found for this link.");
+            } else {
+                Log.d("FLOW", "ArabSeedParser TRACE RESULT: Successfully found " + subItems.size() + " sub-items.");
+            }
 
         } catch (Exception e) {
-            Log.e(TAG, "Error parsing detail page", e);
+            Log.e("FLOW", "ArabSeedParser TRACE ERROR: Exception during parsing", e);
             result.setStatus(ParsedItem.ProcessStatus.EMPTY_ERROR);
             result.setStatusMessage("Parser Error: " + e.getMessage());
         }
@@ -639,8 +714,9 @@ public class ArabSeedParser extends BaseHtmlParser {
             ParsedItem item = new ParsedItem();
             item.setTitle("📁 " + seasonName);
             item.setType(MediaType.SEASON);
-            // The AJAX endpoint for episodes
-            item.setPageUrl("https://a.asd.homes/season__episodes/");
+            // The AJAX endpoint for episodes - Dynamic resolution
+            String baseUrl = getBaseUrl();
+            item.setPageUrl(baseUrl + "/season__episodes/");
             item.setPostData("season_id=" + seasonId + "&csrf_token=" + csrfToken);
             item.setPosterUrl(sourceItem != null ? sourceItem.getPosterUrl() : null);
 

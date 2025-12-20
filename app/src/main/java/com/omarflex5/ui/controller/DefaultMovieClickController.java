@@ -8,6 +8,7 @@ import com.omarflex5.data.model.Movie;
 import com.omarflex5.data.model.MovieActionType;
 import com.omarflex5.ui.player.PlayerActivity;
 import com.omarflex5.ui.search.SearchActivity;
+import com.omarflex5.ui.details.DetailsActivity;
 
 /**
  * Default implementation of MovieClickController.
@@ -33,25 +34,31 @@ public class DefaultMovieClickController implements MovieClickController {
             return;
         }
 
-        switch (actionType) {
-            case BROWSER:
-                handleBrowserAction(context, movie);
-                break;
-            case EXOPLAYER:
-                // Smart Action: Play if URL exists, otherwise Search
-                if (movie.getVideoUrl() != null && !movie.getVideoUrl().isEmpty()) {
-                    handleExoPlayerAction(context, movie);
-                } else {
-                    handleSearchAction(context, movie);
-                }
-                break;
-            case DETAILS:
-                handleDetailsAction(context, movie);
-                break;
-            case EXTEND:
-                handleExtendAction(context, movie);
-                break;
-        }
+        // For non-TMDB items (direct search results or Continue Watching),
+        // we bypass search and go straight to the next step (details/seasons/episodes)
+        handleDetailsAction(context, movie);
+        return;
+        /*
+         * switch (actionType) {
+         * case BROWSER:
+         * handleBrowserAction(context, movie);
+         * break;
+         * case EXOPLAYER:
+         * // Smart Action: Play if URL exists, otherwise Search
+         * if (movie.getVideoUrl() != null && !movie.getVideoUrl().isEmpty()) {
+         * handleExoPlayerAction(context, movie);
+         * } else {
+         * handleSearchAction(context, movie);
+         * }
+         * break;
+         * case DETAILS:
+         * handleDetailsAction(context, movie);
+         * break;
+         * case EXTEND:
+         * handleExtendAction(context, movie);
+         * break;
+         * }
+         */
     }
 
     /**
@@ -63,6 +70,40 @@ public class DefaultMovieClickController implements MovieClickController {
         // Use original title for search (English), display localized title
         intent.putExtra(SearchActivity.EXTRA_QUERY, movie.getSearchTitle());
         intent.putExtra(SearchActivity.EXTRA_MOVIE_TITLE, movie.getTitle());
+
+        // Inheritance: Pass rich metadata to SearchActivity
+        if (movie.getDescription() != null)
+            intent.putExtra(SearchActivity.EXTRA_DESCRIPTION, movie.getDescription());
+        if (movie.getRating() != null) {
+            try {
+                intent.putExtra(SearchActivity.EXTRA_RATING, Float.parseFloat(movie.getRating()));
+            } catch (Exception e) {
+            }
+        }
+        if (movie.getYear() != null) {
+            try {
+                intent.putExtra(SearchActivity.EXTRA_YEAR, Integer.parseInt(movie.getYear()));
+            } catch (Exception e) {
+            }
+        }
+        if (movie.getTrailerUrl() != null)
+            intent.putExtra(SearchActivity.EXTRA_TRAILER, movie.getTrailerUrl());
+        if (movie.getCategories() != null && !movie.getCategories().isEmpty())
+            intent.putStringArrayListExtra(SearchActivity.EXTRA_CATEGORIES,
+                    new java.util.ArrayList<>(movie.getCategories()));
+
+        // Pass TMDB ID if available (either item is TMDB or it was previously synced)
+        Integer tmdbId = movie.getTmdbId();
+        if (tmdbId == null && "TMDB".equalsIgnoreCase(movie.getSourceName())) {
+            try {
+                tmdbId = Integer.parseInt(movie.getId());
+            } catch (Exception e) {
+            }
+        }
+        if (tmdbId != null) {
+            intent.putExtra(SearchActivity.EXTRA_TMDB_ID, tmdbId);
+        }
+
         context.startActivity(intent);
     }
 
@@ -118,9 +159,39 @@ public class DefaultMovieClickController implements MovieClickController {
      * To be implemented later
      */
     protected void handleDetailsAction(Context context, Movie movie) {
-        Toast.makeText(context,
-                "Details: " + movie.getTitle() + " - Coming soon!",
-                Toast.LENGTH_SHORT).show();
+        // Find server ID if possible
+        Long serverId = null;
+        // SearchActivity results don't have serverId in 'Movie' yet, but saved items do
+        // via
+        // MediaEntity join in ViewModel
+        // For now, let's assume if it came from DetailsActivity before, we have what we
+        // need.
+        // If it's a direct result with a VIDEO URL, maybe we should play?
+        // User said: "directly fetch the next step like if its series directly go to
+        // seasons and so on."
+
+        com.omarflex5.data.local.entity.MediaType type = movie.isTvShow()
+                ? com.omarflex5.data.local.entity.MediaType.SERIES
+                : com.omarflex5.data.local.entity.MediaType.FILM;
+
+        long mediaId = -1;
+        try {
+            mediaId = Long.parseLong(movie.getId());
+        } catch (Exception e) {
+        }
+
+        // Launch DetailsActivity. It handles both fresh URLs and existing Media IDs.
+        DetailsActivity.start(
+                context,
+                movie.getVideoUrl(), // Search Results use videoUrl for their page URL
+                movie.getTitle(),
+                movie.getServerId() != null ? movie.getServerId() : -1,
+                null, // backdrop
+                type,
+                null, // poster
+                mediaId,
+                movie.getSeasonId(),
+                movie.getEpisodeId());
     }
 
     /**
