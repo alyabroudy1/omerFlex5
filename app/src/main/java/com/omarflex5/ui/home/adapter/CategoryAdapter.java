@@ -113,6 +113,10 @@ public class CategoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             searchIcon = itemView.findViewById(R.id.img_search_icon);
             searchInput = itemView.findViewById(R.id.edit_search_query);
 
+            // Ensure CardView is focusable
+            cardView.setFocusable(true);
+            cardView.setFocusableInTouchMode(true);
+
             // Handle Click to Expand
             cardView.setOnClickListener(v -> toggleExpansion());
 
@@ -122,13 +126,31 @@ public class CategoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                     v.animate().scaleX(1.1f).scaleY(1.1f).setDuration(150)
                             .setInterpolator(new AccelerateDecelerateInterpolator()).start();
                     startPulseAnimation(v);
+
+                    // If we gained focus, sure simplified state
+                    if (isExpanded && !searchInput.hasFocus()) {
+                        // Check if input is empty?
+                    }
                 } else {
                     stopPulseAnimation();
                     v.animate().scaleX(1.0f).scaleY(1.0f).setDuration(150).start();
-                    // Retract if lost focus and empty? Maybe kept open for better UX.
-                    // For now, let's keep it manual toggle or auto-close if empty on lost focus.
-                    if (isExpanded && searchInput.getText().toString().isEmpty()) {
-                        toggleExpansion(); // Close if empty and lost focus
+                }
+            });
+
+            // Handle Focus Loss on Input (Collapsing logic)
+            searchInput.setOnFocusChangeListener((v, hasFocus) -> {
+                if (!hasFocus) {
+                    // Logic: If input loses focus, we should check if we need to collapse.
+                    // But if user clicked "search", we want to keep it open?
+                    // No, usually if you leave the field, you want it to close if empty.
+                    String text = searchInput.getText().toString();
+                    if (isExpanded && text.isEmpty()) {
+                        collapse();
+                    } else if (isExpanded) {
+                        // If not empty, maybe keep expanded but just hide keyboard?
+                        // For TV interface, simpler to just collapse if user navigates away.
+                        // But if user navigates to results?
+                        // Let's stick to: collapse if empty or manual toggle.
                     }
                 }
             });
@@ -136,14 +158,16 @@ public class CategoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             // Handle Search Submission
             searchInput.setOnEditorActionListener((v, actionId, event) -> {
                 if (actionId == EditorInfo.IME_ACTION_SEARCH ||
+                        actionId == EditorInfo.IME_ACTION_DONE ||
+                        actionId == EditorInfo.IME_ACTION_GO ||
                         (event != null && event.getKeyCode() == KeyEvent.KEYCODE_ENTER
                                 && event.getAction() == KeyEvent.ACTION_DOWN)) {
                     String query = searchInput.getText().toString().trim();
                     if (!query.isEmpty() && listener != null) {
                         listener.onSearchSubmitted(query);
-                        // Optional: Clear or Collapse
+                        // Clear and Collapse
                         searchInput.setText("");
-                        toggleExpansion();
+                        collapse();
                     }
                     return true;
                 }
@@ -201,28 +225,30 @@ public class CategoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
             searchInput.setVisibility(View.VISIBLE);
             searchInput.requestFocus();
 
-            // Show keyboard manually if needed, usually requestFocus handles it if touch
-            // mode.
             android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) itemView
                     .getContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
             if (imm != null)
                 imm.showSoftInput(searchInput, android.view.inputmethod.InputMethodManager.SHOW_IMPLICIT);
-
-            // Animate Width (Simplified: just rely on LayoutTransition or visibility for
-            // now, or assume wrap_content handles it)
-            // But user asked for "expand to be a little wide".
-            // Since it's in a horizontal RecyclerView, expanding width pushes siblings.
-            // This works naturally.
         }
 
         private void collapse() {
             isExpanded = false;
-            searchInput.setVisibility(View.GONE);
-            cardView.requestFocus(); // Return focus to card
+
+            // 1. Hide Keyboard FIRST
             android.view.inputmethod.InputMethodManager imm = (android.view.inputmethod.InputMethodManager) itemView
                     .getContext().getSystemService(android.content.Context.INPUT_METHOD_SERVICE);
             if (imm != null)
                 imm.hideSoftInputFromWindow(searchInput.getWindowToken(), 0);
+
+            // 2. Hide Input
+            searchInput.setVisibility(View.GONE);
+
+            // 3. Force Focus back to CardView
+            // Use post() to ensure layout/visibility changes invoke before focus request
+            cardView.post(() -> {
+                cardView.requestFocus();
+                cardView.requestFocusFromTouch(); // Ensure touch mode doesn't block it
+            });
         }
 
         public void bind() {

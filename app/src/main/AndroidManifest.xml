@@ -42,6 +42,7 @@
             android:name=".ui.home.HomeActivity"
             android:exported="true"
             android:screenOrientation="landscape"
+            android:windowSoftInputMode="stateAlwaysHidden|adjustResize"
             android:hardwareAccelerated="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
