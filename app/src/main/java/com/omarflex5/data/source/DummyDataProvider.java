@@ -65,7 +65,7 @@ public class DummyDataProvider implements MovieDataSource {
                 "https://picsum.photos/id/30/500/750",
                 "",
                 "",
-                "2008", "9.0", MovieActionType.EXTEND);
+                "2008", "9.0", MovieActionType.SEARCH);
 
         movies.put(m1.getId(), m1);
         movies.put(m2.getId(), m2);

@@ -44,12 +44,14 @@ public interface MediaDao {
     @Query("SELECT * FROM media")
     List<com.omarflex5.data.local.model.MediaWithUserState> getAllMediaWithState();
 
+    // Main homepage queries - only show TMDB entities (exclude source-specific
+    // items)
     @androidx.room.Transaction
-    @Query("SELECT m.* FROM media m ORDER BY CASE WHEN m.releaseDate IS NULL THEN 1 ELSE 0 END, m.releaseDate DESC, m.id DESC LIMIT :limit")
+    @Query("SELECT m.* FROM media m WHERE m.tmdbId IS NOT NULL ORDER BY CASE WHEN m.releaseDate IS NULL THEN 1 ELSE 0 END, m.releaseDate DESC, m.id DESC LIMIT :limit")
     LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getAllMediaWithStateLiveData(int limit);
 
     @androidx.room.Transaction
-    @Query("SELECT m.* FROM media m ORDER BY CASE WHEN m.releaseDate IS NULL THEN 1 ELSE 0 END, m.releaseDate DESC, m.id DESC")
+    @Query("SELECT m.* FROM media m WHERE m.tmdbId IS NOT NULL ORDER BY CASE WHEN m.releaseDate IS NULL THEN 1 ELSE 0 END, m.releaseDate DESC, m.id DESC")
     LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getAllMediaWithStateLiveData();
 
     @Query("SELECT MAX(tmdbId) FROM media")
@@ -79,14 +81,14 @@ public interface MediaDao {
     @Query("UPDATE media SET trailerUrl = :trailerUrl WHERE id = :id")
     void updateTrailerUrl(long id, String trailerUrl);
 
-    // Genre-based filtering for categories
+    // Genre-based filtering for categories - only TMDB entities
     @androidx.room.Transaction
-    @Query("SELECT m.* FROM media m WHERE m.categoriesJson LIKE '%' || :genre || '%' ORDER BY CASE WHEN m.releaseDate IS NULL THEN 1 ELSE 0 END, m.releaseDate DESC, m.id DESC LIMIT :limit")
+    @Query("SELECT m.* FROM media m WHERE m.tmdbId IS NOT NULL AND m.categoriesJson LIKE '%' || :genre || '%' ORDER BY CASE WHEN m.releaseDate IS NULL THEN 1 ELSE 0 END, m.releaseDate DESC, m.id DESC LIMIT :limit")
     LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getMediaByGenreLiveData(String genre, int limit);
 
-    // Language-based filtering for Arabic category
+    // Language-based filtering for Arabic category - only TMDB entities
     @androidx.room.Transaction
-    @Query("SELECT m.* FROM media m WHERE m.originalLanguage = :language ORDER BY CASE WHEN m.releaseDate IS NULL THEN 1 ELSE 0 END, m.releaseDate DESC, m.id DESC LIMIT :limit")
+    @Query("SELECT m.* FROM media m WHERE m.tmdbId IS NOT NULL AND m.originalLanguage = :language ORDER BY CASE WHEN m.releaseDate IS NULL THEN 1 ELSE 0 END, m.releaseDate DESC, m.id DESC LIMIT :limit")
     LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getMediaByLanguageLiveData(String language,
             int limit);
 

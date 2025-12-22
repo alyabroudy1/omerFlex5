@@ -35,6 +35,10 @@ public class UserMediaStateEntity {
     private long duration; // in milliseconds
     private Long lastWatchedAt;
 
+    // Routing: Which source was used to watch (for Continue Watching click routing)
+    private Long lastSourceServerId; // Server ID (FK to servers table)
+    private String lastSourceUrl; // Normalized URL path (for lookup in media_sources)
+
     private long updatedAt;
 
     // Getters and Setters
@@ -117,5 +121,21 @@ public class UserMediaStateEntity {
 
     public void setUpdatedAt(long updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public Long getLastSourceServerId() {
+        return lastSourceServerId;
+    }
+
+    public void setLastSourceServerId(Long lastSourceServerId) {
+        this.lastSourceServerId = lastSourceServerId;
+    }
+
+    public String getLastSourceUrl() {
+        return lastSourceUrl;
+    }
+
+    public void setLastSourceUrl(String lastSourceUrl) {
+        this.lastSourceUrl = lastSourceUrl;
     }
 }

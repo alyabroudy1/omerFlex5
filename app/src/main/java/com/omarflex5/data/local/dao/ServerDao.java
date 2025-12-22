@@ -65,4 +65,7 @@ public interface ServerDao {
 
     @Query("SELECT * FROM servers WHERE baseUrl LIKE '%' || :host || '%' LIMIT 1")
     ServerEntity findByHost(String host);
+
+    @Query("UPDATE servers SET headersJson = :headers, updatedAt = :timestamp WHERE id = :id")
+    void updateHeaders(long id, String headers, long timestamp);
 }

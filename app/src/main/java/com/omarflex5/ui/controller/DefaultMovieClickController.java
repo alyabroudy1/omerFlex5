@@ -2,6 +2,7 @@ package com.omarflex5.ui.controller;
 
 import android.content.Context;
 import android.content.Intent;
+import android.util.Log;
 import android.widget.Toast;
 
 import com.omarflex5.data.model.Movie;
@@ -16,49 +17,56 @@ import com.omarflex5.ui.details.DetailsActivity;
  */
 public class DefaultMovieClickController implements MovieClickController {
 
+    private static final String TAG = "DefaultMovieClickController";
+
     @Override
     public void handleClick(Context context, Movie movie) {
+        Log.d(TAG, "handleClick called");
         if (movie == null) {
+            Log.d(TAG, "handleClick: movie is null");
             return;
         }
 
+        // Determine action type
         MovieActionType actionType = movie.getActionType();
         if (actionType == null) {
-            actionType = MovieActionType.EXOPLAYER; // Default
+            actionType = MovieActionType.DETAILS; // Default to details
         }
 
-        // Special handling for TMDB items - Always search/details first
-        // This avoids playing dummy trailers for main listings
+        // TMDB Override: Always force SEARCH action for TMDB items
+        // This ensures users search for actual playable sources instead of dummy
+        // trailers
         if ("TMDB".equalsIgnoreCase(movie.getSourceName())) {
-            handleSearchAction(context, movie);
-            return;
+            Log.d(TAG, "handleClick: TMDB source detected, forcing SEARCH action");
+            actionType = MovieActionType.SEARCH;
         }
 
-        // For non-TMDB items (direct search results or Continue Watching),
-        // we bypass search and go straight to the next step (details/seasons/episodes)
-        handleDetailsAction(context, movie);
-        return;
-        /*
-         * switch (actionType) {
-         * case BROWSER:
-         * handleBrowserAction(context, movie);
-         * break;
-         * case EXOPLAYER:
-         * // Smart Action: Play if URL exists, otherwise Search
-         * if (movie.getVideoUrl() != null && !movie.getVideoUrl().isEmpty()) {
-         * handleExoPlayerAction(context, movie);
-         * } else {
-         * handleSearchAction(context, movie);
-         * }
-         * break;
-         * case DETAILS:
-         * handleDetailsAction(context, movie);
-         * break;
-         * case EXTEND:
-         * handleExtendAction(context, movie);
-         * break;
-         * }
-         */
+        Log.d(TAG, "handleClick: actionType = " + actionType + ", movie = " + movie.getTitle());
+
+        switch (actionType) {
+            case SEARCH:
+                Log.d(TAG, "handleClick: -> SEARCH");
+                handleSearchAction(context, movie);
+                break;
+            case BROWSER:
+                Log.d(TAG, "handleClick: -> BROWSER");
+                handleBrowserAction(context, movie);
+                break;
+            case EXOPLAYER:
+                Log.d(TAG, "handleClick: -> EXOPLAYER");
+                // Smart Action: Play if video URL exists, otherwise go to details
+                if (movie.getVideoUrl() != null && !movie.getVideoUrl().isEmpty()) {
+                    handleExoPlayerAction(context, movie);
+                } else {
+                    handleDetailsAction(context, movie);
+                }
+                break;
+            case DETAILS:
+            default:
+                Log.d(TAG, "handleClick: -> DETAILS (default)");
+                handleDetailsAction(context, movie);
+                break;
+        }
     }
 
     /**

@@ -49,6 +49,7 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
     public static final String EXTRA_MEDIA_ID = "extra_media_id";
     public static final String EXTRA_SEASON_ID = "extra_season_id";
     public static final String EXTRA_EPISODE_ID = "extra_episode_id";
+    public static final String EXTRA_SERVER_ID = "extra_server_id";
 
     private PlayerView playerView;
     private ProgressBar loadingIndicator;
@@ -60,6 +61,7 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
     private long mediaId = -1;
     private Long seasonId = null;
     private Long episodeId = null;
+    private Long serverId = null;
 
     // Swipe Seek
     private androidx.core.view.GestureDetectorCompat gestureDetector;
@@ -155,6 +157,11 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
             episodeId = getIntent().getLongExtra(EXTRA_EPISODE_ID, -1);
             if (episodeId == -1)
                 episodeId = null;
+        }
+        if (getIntent().hasExtra(EXTRA_SERVER_ID)) {
+            serverId = getIntent().getLongExtra(EXTRA_SERVER_ID, -1);
+            if (serverId == -1)
+                serverId = null;
         }
 
         initViews();
@@ -791,7 +798,9 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
             long progress = player.getCurrentPosition();
             long duration = player.getDuration();
             if (duration > 0) {
-                mediaRepository.updateWatchProgress(mediaId, seasonId, episodeId, progress, duration);
+                // Pass null for sourceUrl - we trust the MediaSourceEntity's stable URL
+                // based on the serverId, rather than saving the ephemeral video URL.
+                mediaRepository.updateWatchProgress(mediaId, seasonId, episodeId, progress, duration, serverId, null);
             }
         }
     }

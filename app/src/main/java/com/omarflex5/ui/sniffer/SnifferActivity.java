@@ -621,20 +621,34 @@ public class SnifferActivity extends AppCompatActivity {
 
             @Override
             public void onResponse(Call call, Response response) throws IOException {
-                if (response.isSuccessful()) {
-                    String html = response.body().string(); // Read fully
+                int code = response.code();
+                String html = response.body() != null ? response.body().string() : "";
+                response.close();
+
+                // Check for Cloudflare using utility
+                if (com.omarflex5.data.scraper.util.CfDetector.isCloudflareResponse(code, html)) {
+                    Log.w(TAG, "OkHttp hit Cloudflare (" + code + "). Falling back to WebView.");
+                    runOnUiThread(() -> {
+                        updateStatus("⚠️ Cloudflare Detected - Loading via WebView...");
+                        if (extraHeaders != null && !extraHeaders.isEmpty()) {
+                            webView.loadUrl(url, extraHeaders);
+                        } else {
+                            webView.loadUrl(url);
+                        }
+                    });
+                    return;
+                }
+
+                if (response.isSuccessful() || code >= 200 && code < 400) {
                     Log.d(TAG, "OkHttp Fetch Success! Size: " + html.length());
 
                     runOnUiThread(() -> {
                         updateStatus("Loading Content...");
                         // Load data with Base URL so relative links/scripts work
-                        // We must also pass the historyUrl as the targetUrl to ensure relative
-                        // resolution works AND
-                        // so that the WebView internally thinks it's at that URL (for further requests)
                         webView.loadDataWithBaseURL(url, html, "text/html", "UTF-8", url);
                     });
                 } else {
-                    Log.e(TAG, "OkHttp Fetch Error: " + response.code());
+                    Log.e(TAG, "OkHttp Fetch Error: " + code);
                     // Fallback
                     runOnUiThread(() -> {
                         if (extraHeaders != null && !extraHeaders.isEmpty()) {
@@ -644,7 +658,6 @@ public class SnifferActivity extends AppCompatActivity {
                         }
                     });
                 }
-                response.close();
             }
         });
     }

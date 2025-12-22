@@ -582,6 +582,11 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
         if (episodeId != null)
             intent.putExtra(PlayerActivity.EXTRA_EPISODE_ID, (long) episodeId);
 
+        // Pass Server ID for history tracking
+        if (this.serverId != -1) {
+            intent.putExtra(PlayerActivity.EXTRA_SERVER_ID, (long) this.serverId);
+        }
+
         if (referer != null)
             intent.putExtra("EXTRA_REFERER", referer);
         if (userAgent != null)

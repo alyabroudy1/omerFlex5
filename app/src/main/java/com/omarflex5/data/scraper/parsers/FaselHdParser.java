@@ -63,7 +63,8 @@ public class FaselHdParser extends BaseHtmlParser {
 
                     // Extract categories (common in FaselHD: <div
                     // class="cat"><a...>Action</a>...</div>)
-                    Elements catLinks = post.select(".cat a, .genres a");
+                    Elements catLinks = post
+                            .select(".cat a, .genres a, .categories a, a[href*='genre'], a[href*='category']");
                     for (Element cat : catLinks) {
                         String catName = cat.text().trim();
                         if (!catName.isEmpty()) {
@@ -116,7 +117,7 @@ public class FaselHdParser extends BaseHtmlParser {
             // Metadata: Rating, Year, Categories
             try {
                 // Rating (e.g. <span class="rating">8.5</span>)
-                Element rateElem = doc.selectFirst(".rating, .imdb-rating, .rate");
+                Element rateElem = doc.selectFirst(".rating, .imdb-rating, .rate, [class*='rate'], [class*='rating']");
                 if (rateElem != null) {
                     String rStr = rateElem.text().replaceAll("[^0-9.]", "");
                     if (!rStr.isEmpty())
@@ -132,17 +133,24 @@ public class FaselHdParser extends BaseHtmlParser {
                 }
 
                 // Categories
-                Elements catLinks = doc.select(".cat a, .genres a, a[href*='genre']");
+                Elements catLinks = doc.select(
+                        ".cat a, .genres a, a[href*='genre'], .cat-links a, .categories a, a[href*='category']");
                 for (Element cat : catLinks) {
                     result.addCategory(cat.text().trim());
                 }
             } catch (Exception e) {
                 Log.e(TAG, "Error extracting extra metadata", e);
             }
-            // Use Original Title for detection before cleaning?
-            // The reference uses 'movie.getTitle()' which might be raw.
-            // We'll use doc.title() as broad check.
-            String rawTitle = doc.title();
+
+            // TITLE: Use H1 or .postTitle instead of doc.title() to avoid site suffixes
+            String rawTitle = "";
+            Element h1 = doc.selectFirst("h1.postTitle, h1, .postTitle, .title h1");
+            if (h1 != null) {
+                rawTitle = h1.text();
+            }
+            if (rawTitle.isEmpty()) {
+                rawTitle = doc.title(); // Fallback to doc.title() if no H1 found
+            }
             result.setTitle(cleanTitle(rawTitle));
 
             // STRICT REFERENCE LOGIC

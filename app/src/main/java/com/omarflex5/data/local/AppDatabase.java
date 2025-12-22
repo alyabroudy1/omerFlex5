@@ -34,7 +34,7 @@ import java.util.concurrent.Executors;
         MediaSourceEntity.class,
         SearchQueueEntity.class,
         UserMediaStateEntity.class
-}, version = 8, exportSchema = true)
+}, version = 10, exportSchema = true)
 @TypeConverters({ Converters.class })
 public abstract class AppDatabase extends RoomDatabase {
 

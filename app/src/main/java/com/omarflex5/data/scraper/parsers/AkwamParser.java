@@ -147,7 +147,7 @@ public class AkwamParser extends BaseHtmlParser {
             // Metadata: Rating, Year, Categories
             try {
                 // Rating
-                Element rateElem = doc.selectFirst(".rating, .imdb-rating, .rate");
+                Element rateElem = doc.selectFirst(".rating, .imdb-rating, .rate, [class*='rate'], [class*='rating']");
                 if (rateElem != null) {
                     String rStr = rateElem.text().replaceAll("[^0-9.]", "");
                     if (!rStr.isEmpty())

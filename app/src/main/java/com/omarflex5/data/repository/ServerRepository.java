@@ -210,6 +210,45 @@ public class ServerRepository {
         });
     }
 
+    // ==================== HEADER MANAGEMENT ====================
+
+    /**
+     * Save important headers for a server (e.g., Referer).
+     */
+    public void saveHeaders(long serverId, java.util.Map<String, String> headers) {
+        if (headers == null || headers.isEmpty())
+            return;
+
+        executor.execute(() -> {
+            try {
+                String json = new com.google.gson.Gson().toJson(headers);
+                serverDao.updateHeaders(serverId, json, System.currentTimeMillis());
+                Log.d(TAG, "Saved headers for server ID: " + serverId + " - " + headers.keySet());
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to save headers: " + e.getMessage());
+            }
+        });
+    }
+
+    /**
+     * Get saved headers for a server.
+     */
+    public java.util.Map<String, String> getSavedHeaders(ServerEntity server) {
+        if (server == null || server.getHeadersJson() == null || server.getHeadersJson().isEmpty()) {
+            return new java.util.HashMap<>();
+        }
+
+        try {
+            return new com.google.gson.Gson().fromJson(
+                    server.getHeadersJson(),
+                    new com.google.gson.reflect.TypeToken<java.util.Map<String, String>>() {
+                    }.getType());
+        } catch (Exception e) {
+            Log.e(TAG, "Error parsing saved headers: " + e.getMessage());
+            return new java.util.HashMap<>();
+        }
+    }
+
     // ==================== SERVER CONFIGURATION ====================
 
     /**

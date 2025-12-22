@@ -21,7 +21,7 @@ public enum MovieActionType {
     DETAILS,
 
     /**
-     * Extensible action for future implementations
+     * Search: open search activity like if tmdb movie clicked
      */
-    EXTEND
+    SEARCH
 }

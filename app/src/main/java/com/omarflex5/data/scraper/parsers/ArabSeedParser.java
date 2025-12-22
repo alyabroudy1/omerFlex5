@@ -127,7 +127,7 @@ public class ArabSeedParser extends BaseHtmlParser {
                     item.setCategories(itemCategories); // Add categories
 
                     // Extract rating if present (e.g. <span class="imdb">8.5</span>)
-                    Element ratingElem = li.selectFirst(".imdb, .rating, .Quality");
+                    Element ratingElem = li.selectFirst(".imdb, .rating, .rate, [class*='rate'], [class*='rating']");
                     if (ratingElem != null) {
                         String rText = ratingElem.text().replaceAll("[^0-9.]", "");
                         if (!rText.isEmpty()) {
@@ -272,7 +272,7 @@ public class ArabSeedParser extends BaseHtmlParser {
                 }
 
                 // Rating
-                Element rateElem = doc.selectFirst(".imdb, .rating, .rate");
+                Element rateElem = doc.selectFirst(".imdb, .rating, .rate, [class*='rate'], [class*='rating']");
                 if (rateElem != null) {
                     String rStr = rateElem.text().replaceAll("[^0-9.]", "");
                     if (!rStr.isEmpty())
@@ -280,7 +280,8 @@ public class ArabSeedParser extends BaseHtmlParser {
                 }
 
                 // Categories
-                Elements catLinks = doc.select(".post__category a, a[href*='category']");
+                Elements catLinks = doc.select(
+                        ".post__category a, a[href*='category'], a[href*='genre'], .cat-links a, .categories a");
                 for (Element cat : catLinks) {
                     result.addCategory(cat.text().trim());
                 }

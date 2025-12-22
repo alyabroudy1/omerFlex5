@@ -244,9 +244,14 @@ public class UnifiedSearchService {
         scraperManager.search(task.server, task.url, allowFallback, null, new WebViewScraperManager.ScraperCallback() {
             @Override
             public void onSuccess(String html, Map<String, String> cookies) {
-                results.addAll(parseResults(task.server, html, context));
-                serverRepository.recordSuccess(task.server);
-                latch.countDown();
+                try {
+                    results.addAll(parseResults(task.server, html, context));
+                    serverRepository.recordSuccess(task.server);
+                } catch (Exception e) {
+                    Log.e(TAG, "Parsing error in searchSingleTask", e);
+                } finally {
+                    latch.countDown();
+                }
             }
 
             @Override
@@ -335,28 +340,37 @@ public class UnifiedSearchService {
         scraperManager.search(task.server, task.url, true, null, new WebViewScraperManager.ScraperCallback() {
             @Override
             public void onSuccess(String html, Map<String, String> cookies) {
-                List<SearchResult> results = parseResults(task.server, html, context);
-                accumulated.addAll(results);
+                executor.execute(() -> {
+                    try {
+                        List<SearchResult> results = parseResults(task.server, html, context);
+                        accumulated.addAll(results);
 
-                // Update progress (approximate by unique servers or just tasks)
-                int remaining = tasks.size() - index - 1;
+                        // Update progress (approximate by unique servers or just tasks)
+                        int remaining = tasks.size() - index - 1;
 
-                // Construct current display list: Base + Accumulated So Far
-                List<SearchResult> currentDisplay = new ArrayList<>(baseResults);
-                currentDisplay.addAll(accumulated);
+                        // Construct current display list: Base + Accumulated So Far
+                        List<SearchResult> currentDisplay = new ArrayList<>(baseResults);
+                        currentDisplay.addAll(accumulated);
 
-                searchState.postValue(SearchState.partial(currentQuery,
-                        deduplicateResults(currentDisplay), remaining));
+                        searchState.postValue(SearchState.partial(currentQuery,
+                                deduplicateResults(currentDisplay), remaining));
 
-                // Process next
-                processNextQueuedTask(tasks, index + 1, baseResults, accumulated, context);
+                        // Process next
+                        processNextQueuedTask(tasks, index + 1, baseResults, accumulated, context);
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error in background search processing", e);
+                        processNextQueuedTask(tasks, index + 1, baseResults, accumulated, context);
+                    }
+                });
             }
 
             @Override
             public void onError(String message) {
-                Log.e(TAG, "Queued task failed (" + task.url + "): " + message);
-                // Continue with next task
-                processNextQueuedTask(tasks, index + 1, baseResults, accumulated, context);
+                executor.execute(() -> {
+                    Log.e(TAG, "Queued task failed (" + task.url + "): " + message);
+                    // Continue with next task
+                    processNextQueuedTask(tasks, index + 1, baseResults, accumulated, context);
+                });
             }
         });
     }

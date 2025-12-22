@@ -43,6 +43,9 @@ public class MediaSourceEntity {
     // Quality info (if known)
     private String quality; // "1080p", "720p", "480p", etc.
 
+    // Original scraper title (for display preference)
+    private String title;
+
     // Availability tracking
     private boolean isAvailable;
     private Long lastCheckedAt;
@@ -164,5 +167,13 @@ public class MediaSourceEntity {
 
     public void setUpdatedAt(long updatedAt) {
         this.updatedAt = updatedAt;
+    }
+
+    public String getTitle() {
+        return title;
+    }
+
+    public void setTitle(String title) {
+        this.title = title;
     }
 }

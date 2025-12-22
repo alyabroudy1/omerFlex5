@@ -106,6 +106,12 @@ public class MediaRepository {
 
     public void setFavorite(long mediaId, boolean favorite) {
         new Thread(() -> {
+            // Guard: Skip if mediaId is invalid
+            if (mediaId <= 0) {
+                android.util.Log.w("MediaRepository", "Skipping setFavorite - invalid mediaId: " + mediaId);
+                return;
+            }
+
             UserMediaStateEntity state = userMediaStateDao.getStateForMediaSync(mediaId);
             if (state == null) {
                 state = new UserMediaStateEntity();
@@ -370,11 +376,23 @@ public class MediaRepository {
      * @param progress  Current watched time in ms
      * @param duration  Total duration in ms
      */
-    public void updateWatchProgress(long mediaId, Long seasonId, Long episodeId, long progress, long duration) {
+    public void updateWatchProgress(long mediaId, Long seasonId, Long episodeId, long progress, long duration,
+            Long serverId, String sourceUrl) {
         executorService.execute(() -> {
             try {
+                // Guard: Skip if mediaId is invalid (item wasn't properly synced to DB)
+                if (mediaId <= 0) {
+                    android.util.Log.w("MediaRepository", "Skipping updateWatchProgress - invalid mediaId: " + mediaId);
+                    return;
+                }
+
                 long now = System.currentTimeMillis();
                 boolean isFinished = progress > (duration * 0.9); // Assume finished if > 90%
+
+                android.util.Log.d("WATCH_PROGRESS", "=== updateWatchProgress called ===");
+                android.util.Log.d("WATCH_PROGRESS", "  mediaId=" + mediaId + ", serverId=" + serverId);
+                android.util.Log.d("WATCH_PROGRESS", "  progress=" + progress + ", duration=" + duration);
+                android.util.Log.d("WATCH_PROGRESS", "  seasonId=" + seasonId + ", episodeId=" + episodeId);
 
                 // 1. Update Episode or Film State
                 UserMediaStateEntity itemState = null;
@@ -399,6 +417,15 @@ public class MediaRepository {
                 itemState.setWatched(isFinished);
                 itemState.setLastWatchedAt(now);
                 itemState.setUpdatedAt(now);
+
+                // Save routing info
+                if (serverId != null)
+                    itemState.setLastSourceServerId(serverId);
+                if (sourceUrl != null && !sourceUrl.isEmpty()) {
+                    // Normalize URL if needed, but usually we want to keep what worked
+                    itemState.setLastSourceUrl(sourceUrl);
+                }
+
                 userMediaStateDao.insertOrUpdate(itemState);
 
                 // 2. Propagate Upwards if Series
@@ -448,6 +475,14 @@ public class MediaRepository {
                     }
                     seriesState.setLastWatchedAt(now);
                     seriesState.setUpdatedAt(now);
+
+                    // Propagate routing info to Series
+                    if (serverId != null)
+                        seriesState.setLastSourceServerId(serverId);
+                    if (sourceUrl != null && !sourceUrl.isEmpty()) {
+                        seriesState.setLastSourceUrl(sourceUrl);
+                    }
+
                     userMediaStateDao.insertOrUpdate(seriesState);
                 }
             } catch (Exception e) {
@@ -499,18 +534,33 @@ public class MediaRepository {
                     // Match found! Get watch history.
                     Long mediaId = existingSource.getMediaId();
 
+                    android.util.Log.d("SYNC", "EXISTING source found for " + item.getTitle() +
+                            " - mediaId=" + mediaId + " (URL=" + normalizedUrl + ")");
+
                     if (mediaId != null) {
                         item.setMediaId(mediaId);
 
-                        // ENRICH: If record exists, update it with CURRENT scraper metadata (Overwrites
-                        // TMDB if any)
+                        // ENRICH: If record exists, update it with CURRENT scraper metadata
+                        // BUT: Skip enrichment for TMDB entities to keep them pristine
                         MediaEntity existingMedia = mediaDao.getById(mediaId);
                         if (existingMedia != null) {
-                            // Always update primaryServerId to latest interaction
-                            existingMedia.setPrimaryServerId(serverId);
+                            boolean isTmdbEntity = existingMedia.getTmdbId() != null && existingMedia.getTmdbId() > 0;
 
-                            if (enrichMediaFromItem(existingMedia, item)) {
-                                mediaDao.update(existingMedia);
+                            if (!isTmdbEntity) {
+                                // Only update source-specific entities, not TMDB
+                                existingMedia.setPrimaryServerId(serverId);
+
+                                if (enrichMediaFromItem(existingMedia, item)) {
+                                    try {
+                                        mediaDao.update(existingMedia);
+                                    } catch (android.database.sqlite.SQLiteConstraintException e) {
+                                        android.util.Log.w("SYNC",
+                                                "Skipping update due to tmdbId conflict: " + e.getMessage());
+                                    }
+                                }
+                            } else {
+                                android.util.Log.d("SYNC",
+                                        "Skipping enrichment for TMDB entity: " + existingMedia.getTitle());
                             }
                         }
 
@@ -523,8 +573,9 @@ public class MediaRepository {
                     }
 
                 } else {
-                    // Not found -> Aggressive Save
-                    // Create MediaEntity
+                    // Not found by URL -> Always create SOURCE-SPECIFIC MediaEntity
+                    // NEVER link directly to TMDB entities to keep them pristine
+
                     MediaEntity newMedia = new MediaEntity();
                     newMedia.setTitle(item.getTitle());
                     newMedia.setOriginalTitle(item.getOriginalTitle());
@@ -534,17 +585,35 @@ public class MediaRepository {
                     newMedia.setCreatedAt(System.currentTimeMillis());
                     newMedia.setUpdatedAt(System.currentTimeMillis());
                     newMedia.setCategoriesJson(new org.json.JSONArray(item.getCategories()).toString());
-                    newMedia.setPrimaryServerId(serverId); // Set original source server
-                    enrichMediaFromItem(newMedia, item); // Set description, rating, etc.
+                    newMedia.setPrimaryServerId(serverId);
+
+                    // INHERIT from TMDB if available (for rich display metadata)
+                    // But DO NOT set tmdbId on source-specific items
+                    if (item.getTmdbId() != null && item.getTmdbId() > 0) {
+                        MediaEntity tmdbEntity = mediaDao.getByTmdbId(item.getTmdbId());
+                        if (tmdbEntity != null && tmdbEntity.getType() == item.getType()) {
+                            inheritTmdbMetadata(newMedia, tmdbEntity);
+                            android.util.Log.d("SYNC",
+                                    "Created source-specific entity for " + item.getTitle() +
+                                            " with inherited TMDB metadata (tmdbId=" + item.getTmdbId() + ")");
+                        }
+                    }
+
+                    // Enrich from item but preserve inherited data
+                    enrichMediaFromItem(newMedia, item);
 
                     long mediaId = mediaDao.insert(newMedia);
                     item.setMediaId(mediaId);
 
-                    // Create MediaSourceEntity
+                    android.util.Log.d("SYNC", "NEW source-specific entity created for " + item.getTitle() +
+                            " - mediaId=" + mediaId + " (serverId=" + serverId + ", URL=" + normalizedUrl + ")");
+
+                    // Create MediaSourceEntity to link URL to media
                     com.omarflex5.data.local.entity.MediaSourceEntity newSource = new com.omarflex5.data.local.entity.MediaSourceEntity();
                     newSource.setMediaId(mediaId);
                     newSource.setServerId(serverId);
                     newSource.setExternalUrl(normalizedUrl);
+                    newSource.setTitle(item.getTitle()); // Save original scraper title
                     newSource.setAvailable(true);
                     newSource.setCreatedAt(System.currentTimeMillis());
                     newSource.setUpdatedAt(System.currentTimeMillis());
@@ -564,9 +633,26 @@ public class MediaRepository {
     private boolean enrichMediaFromItem(MediaEntity entity, com.omarflex5.data.scraper.BaseHtmlParser.ParsedItem item) {
         boolean changed = false;
 
+        // TMDB PROTECTION: If entity has TMDB ID, it has "premium" metadata. Don't
+        // overwrite unless current is empty.
+        boolean hasTmdbData = entity.getTmdbId() != null && entity.getTmdbId() > 0;
+        boolean isTmdbEntity = hasTmdbData;
+
+        // TITLE: Only update if new title is cleaner (shorter, no site suffixes)
         if (item.getTitle() != null && !item.getTitle().isEmpty()) {
-            if (!item.getTitle().equals(entity.getTitle())) {
-                entity.setTitle(item.getTitle());
+            String currentTitle = entity.getTitle();
+            String newTitle = item.getTitle();
+
+            // Skip if new title has common site suffixes (messy)
+            boolean newIsMessy = newTitle.contains(" - ") || newTitle.contains("فاصل") ||
+                    newTitle.contains("ArabSeed") || newTitle.contains("أكوام");
+
+            if (currentTitle == null || currentTitle.isEmpty()) {
+                entity.setTitle(newTitle);
+                changed = true;
+            } else if (!newIsMessy && newTitle.length() < currentTitle.length() && !newTitle.equals(currentTitle)) {
+                // Only update if new title is cleaner (shorter and not messy)
+                entity.setTitle(newTitle);
                 changed = true;
             }
         }
@@ -585,15 +671,24 @@ public class MediaRepository {
             }
         }
 
-        if (entity.getRating() == null || entity.getRating() == 0) {
-            if (item.getRating() != null && item.getRating() > 0) {
+        // RATING: If TMDB data exists, only update if current is empty/zero
+        if (item.getRating() != null && item.getRating() > 0) {
+            if (entity.getRating() == null || entity.getRating() == 0) {
+                entity.setRating(item.getRating());
+                changed = true;
+            } else if (!hasTmdbData && Math.abs(entity.getRating() - item.getRating()) > 0.1) {
+                // Only overwrite non-TMDB ratings
                 entity.setRating(item.getRating());
                 changed = true;
             }
         }
 
-        if (entity.getYear() == null || entity.getYear() == 0) {
-            if (item.getYear() != null && item.getYear() > 0) {
+        // YEAR: If TMDB data exists, only update if current is empty/zero
+        if (item.getYear() != null && item.getYear() > 0) {
+            if (entity.getYear() == null || entity.getYear() == 0) {
+                entity.setYear(item.getYear());
+                changed = true;
+            } else if (!hasTmdbData && !entity.getYear().equals(item.getYear())) {
                 entity.setYear(item.getYear());
                 changed = true;
             }
@@ -606,27 +701,46 @@ public class MediaRepository {
             }
         }
 
+        // CATEGORIES: If TMDB data exists, only update if current is empty
         if (item.getCategories() != null && !item.getCategories().isEmpty()) {
             String newCats = new org.json.JSONArray(item.getCategories()).toString();
-            // Prefer existing JSON if it's already complex, but overwrite if new one is
-            // from
-            // TMDB context (which we check via length for now)
-            if (entity.getCategoriesJson() == null || entity.getCategoriesJson().length() < newCats.length()) {
+            boolean currentCategoriesEmpty = entity.getCategoriesJson() == null
+                    || entity.getCategoriesJson().length() <= 2;
+
+            if (currentCategoriesEmpty) {
+                entity.setCategoriesJson(newCats);
+                changed = true;
+            } else if (!hasTmdbData && !entity.getCategoriesJson().contains(item.getCategories().get(0))) {
+                // Only overwrite non-TMDB categories if new ones are different
                 entity.setCategoriesJson(newCats);
                 changed = true;
             }
         }
 
         if (item.getTrailerUrl() != null && !item.getTrailerUrl().isEmpty()) {
-            if (entity.getTrailerUrl() == null || entity.getTrailerUrl().isEmpty()) {
+            if (entity.getTrailerUrl() == null || !entity.getTrailerUrl().equals(item.getTrailerUrl())) {
                 entity.setTrailerUrl(item.getTrailerUrl());
                 changed = true;
             }
         }
 
-        if (item.getTmdbId() != null && (entity.getTmdbId() == null || entity.getTmdbId() == 0)) {
-            entity.setTmdbId(item.getTmdbId());
+        // AUTO-MARK ENRICHED: If we have a significant description, it's enriched
+        if (entity.getDescription() != null && entity.getDescription().length() > 20 && !entity.isEnriched()) {
+            entity.setEnriched(true);
+            entity.setEnrichedAt(System.currentTimeMillis());
             changed = true;
+        }
+
+        // DO NOT copy TMDB ID here if we are enriching a source-specific entity
+        // Source-specific entities must keep tmdbId = NULL to be distinguished from
+        // TMDB entities
+        // Only valid if we are upgrading a TMDB entity itself (which we shouldn't do
+        // here anyway)
+        if (isTmdbEntity && item.getTmdbId() != null) {
+            // Already a TMDB entity, so it's fine
+        } else if (!isTmdbEntity && item.getTmdbId() != null) {
+            // SKIP setting tmdbId for source entities!
+            // They inherit metadata but NOT identity
         }
 
         if (changed) {
@@ -634,5 +748,63 @@ public class MediaRepository {
         }
 
         return changed;
+    }
+
+    /**
+     * Copies display metadata from a TMDB entity to a source-specific entity.
+     * This ensures rich display without modifying the original TMDB data.
+     * 
+     * @param target     The source-specific entity being created
+     * @param tmdbSource The original TMDB entity to inherit from
+     */
+    private void inheritTmdbMetadata(MediaEntity target, MediaEntity tmdbSource) {
+        // Copy poster and backdrop (prioritize TMDB quality)
+        if (target.getPosterUrl() == null || target.getPosterUrl().isEmpty()) {
+            target.setPosterUrl(tmdbSource.getPosterUrl());
+        }
+        if (target.getBackdropUrl() == null || target.getBackdropUrl().isEmpty()) {
+            target.setBackdropUrl(tmdbSource.getBackdropUrl());
+        }
+
+        // Copy description if richer
+        if (tmdbSource.getDescription() != null && !tmdbSource.getDescription().isEmpty()) {
+            if (target.getDescription() == null ||
+                    target.getDescription().length() < tmdbSource.getDescription().length()) {
+                target.setDescription(tmdbSource.getDescription());
+            }
+        }
+
+        // Copy categories
+        if (target.getCategoriesJson() == null || target.getCategoriesJson().length() <= 2) {
+            target.setCategoriesJson(tmdbSource.getCategoriesJson());
+        }
+
+        // Copy rating (TMDB is more reliable)
+        if (tmdbSource.getRating() != null && tmdbSource.getRating() > 0) {
+            target.setRating(tmdbSource.getRating());
+        }
+
+        // Copy year if missing
+        if (target.getYear() == null || target.getYear() == 0) {
+            target.setYear(tmdbSource.getYear());
+        }
+
+        // Copy release date
+        if (target.getReleaseDate() == null || target.getReleaseDate().isEmpty()) {
+            target.setReleaseDate(tmdbSource.getReleaseDate());
+        }
+
+        // Copy trailer URL
+        if (tmdbSource.getTrailerUrl() != null && !tmdbSource.getTrailerUrl().isEmpty()) {
+            target.setTrailerUrl(tmdbSource.getTrailerUrl());
+        }
+
+        // Copy language
+        if (target.getOriginalLanguage() == null || target.getOriginalLanguage().isEmpty()) {
+            target.setOriginalLanguage(tmdbSource.getOriginalLanguage());
+        }
+
+        // Keep original scraper title (do NOT copy title from TMDB)
+        // This allows Continue Watching to show the source-specific title
     }
 }

@@ -622,16 +622,23 @@ public class WebViewScraperManager {
                     builder.header("Cookie", cookieHeader.toString());
                 }
 
+                // Attach saved headers if available
+                Map<String, String> savedHeaders = serverRepository.getSavedHeaders(server);
+                if (!savedHeaders.isEmpty()) {
+                    for (Map.Entry<String, String> entry : savedHeaders.entrySet()) {
+                        builder.header(entry.getKey(), entry.getValue());
+                        Log.d(TAG, "Attached saved header: " + entry.getKey());
+                    }
+                }
+
                 // 2. Execute
                 okhttp3.Response response = okHttpClient.newCall(builder.build()).execute();
                 int code = response.code();
                 String body = response.body() != null ? response.body().string() : "";
                 response.close();
 
-                // 3. Check for Cloudflare
-                boolean isCf = code == 403 || code == 503;
-                if (isCf && (body.contains("Just a moment") || body.contains("Cloudflare")
-                        || body.contains("Checking your browser"))) {
+                // 3. Check for Cloudflare using utility
+                if (com.omarflex5.data.scraper.util.CfDetector.isCloudflareResponse(code, body)) {
 
                     if (allowWebViewFallback) {
                         // Failover to WebView
@@ -640,19 +647,25 @@ public class WebViewScraperManager {
                     } else {
                         // Strict Fast Mode: Fail immediately so caller can queue it
                         Log.d(TAG, "Direct request hit Cloudflare (" + code + "). Reporting CLOUDFLARE_DETECTED.");
-                        mainHandler.post(() -> callback.onError("CLOUDFLARE_DETECTED"));
+                        callback.onError("CLOUDFLARE_DETECTED");
                     }
 
                 } else if (code >= 200 && code < 400 && !body.isEmpty()) {
                     // Success
                     Log.d(TAG, "Direct request success (" + code + ").");
                     checkAndHandleRedirect(server, response.request().url().toString());
-                    mainHandler.post(() -> callback.onSuccess(body, cookies));
+
+                    // Save Referer header for future requests
+                    Map<String, String> headersToSave = new HashMap<>();
+                    headersToSave.put("Referer", resolvedUrl);
+                    serverRepository.saveHeaders(server.getId(), headersToSave);
+
+                    callback.onSuccess(body, cookies);
                 } else {
                     if (!body.isEmpty()) {
-                        mainHandler.post(() -> callback.onSuccess(body, cookies));
+                        callback.onSuccess(body, cookies);
                     } else {
-                        mainHandler.post(() -> callback.onError("HTTP Error: " + code));
+                        callback.onError("HTTP Error: " + code);
                     }
                 }
 
@@ -661,7 +674,7 @@ public class WebViewScraperManager {
                 if (allowWebViewFallback) {
                     mainHandler.post(() -> loadWithCfBypass(server, url, postData, activity, callback));
                 } else {
-                    mainHandler.post(() -> callback.onError("CONNECTION_ERROR"));
+                    callback.onError("CONNECTION_ERROR");
                 }
             }
         }).start();

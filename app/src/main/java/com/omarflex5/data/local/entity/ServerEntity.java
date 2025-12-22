@@ -41,6 +41,7 @@ public class ServerEntity {
     private String cfCookiesJson;
     private Long cfCookiesExpireAt;
     private String userAgent;
+    private String headersJson; // JSON map of saved headers (Referer, etc.)
 
     // Scraping configuration
     private String searchUrlPattern; // e.g., "/search?q={query}"
@@ -229,6 +230,14 @@ public class ServerEntity {
 
     public void setUserAgent(String userAgent) {
         this.userAgent = userAgent;
+    }
+
+    public String getHeadersJson() {
+        return headersJson;
+    }
+
+    public void setHeadersJson(String headersJson) {
+        this.headersJson = headersJson;
     }
 
     public String getSearchUrlPattern() {
