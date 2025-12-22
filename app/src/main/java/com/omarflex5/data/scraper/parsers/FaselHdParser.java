@@ -156,20 +156,35 @@ public class FaselHdParser extends BaseHtmlParser {
             // STRICT REFERENCE LOGIC
             MediaType type = detectType(url, rawTitle);
 
-            // STATELESS CORRECTION:
-            // The reference relies on parent setting CHILD state. We don't have that.
-            // If we detected FILM (Default), check if it's actually a SEASON (has
-            // Episodes).
-            // CRITICAL: DO NOT check for Series (SeasonDiv) here to avoid loop (Fasel has
-            // SeasonDiv in sidebar).
-            if (type == MediaType.FILM) {
-                if (doc.selectFirst("#epAll") != null) {
-                    type = MediaType.SEASON;
-                }
+            // STATELESS CORRECTION & CONTEXT AWARENESS:
+            // 1. Check for "Seasons List" (Sidebar/Main) -> Indicates Series View
+            // 2. Check for "Episodes List" (Main) -> Indicates Season View
+            // 3. Respect Input Context (if user clicked a Season, show Episodes)
+
+            boolean hasSeasonsList = !doc.select(".seasonDiv").isEmpty();
+            boolean hasEpisodesList = doc.selectFirst("#epAll") != null;
+            ParsedItem inputItem = getSourceItem();
+
+            if (inputItem != null && inputItem.getType() == MediaType.SEASON) {
+                // User explicitly clicked a [SEASON] item -> DRILL DOWN to Episodes
+                // Ignore season list (sidebar) to avoid loop
+                type = MediaType.SEASON;
+            } else if (inputItem != null && inputItem.getType() == MediaType.EPISODE) {
+                // User explicitly clicked an [EPISODE] item -> DRILL DOWN to Servers
+                // Ignore season list (sidebar)
+                type = MediaType.EPISODE;
+            } else if (hasSeasonsList) {
+                // Default: If multiple seasons are listed, show them (Series View)
+                // This captures "Search -> Season Page" and treats it as "Series Page"
+                type = MediaType.SERIES;
+            } else if (type == MediaType.FILM && hasEpisodesList) {
+                // Fallback: If marked as Film but has episodes, it's a Season (Single Season?)
+                type = MediaType.SEASON;
             }
 
             result.setType(type);
-            Log.d(TAG, "Parsing Detail for URL: " + url + " | Final Type: " + type);
+            Log.d(TAG, "Parsing Detail for URL: " + url + " | Final Type: " + type + " (InputType: "
+                    + (inputItem != null ? inputItem.getType() : "null") + ")");
 
             if (type == MediaType.SERIES) {
                 parseSeries(doc, result);
@@ -194,8 +209,9 @@ public class FaselHdParser extends BaseHtmlParser {
         if (title == null)
             title = "";
 
-        // 1. Series Case: URL contains "/seasons"
-        boolean seriesCase = url.contains("/seasons");
+        // 1. Series/Season Case
+        boolean seriesCase = url.contains("/seasons") || url.contains("/series") || title.contains("مسلسل")
+                || title.contains("الموسم");
         if (seriesCase) {
             return MediaType.SERIES;
         }
@@ -239,6 +255,12 @@ public class FaselHdParser extends BaseHtmlParser {
                         .setTitle(sTitle)
                         .setPageUrl(url)
                         .setType(MediaType.SEASON);
+
+                // EXTRACT SEASON NUMBER
+                Integer sNum = extractNumber(sTitle);
+                if (sNum != null)
+                    seasonItem.setSeasonNumber(sNum);
+
                 result.addSubItem(seasonItem);
             }
         } else {
@@ -274,9 +296,31 @@ public class FaselHdParser extends BaseHtmlParser {
                         .setTitle(eTitle)
                         .setPageUrl(eLink)
                         .setType(MediaType.EPISODE);
+
+                // EXTRACT EPISODE NUMBER
+                Integer eNum = extractNumber(eTitle);
+                if (eNum != null)
+                    epItem.setEpisodeNumber(eNum);
+
                 result.addSubItem(epItem);
             }
         }
+    }
+
+    private Integer extractNumber(String text) {
+        if (text == null)
+            return null;
+        // Matches "15", "Episode 15", "الحلقة 15"
+        Pattern p = Pattern.compile("(\\d+)");
+        Matcher m = p.matcher(text);
+        if (m.find()) {
+            try {
+                return Integer.parseInt(m.group(1));
+            } catch (Exception e) {
+                return null;
+            }
+        }
+        return null;
     }
 
     private void parsePlayableContent(Document doc, ParsedItem result) {

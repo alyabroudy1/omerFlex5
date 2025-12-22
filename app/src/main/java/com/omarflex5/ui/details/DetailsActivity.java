@@ -353,8 +353,11 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
 
             List<BaseHtmlParser.ParsedItem> subItems = result.getSubItems();
             if (subItems != null && !subItems.isEmpty()) {
-                // Attach watch history from DB (Background)
-                mediaRepository.attachWatchHistory(subItems, mediaId, seasonId);
+                // 1. Sync Sub-Items (Seasons/Episodes) to DB to ensure IDs exist
+                mediaRepository.syncSubItems(mediaId, seasonId, subItems);
+
+                // 2. Attach watch history from DB (Background)
+                mediaRepository.attachWatchHistory(subItems, mediaId, seasonId, episodeId);
             }
 
             runOnUiThread(() -> {
@@ -407,31 +410,56 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
         if (items == null || items.isEmpty())
             return;
 
+        // 1. Single Season Auto-Click
+        // Requirement: "if seasons contains only one items -> auto trigger it to go to
+        // episodes"
+        if (items.size() == 1) {
+            BaseHtmlParser.ParsedItem first = items.get(0);
+            // Only auto-click SEASONS, not episodes or servers (unless we want to
+            // auto-play?)
+            if (first.getType() == MediaType.SEASON) {
+                android.util.Log.d("DetailsNav", "Auto-triggering single season: " + first.getTitle());
+                new android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(() -> {
+                    onItemClicked(first);
+                }, 300); // Small delay to allow UI to settle
+                return;
+            }
+        }
+
+        // 2. Smart Focus (Last Watched Season / Episode)
+        // Requirement: "look for the last season/episode with watch percent updated and
+        // auto focus it"
         int targetIndex = -1;
-        long latestWatchTime = -1;
+        long maxLastWatched = -1;
 
         for (int i = 0; i < items.size(); i++) {
             BaseHtmlParser.ParsedItem item = items.get(i);
-            if (item.getWatchProgress() > 0) {
-                // If we found an item with progress, it's a candidate
-                // For now, let's just pick the last one in the list that has progress
-                // (usually the most recently watched episode if they are in order)
+
+            // Priority 1: Timestamp (most recent)
+            if (item.getLastWatchedAt() != null && item.getLastWatchedAt() > maxLastWatched) {
+                maxLastWatched = item.getLastWatchedAt();
+                targetIndex = i;
+            }
+            // Priority 2: Progress > 0 (fallback if timestamp missing but progress exists)
+            else if (targetIndex == -1 && item.getWatchProgress() > 0) {
                 targetIndex = i;
             }
         }
 
         if (targetIndex != -1) {
             final int index = targetIndex;
+            android.util.Log.d("DetailsNav", "Auto-focusing item at index " + index);
+
             recyclerView.post(() -> {
                 recyclerView.scrollToPosition(index);
                 // Also try to give it focus if we are on TV
-                android.view.View view = recyclerView.getLayoutManager().findViewByPosition(index);
-                if (view != null) {
-                    view.requestFocus();
-                } else {
-                    // If view is not yet laid out, we might need a small delay or a scroll listener
-                    recyclerView.smoothScrollToPosition(index);
-                }
+                // We need to wait for layout
+                recyclerView.postDelayed(() -> {
+                    RecyclerView.ViewHolder vh = recyclerView.findViewHolderForAdapterPosition(index);
+                    if (vh != null && vh.itemView != null) {
+                        vh.itemView.requestFocus();
+                    }
+                }, 100);
             });
         }
     }
@@ -468,8 +496,14 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
         // Check for direct video extensions or known patterns
         if (isDirectVideo(itemUrl)) {
             android.util.Log.d("DetailsDebug", "Direct video detected, launching player.");
-            launchPlayer(itemUrl, fullTitle, null, null, null,
-                    item.getMediaId(), item.getSeasonId(), item.getEpisodeId());
+
+            // Use ID fallbacks from current activity context if item IDs are missing
+            // (Common for Servers/Resolutions which are transient parsed items)
+            long mId = item.getMediaId() > 0 ? item.getMediaId() : this.mediaId;
+            Long sId = item.getSeasonId() != null ? item.getSeasonId() : this.seasonId;
+            Long eId = item.getEpisodeId() != null ? item.getEpisodeId() : this.episodeId;
+
+            launchPlayer(itemUrl, fullTitle, null, null, null, mId, sId, eId);
             return;
         }
 
@@ -494,8 +528,11 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
             } else {
                 // It's a resolution (e.g. "720p"). if url is not direct video, sniff it.
                 if (isDirectVideo(itemUrl)) {
-                    launchPlayer(itemUrl, fullTitle, null, null, null,
-                            item.getMediaId(), item.getSeasonId(), item.getEpisodeId());
+                    long mId = item.getMediaId() > 0 ? item.getMediaId() : this.mediaId;
+                    Long sId = item.getSeasonId() != null ? item.getSeasonId() : this.seasonId;
+                    Long eId = item.getEpisodeId() != null ? item.getEpisodeId() : this.episodeId;
+
+                    launchPlayer(itemUrl, fullTitle, null, null, null, mId, sId, eId);
                 } else {
                     getIntent().putExtra("pending_title", fullTitle);
                     startSniffer(itemUrl);

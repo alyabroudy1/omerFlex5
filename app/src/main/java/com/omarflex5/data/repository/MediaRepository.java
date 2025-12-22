@@ -165,7 +165,7 @@ public class MediaRepository {
      * Attaches watch history to a list of parsed items.
      */
     public void attachWatchHistory(List<com.omarflex5.data.scraper.BaseHtmlParser.ParsedItem> items,
-            long seriesId, Long currentSeasonId) {
+            long seriesId, Long currentSeasonId, Long episodeId) {
         if (items == null || items.isEmpty())
             return;
 
@@ -196,13 +196,29 @@ public class MediaRepository {
                 }
             } else if (item.getType() == com.omarflex5.data.local.entity.MediaType.FILM ||
                     item.getType() == com.omarflex5.data.local.entity.MediaType.SERIES) {
-                state = userMediaStateDao.getStateForMediaSync(seriesId);
+
+                // CHECK: Is this actually a SERVER? (parsed as FILM but might be child of
+                // Episode/Movie)
+                boolean isServer = (episodeId != null)
+                        || (items.size() > 1 && items.get(0).getTitle().contains("Server"));
+
+                if (isServer && episodeId != null) {
+                    // CASE: Server for an Episode -> Inherit Episode Progress
+                    state = userMediaStateDao.getStateForEpisodeSync(episodeId);
+                } else if (isServer) {
+                    // CASE: Server for a Movie -> Inherit Movie Progress
+                    state = userMediaStateDao.getStateForMediaSync(seriesId);
+                } else {
+                    // CASE: Actual Movie or Series Item
+                    state = userMediaStateDao.getStateForMediaSync(seriesId);
+                }
             }
 
             if (state != null) {
                 item.setWatchProgress(state.getWatchProgress());
                 item.setDuration(state.getDuration());
                 item.setWatched(state.isWatched());
+                item.setLastWatchedAt(state.getLastWatchedAt());
 
                 // Ensure IDs are propagated
                 if (state.getSeasonId() != null)
@@ -574,8 +590,6 @@ public class MediaRepository {
 
                 } else {
                     // Not found by URL -> Always create SOURCE-SPECIFIC MediaEntity
-                    // NEVER link directly to TMDB entities to keep them pristine
-
                     MediaEntity newMedia = new MediaEntity();
                     newMedia.setTitle(item.getTitle());
                     newMedia.setOriginalTitle(item.getOriginalTitle());
@@ -587,38 +601,73 @@ public class MediaRepository {
                     newMedia.setCategoriesJson(new org.json.JSONArray(item.getCategories()).toString());
                     newMedia.setPrimaryServerId(serverId);
 
-                    // INHERIT from TMDB if available (for rich display metadata)
-                    // But DO NOT set tmdbId on source-specific items
                     if (item.getTmdbId() != null && item.getTmdbId() > 0) {
                         MediaEntity tmdbEntity = mediaDao.getByTmdbId(item.getTmdbId());
                         if (tmdbEntity != null && tmdbEntity.getType() == item.getType()) {
                             inheritTmdbMetadata(newMedia, tmdbEntity);
-                            android.util.Log.d("SYNC",
-                                    "Created source-specific entity for " + item.getTitle() +
-                                            " with inherited TMDB metadata (tmdbId=" + item.getTmdbId() + ")");
                         }
                     }
 
-                    // Enrich from item but preserve inherited data
-                    enrichMediaFromItem(newMedia, item);
+                    long newId = mediaDao.insert(newMedia);
+                    item.setMediaId(newId);
 
-                    long mediaId = mediaDao.insert(newMedia);
-                    item.setMediaId(mediaId);
-
-                    android.util.Log.d("SYNC", "NEW source-specific entity created for " + item.getTitle() +
-                            " - mediaId=" + mediaId + " (serverId=" + serverId + ", URL=" + normalizedUrl + ")");
-
-                    // Create MediaSourceEntity to link URL to media
+                    // Link Source
                     com.omarflex5.data.local.entity.MediaSourceEntity newSource = new com.omarflex5.data.local.entity.MediaSourceEntity();
-                    newSource.setMediaId(mediaId);
+                    newSource.setMediaId(newId);
                     newSource.setServerId(serverId);
                     newSource.setExternalUrl(normalizedUrl);
-                    newSource.setTitle(item.getTitle()); // Save original scraper title
-                    newSource.setAvailable(true);
                     newSource.setCreatedAt(System.currentTimeMillis());
                     newSource.setUpdatedAt(System.currentTimeMillis());
-
                     mediaSourceDao.insert(newSource);
+                }
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }
+    }
+
+    /**
+     * Synchronizes Sub-Items (Seasons/Episodes) to DB to ensure they have IDs
+     * BEFORE attaching watch history.
+     */
+    public void syncSubItems(long mediaId, Long seasonId,
+            List<com.omarflex5.data.scraper.BaseHtmlParser.ParsedItem> items) {
+        if (items == null || items.isEmpty())
+            return;
+
+        for (com.omarflex5.data.scraper.BaseHtmlParser.ParsedItem item : items) {
+            try {
+                if (item.getType() == com.omarflex5.data.local.entity.MediaType.SEASON) {
+                    if (item.getSeasonNumber() != null) {
+                        com.omarflex5.data.local.entity.SeasonEntity s = seasonDao.getByMediaIdAndNumber(mediaId,
+                                item.getSeasonNumber());
+                        if (s == null) {
+                            s = new com.omarflex5.data.local.entity.SeasonEntity();
+                            s.setMediaId(mediaId);
+                            s.setSeasonNumber(item.getSeasonNumber());
+                            s.setTitle(item.getTitle());
+                            s.setPosterUrl(item.getPosterUrl());
+                            s.setId(seasonDao.insert(s));
+                        }
+                        item.setSeasonId(s.getId());
+                        item.setMediaId(mediaId);
+                    }
+                } else if (item.getType() == com.omarflex5.data.local.entity.MediaType.EPISODE) {
+                    if (seasonId != null && item.getEpisodeNumber() != null) {
+                        com.omarflex5.data.local.entity.EpisodeEntity ep = episodeDao.getBySeasonIdAndNumber(seasonId,
+                                item.getEpisodeNumber());
+                        if (ep == null) {
+                            ep = new com.omarflex5.data.local.entity.EpisodeEntity();
+                            ep.setSeasonId(seasonId);
+                            ep.setEpisodeNumber(item.getEpisodeNumber());
+                            ep.setTitle(item.getTitle());
+                            ep.setStillUrl(item.getPosterUrl()); // Use poster if available
+                            ep.setId(episodeDao.insert(ep));
+                        }
+                        item.setEpisodeId(ep.getId());
+                        item.setSeasonId(seasonId);
+                        item.setMediaId(mediaId);
+                    }
                 }
             } catch (Exception e) {
                 e.printStackTrace();

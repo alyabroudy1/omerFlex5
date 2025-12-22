@@ -238,6 +238,7 @@ public abstract class BaseHtmlParser {
         private long watchProgress;
         private long duration;
         private boolean isWatched;
+        private Long lastWatchedAt; // Timestamp when last watched
 
         // Database IDs (for watch history hierarchy)
         private long mediaId = -1;
@@ -508,6 +509,15 @@ public abstract class BaseHtmlParser {
 
         public ParsedItem setWatched(boolean watched) {
             isWatched = watched;
+            return this;
+        }
+
+        public Long getLastWatchedAt() {
+            return lastWatchedAt;
+        }
+
+        public ParsedItem setLastWatchedAt(Long lastWatchedAt) {
+            this.lastWatchedAt = lastWatchedAt;
             return this;
         }
     }

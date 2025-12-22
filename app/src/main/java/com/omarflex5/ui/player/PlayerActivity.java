@@ -466,6 +466,17 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
         playerView.post(() -> {
             setupControllerFocusAnimations();
             injectTitleIntoController();
+
+            // RTL Handling: Swap seek icons to match timeline direction
+            if (playerView.getLayoutDirection() == View.LAYOUT_DIRECTION_RTL) {
+                android.widget.ImageButton btnRew = playerView.findViewById(androidx.media3.ui.R.id.exo_rew);
+                android.widget.ImageButton btnFwd = playerView.findViewById(androidx.media3.ui.R.id.exo_ffwd);
+
+                if (btnRew != null)
+                    btnRew.setImageResource(R.drawable.ic_forward_10); // Point Right (Rewind in RTL)
+                if (btnFwd != null)
+                    btnFwd.setImageResource(R.drawable.ic_replay_10); // Point Left (Forward in RTL)
+            }
         });
     }
 
