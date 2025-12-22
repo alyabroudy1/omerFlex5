@@ -133,17 +133,19 @@ public class HomeViewModel extends AndroidViewModel {
             return null;
 
         // DEBUG: Log entity details
-        android.util.Log.d("HOME_DEBUG", "=== mapToMovie for " + entity.getTitle() + " ===");
-        android.util.Log.d("HOME_DEBUG", "  entityId=" + entity.getId() +
-                ", tmdbId=" + entity.getTmdbId() +
-                ", primaryServerId=" + entity.getPrimaryServerId());
-        if (item.userState != null) {
-            android.util.Log.d("HOME_DEBUG", "  userState: watchProgress=" + item.userState.getWatchProgress() +
-                    ", duration=" + item.userState.getDuration() +
-                    ", lastSourceServerId=" + item.userState.getLastSourceServerId());
-        } else {
-            android.util.Log.d("HOME_DEBUG", "  userState: NULL");
-        }
+        // android.util.Log.d("HOME_DEBUG", "=== mapToMovie for " + entity.getTitle() +
+        // " ===");
+        // android.util.Log.d("HOME_DEBUG", " entityId=" + entity.getId() +
+        // ", tmdbId=" + entity.getTmdbId() +
+        // ", primaryServerId=" + entity.getPrimaryServerId());
+        // if (item.userState != null) {
+        // android.util.Log.d("HOME_DEBUG", " userState: watchProgress=" +
+        // item.userState.getWatchProgress() +
+        // ", duration=" + item.userState.getDuration() +
+        // ", lastSourceServerId=" + item.userState.getLastSourceServerId());
+        // } else {
+        // android.util.Log.d("HOME_DEBUG", " userState: NULL");
+        // }
 
         boolean isFav = item.userState != null && item.userState.isFavorite();
         boolean isWatched = item.userState != null && item.userState.isWatched();

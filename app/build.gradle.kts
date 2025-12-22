@@ -39,6 +39,7 @@ dependencies {
     implementation(libs.material)
     implementation(libs.constraintlayout)
     implementation(libs.glide)
+    annotationProcessor("com.github.bumptech.glide:compiler:4.16.0")
     implementation(libs.lifecycle.viewmodel)
     implementation(libs.lifecycle.livedata)
     implementation(libs.media3.exoplayer)

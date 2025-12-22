@@ -132,6 +132,8 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
         observeViewModel();
         // TEMP: Start OldAkwam Test
         // startAkwamTest();
+
+        checkForUpdates();
     }
 
     public void startAkwamTest() {

@@ -36,7 +36,7 @@ public class UpdateManager {
 
     private UpdateManager() {
         client = new OkHttpClient();
-        gson = new Gson();
+        gson = new com.google.gson.GsonBuilder().setLenient().create();
     }
 
     public static synchronized UpdateManager getInstance() {
