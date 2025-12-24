@@ -105,6 +105,20 @@ public class FaselHdParser extends BaseHtmlParser {
             Document doc = Jsoup.parse(html);
             // FaselHD pagination: find the link containing "›" (next page symbol)
             Element nextLink = doc.selectFirst("ul.pagination a.page-link:contains(›)");
+
+            if (nextLink == null) {
+                // Fallback: Check for numbered pagination (Active Page + 1)
+                // <li class="page-item disabled active"><span class="page-link">1</span></li>
+                // <li class="page-item"><a class="page-link" href="...">2</a></li>
+                Element activePage = doc.selectFirst("ul.pagination li.page-item.active");
+                if (activePage != null) {
+                    Element nextLi = activePage.nextElementSibling();
+                    if (nextLi != null) {
+                        nextLink = nextLi.selectFirst("a.page-link");
+                    }
+                }
+            }
+
             if (nextLink != null) {
                 nextPageUrl = nextLink.attr("abs:href");
                 if (nextPageUrl.isEmpty()) {
