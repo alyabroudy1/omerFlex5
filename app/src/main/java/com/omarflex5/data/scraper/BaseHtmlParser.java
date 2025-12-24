@@ -67,9 +67,37 @@ public abstract class BaseHtmlParser {
     public abstract List<ParsedItem> parseSearchResults();
 
     /**
+     * Parse search results with pagination info.
+     * Override this in parsers that support pagination.
+     * Default implementation returns results with no next page.
+     */
+    public ParsedSearchResult parseSearchResultsWithPagination() {
+        return new ParsedSearchResult(parseSearchResults(), null);
+    }
+
+    /**
      * Parse detail page (movie/series info).
      */
     public abstract ParsedItem parseDetailPage();
+
+    // ==================== PAGINATION SUPPORT ====================
+
+    /**
+     * Result wrapper that includes pagination info.
+     */
+    public static class ParsedSearchResult {
+        public final List<ParsedItem> items;
+        public final String nextPageUrl;
+
+        public ParsedSearchResult(List<ParsedItem> items, String nextPageUrl) {
+            this.items = items != null ? items : new ArrayList<>();
+            this.nextPageUrl = nextPageUrl;
+        }
+
+        public boolean hasNextPage() {
+            return nextPageUrl != null && !nextPageUrl.isEmpty();
+        }
+    }
 
     // ==================== COMMON UTILITIES ====================
 

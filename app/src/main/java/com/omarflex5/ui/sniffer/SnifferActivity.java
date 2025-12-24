@@ -340,6 +340,12 @@ public class SnifferActivity extends AppCompatActivity {
             }
 
             @Override
+            public void onPageStarted(String url) {
+                // Update status when page starts loading
+                SnifferActivity.this.updateStatus("Loading: " + truncateUrl(url));
+            }
+
+            @Override
             public void onPageLoaded(String url) {
                 // Standard page load
             }

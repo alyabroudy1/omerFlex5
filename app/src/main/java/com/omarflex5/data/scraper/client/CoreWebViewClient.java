@@ -47,6 +47,7 @@ public class CoreWebViewClient extends WebViewClient {
         Log.d(TAG, "Page Started: " + url);
         if (controller != null) {
             controller.updateStatus("Loading...");
+            controller.onPageStarted(url);
         }
     }
 
@@ -59,27 +60,59 @@ public class CoreWebViewClient extends WebViewClient {
             controller.onPageLoaded(url);
         }
 
-        // Automatic Cloudflare Detection using utility
-        view.evaluateJavascript("document.title", title -> {
-            String pageTitle = title != null ? title.replace("\"", "") : "";
+        // Automatic Cloudflare Detection using HTML Content (Language Agnostic)
+        // We verify content instead of Title because localized challenges (e.g. Arabic)
+        // vary in title but contain standard technical tokens in HTML.
+        view.evaluateJavascript(
+                "(function() { return document.documentElement.outerHTML; })();",
+                htmlRaw -> {
+                    // Proper unescaping of JS string result
+                    String html = unescapeJsString(htmlRaw);
 
-            if (controller != null) {
-                controller.updateStatus("Status: " + (pageTitle.isEmpty() ? "Loading..." : pageTitle));
-            }
+                    // Debug: Log first 500 chars to help diagnose detection issues
+                    if (html != null && html.length() > 0) {
+                        String preview = html.length() > 500 ? html.substring(0, 500) : html;
+                        Log.d(TAG, "HTML Preview: " + preview.replaceAll("\\s+", " "));
+                    }
 
-            if (com.omarflex5.data.scraper.util.CfDetector.isCloudflareTitleIndicator(pageTitle)) {
-                // Still on CF challenge
-                Log.d(TAG, "CF challenge detected via Title: " + pageTitle);
-                if (controller != null) {
-                    controller.onCloudflareDetected();
-                }
-            } else if (!pageTitle.isEmpty()) {
-                // CF passed or normal page loaded
-                if (controller != null) {
-                    controller.onContentReady(url);
-                }
-            }
-        });
+                    if (controller != null) {
+                        controller.updateStatus("Status: Verifying content...");
+                    }
+
+                    if (html != null && com.omarflex5.data.scraper.util.CfDetector.isCloudflareContent(html)) {
+                        // Still on CF challenge
+                        Log.d(TAG, "CF challenge detected via Content");
+                        if (controller != null) {
+                            controller.onCloudflareDetected();
+                        }
+                    } else if (html != null && !html.isEmpty()) {
+                        // CF passed or normal page loaded
+                        if (controller != null) {
+                            controller.onContentReady(url);
+                        }
+                    }
+                });
+    }
+
+    /**
+     * Properly unescape a JavaScript string returned from evaluateJavascript.
+     */
+    private String unescapeJsString(String jsString) {
+        if (jsString == null)
+            return null;
+        // Remove surrounding quotes if present
+        if (jsString.startsWith("\"") && jsString.endsWith("\"") && jsString.length() >= 2) {
+            jsString = jsString.substring(1, jsString.length() - 1);
+        }
+        return jsString
+                .replace("\\u003C", "<")
+                .replace("\\u003c", "<")
+                .replace("\\u003E", ">")
+                .replace("\\u003e", ">")
+                .replace("\\\"", "\"")
+                .replace("\\n", "\n")
+                .replace("\\t", "\t")
+                .replace("\\\\", "\\");
     }
 
     @Override

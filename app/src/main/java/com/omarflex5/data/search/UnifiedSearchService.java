@@ -59,6 +59,9 @@ public class UnifiedSearchService {
     // Track tasks that failed Direct Search due to Cloudflare
     private final List<SearchTask> lastFailedTasks = new ArrayList<>();
 
+    // Queue for pagination (next page URLs to fetch on "Load More")
+    private final List<SearchTask> paginationQueue = new ArrayList<>();
+
     private static class SearchTask {
         final ServerEntity server;
         final String url;
@@ -126,6 +129,7 @@ public class UnifiedSearchService {
         currentContext = context;
         searchState.postValue(SearchState.loading(currentQuery));
         lastFailedTasks.clear(); // Clear previous session failures
+        paginationQueue.clear(); // Clear previous pagination queue
 
         Log.d(TAG, "Starting search: " + currentQuery + (context != null ? " with context" : ""));
 
@@ -279,7 +283,8 @@ public class UnifiedSearchService {
     }
 
     /**
-     * Process queued CF servers (triggered by user clicking "Load More").
+     * Process queued servers (triggered by user clicking "Load More").
+     * Priority: 1) Pagination queue (next pages), 2) CF retry queue
      */
     public void processQueuedServers() {
         if (currentQuery == null)
@@ -289,35 +294,48 @@ public class UnifiedSearchService {
         List<SearchResult> baseResults = getCurrentResults();
         searchState.postValue(SearchState.loadingMore(currentQuery, baseResults));
 
-        // Use cached failed tasks if available
+        // Priority 1: Process pagination queue first (round-robin across servers)
         List<SearchTask> toProcess = new ArrayList<>();
-        synchronized (lastFailedTasks) {
-            if (!lastFailedTasks.isEmpty()) {
-                toProcess.addAll(lastFailedTasks);
+        synchronized (paginationQueue) {
+            if (!paginationQueue.isEmpty()) {
+                // Take one task per server for round-robin
+                toProcess.addAll(paginationQueue);
+                paginationQueue.clear();
+                Log.d(TAG, "Processing pagination tasks: " + toProcess.size());
+            }
+        }
+
+        // Priority 2: If no pagination tasks, process CF retry queue
+        if (toProcess.isEmpty()) {
+            synchronized (lastFailedTasks) {
+                if (!lastFailedTasks.isEmpty()) {
+                    toProcess.addAll(lastFailedTasks);
+                    lastFailedTasks.clear();
+                    Log.d(TAG, "Processing CF retry tasks: " + toProcess.size());
+                }
             }
         }
 
         if (!toProcess.isEmpty()) {
-            Log.d(TAG, "Processing cached failed tasks: " + toProcess.size());
             processNextQueuedTask(toProcess, 0, baseResults, new ArrayList<>(), currentContext);
         } else {
-            // Fallback (edge case)
-            serverRepository.getSearchableServers(servers -> {
-                List<SearchTask> fallbackQueue = new ArrayList<>();
-                for (ServerEntity server : servers) {
-                    if (server.isEnabled() && server.isRequiresWebView()) {
-                        List<String> urls = ParserFactory.getSearchUrls(server, currentQuery);
-                        for (String url : urls) {
-                            fallbackQueue.add(new SearchTask(server, url));
-                        }
-                    }
-                }
-                if (fallbackQueue.isEmpty()) {
-                    searchState.postValue(SearchState.complete(currentQuery, baseResults));
-                } else {
-                    processNextQueuedTask(fallbackQueue, 0, baseResults, new ArrayList<>(), currentContext);
-                }
-            });
+            // No more tasks - mark as complete
+            Log.d(TAG, "No more tasks to process");
+            searchState.postValue(SearchState.complete(currentQuery, baseResults));
+        }
+    }
+
+    /**
+     * Check if there are pending tasks (pagination or CF retry).
+     * Used by UI to show/hide "Load More" button.
+     */
+    public boolean hasPendingTasks() {
+        synchronized (paginationQueue) {
+            if (!paginationQueue.isEmpty())
+                return true;
+        }
+        synchronized (lastFailedTasks) {
+            return !lastFailedTasks.isEmpty();
         }
     }
 
@@ -377,13 +395,26 @@ public class UnifiedSearchService {
 
     /**
      * Parse HTML results from a server.
+     * Now uses parseSearchResultsWithPagination to extract and queue next page
+     * URLs.
      */
     private List<SearchResult> parseResults(ServerEntity server, String html, MetadataContext context) {
         List<SearchResult> results = new ArrayList<>();
 
         try {
             BaseHtmlParser parser = ParserFactory.getParser(server.getName(), html, server.getBaseUrl());
-            List<BaseHtmlParser.ParsedItem> items = parser.parseSearchResults();
+
+            // Use pagination-aware parsing
+            BaseHtmlParser.ParsedSearchResult parsedResult = parser.parseSearchResultsWithPagination();
+            List<BaseHtmlParser.ParsedItem> items = parsedResult.items;
+
+            // Queue next page URL if available
+            if (parsedResult.hasNextPage()) {
+                synchronized (paginationQueue) {
+                    paginationQueue.add(new SearchTask(server, parsedResult.nextPageUrl));
+                    Log.d(TAG, "Queued next page for " + server.getName() + ": " + parsedResult.nextPageUrl);
+                }
+            }
 
             // Enrich items with context if available
             if (context != null) {
@@ -422,7 +453,8 @@ public class UnifiedSearchService {
                 results.add(result);
             }
 
-            Log.d(TAG, "Parsed " + results.size() + " results from " + server.getName());
+            Log.d(TAG, "Parsed " + results.size() + " results from " + server.getName() +
+                    (parsedResult.hasNextPage() ? " (has more pages)" : " (last page)"));
 
         } catch (Exception e) {
             Log.e(TAG, "Parse error for " + server.getName() + ": " + e.getMessage());

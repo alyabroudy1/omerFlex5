@@ -66,23 +66,27 @@
             android:focusable="true"
             android:descendantFocusability="afterDescendants" />
 
-        <!-- Load More Button -->
+        <!-- Load More Button (TV Remote Navigatable) -->
         <Button
             android:id="@+id/btn_load_more"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_gravity="center"
+            android:layout_gravity="center_horizontal"
             android:layout_margin="16dp"
             android:background="@drawable/selector_button_focus"
-            android:paddingHorizontal="24dp"
-            android:paddingVertical="12dp"
+            android:paddingHorizontal="32dp"
+            android:paddingVertical="16dp"
             android:text="@string/load_more"
             android:textColor="#FFFFFF"
-            android:textSize="14sp"
+            android:textSize="16sp"
+            android:textStyle="bold"
             android:visibility="gone"
             android:focusable="true"
-            android:focusableInTouchMode="false"
-            android:nextFocusUp="@id/recycler_results" />
+            android:focusableInTouchMode="true"
+            android:nextFocusUp="@id/recycler_results"
+            android:nextFocusDown="@id/btn_load_more"
+            android:nextFocusLeft="@id/btn_load_more"
+            android:nextFocusRight="@id/btn_load_more" />
     </LinearLayout>
 
     <!-- Empty View -->

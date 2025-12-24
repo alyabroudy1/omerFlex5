@@ -93,10 +93,18 @@ public class SearchViewModel extends AndroidViewModel {
     }
 
     /**
-     * Load more results from CF-protected servers.
+     * Load more results (pagination or CF-protected servers).
      */
     public void loadMore() {
         searchService.processQueuedServers();
+    }
+
+    /**
+     * Check if there are pending tasks (pagination or CF retry).
+     * Used to show/hide "Load More" button.
+     */
+    public boolean hasPendingTasks() {
+        return searchService.hasPendingTasks();
     }
 
     /**

@@ -91,6 +91,34 @@ public class FaselHdParser extends BaseHtmlParser {
         return items;
     }
 
+    /**
+     * Parse search results with pagination info.
+     * Extracts the "next page" link from FaselHD pagination.
+     * FaselHD uses: <a class="page-link" href="...">›</a> for next page
+     */
+    @Override
+    public ParsedSearchResult parseSearchResultsWithPagination() {
+        List<ParsedItem> items = parseSearchResults();
+        String nextPageUrl = null;
+
+        try {
+            Document doc = Jsoup.parse(html);
+            // FaselHD pagination: find the link containing "›" (next page symbol)
+            Element nextLink = doc.selectFirst("ul.pagination a.page-link:contains(›)");
+            if (nextLink != null) {
+                nextPageUrl = nextLink.attr("abs:href");
+                if (nextPageUrl.isEmpty()) {
+                    nextPageUrl = nextLink.attr("href");
+                }
+                Log.d(TAG, "Found next page URL: " + nextPageUrl);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error extracting next page URL", e);
+        }
+
+        return new ParsedSearchResult(items, nextPageUrl);
+    }
+
     @Override
     public ParsedItem parseDetailPage() {
         ParsedItem result = new ParsedItem();

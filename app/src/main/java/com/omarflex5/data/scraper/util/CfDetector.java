@@ -28,12 +28,16 @@ public class CfDetector {
                 body.contains("Checking your browser") ||
                 body.contains("cf-browser-verification") ||
                 body.contains("__cf_chl_tk") ||
-                body.contains("cf_clearance");
+                body.contains("cf_clearance") ||
+                body.contains("challenge-form") ||
+                body.contains("_cf_chl_opt") ||
+                body.contains("turnstile-wrapper");
     }
 
     /**
      * Check if HTML content contains Cloudflare challenge page.
      * Use this for content already loaded in WebView.
+     * Includes Turnstile widget detection for modern CF challenges.
      *
      * @param html Page HTML content
      * @return true if page appears to be a CF challenge
@@ -43,9 +47,26 @@ public class CfDetector {
             return false;
         }
 
-        return html.contains("Just a moment") ||
+        // Classic CF challenge indicators
+        if (html.contains("Just a moment") ||
                 html.contains("Checking your browser") ||
-                html.contains("cf-browser-verification");
+                html.contains("cf-browser-verification")) {
+            return true;
+        }
+
+        // Turnstile-specific indicators (modern CF challenges)
+        if (html.contains("cf-turnstile") || // Turnstile widget class
+                html.contains("challenges.cloudflare") || // Turnstile iframe src
+                html.contains("challenge-form") || // CF challenge form ID
+                html.contains("_cf_chl_opt") || // CF challenge config object
+                html.contains("turnstile-wrapper") || // Turnstile container
+                html.contains("cf-spinner") || // CF loading spinner
+                html.contains("__cf_chl_tk") || // CF token
+                html.contains("data-cf-settings")) { // CF settings attribute
+            return true;
+        }
+
+        return false;
     }
 
     /**

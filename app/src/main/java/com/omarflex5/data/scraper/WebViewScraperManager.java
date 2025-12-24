@@ -175,6 +175,10 @@ public class WebViewScraperManager {
 
             // Implement Controller to link Client events to Manager logic
             com.omarflex5.data.scraper.client.WebViewController controller = new com.omarflex5.data.scraper.client.WebViewController() {
+                private Runnable pendingSuccessTask = null;
+                private String lastLoadedUrl = null;
+                private boolean cfWasDetected = false;
+
                 @Override
                 public void updateStatus(String message) {
                     updateDialogStatus(message);
@@ -187,27 +191,64 @@ public class WebViewScraperManager {
 
                 @Override
                 public void onCloudflareDetected() {
-                    Log.d(TAG, "CF challenge detected, waiting...");
-                    updateDialogStatus("⚠️ Cloudflare Detected. Please verify.");
+                    Log.d(TAG, "CF challenge detected, waiting for redirect...");
+                    cfWasDetected = true;
+                    // Cancel any pending success check because we are definitely in a challenge
+                    cancelPendingSuccess();
+                    updateDialogStatus("⚠️ Cloudflare Detected. Waiting...");
+                    // Don't extract - just wait for the next onPageFinished after CF redirects
+                }
+
+                @Override
+                public void onPageStarted(String url) {
+                    Log.d(TAG, "Page Started: " + url + (cfWasDetected ? " (after CF)" : ""));
+                    // Cancel pending success because the page is changing
+                    cancelPendingSuccess();
                 }
 
                 @Override
                 public void onPageLoaded(String url) {
-                    // Base loaded, waiting for content check
+                    // Track URL for change detection
+                    lastLoadedUrl = url;
                 }
 
                 @Override
                 public void onContentReady(String url) {
-                    // Safe content detected (No CF or CF passed)
-                    if (!completed.getAndSet(true)) {
-                        checkAndHandleRedirect(server, url);
-                        extractAndSave(webView, server, callback);
+                    // This is called when CoreWebViewClient verified NO CF in HTML
+                    Log.d(TAG, "Content Ready: " + url + " (CF was: " + cfWasDetected + ")");
+
+                    // If CF was previously detected and now content is ready,
+                    // it means the redirect happened - this is the real content!
+                    if (cfWasDetected) {
+                        Log.d(TAG, "CF bypass successful! Extracting content...");
+                        cfWasDetected = false; // Reset for next request
                     }
+
+                    // Short debounce (500ms) to handle edge cases where page might still be loading
+                    cancelPendingSuccess();
+
+                    pendingSuccessTask = () -> {
+                        if (!completed.getAndSet(true)) {
+                            checkAndHandleRedirect(server, url);
+                            extractAndSave(webView, server, callback);
+                        }
+                    };
+
+                    // Short 500ms debounce - just to handle rapid redirects
+                    mainHandler.postDelayed(pendingSuccessTask, 500);
                 }
 
                 @Override
                 public void onVideoDetected(String url, java.util.Map<String, String> headers) {
                     // Not used in Scraper
+                }
+
+                private void cancelPendingSuccess() {
+                    if (pendingSuccessTask != null) {
+                        mainHandler.removeCallbacks(pendingSuccessTask);
+                        pendingSuccessTask = null;
+                        Log.d(TAG, "Pending success task cancelled.");
+                    }
                 }
             };
 

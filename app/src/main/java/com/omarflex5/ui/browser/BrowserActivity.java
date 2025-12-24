@@ -182,6 +182,13 @@ public class BrowserActivity extends com.omarflex5.ui.base.BaseActivity {
             }
 
             @Override
+            public void onPageStarted(String url) {
+                // Optional: Update title or status when a new page load begins
+                BrowserActivity.this.updateStatus("Loading...");
+                textTitle.setText(url);
+            }
+
+            @Override
             public void onPageLoaded(String url) {
                 textTitle.setText(url);
                 // Inject auto-click script if needed (preserved logic)

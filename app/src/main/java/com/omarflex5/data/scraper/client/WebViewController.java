@@ -22,6 +22,11 @@ public interface WebViewController {
     void onCloudflareDetected();
 
     /**
+     * Called when a new page load starts.
+     */
+    void onPageStarted(String url);
+
+    /**
      * Called when valid content (non-CF) is loaded.
      */
     void onPageLoaded(String url);
