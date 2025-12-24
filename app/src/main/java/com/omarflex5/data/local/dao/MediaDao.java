@@ -93,6 +93,11 @@ public interface MediaDao {
             int limit);
 
     @androidx.room.Transaction
-    @Query("SELECT m.* FROM media m INNER JOIN user_media_state u ON m.id = u.mediaId WHERE u.watchProgress > 0 AND u.episodeId IS NULL ORDER BY u.lastWatchedAt DESC LIMIT :limit")
+    @Query("SELECT m.* FROM media m " +
+            "INNER JOIN user_media_state u ON m.id = u.mediaId " +
+            "WHERE u.watchProgress > 0 AND u.episodeId IS NULL " +
+            "GROUP BY m.id " + // Deduplicate: one entry per media
+            "ORDER BY MAX(u.lastWatchedAt) DESC " + // Most recently watched first
+            "LIMIT :limit")
     LiveData<List<com.omarflex5.data.local.model.MediaWithUserState>> getContinueWatchingLiveData(int limit);
 }

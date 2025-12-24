@@ -10,10 +10,13 @@ import android.webkit.WebView;
 /**
  * Specialized WebViewClient for Sniffing (Interactive & Browser modes).
  * Handles external intent redirection (Market, Mail, Tel, WhatsApp).
+ * Filters short URLs as pre-roll ad proxies.
  */
 public class SnifferWebViewClient extends CoreWebViewClient {
 
     private static final String TAG = "SnifferWebViewClient";
+    private static final int MIN_VIDEO_URL_LENGTH = 50; // Short URLs are likely ad proxies (v.mp4, ad.mp4)
+
     private final Context context;
 
     public SnifferWebViewClient(Context context, WebViewController controller) {
@@ -48,7 +51,16 @@ public class SnifferWebViewClient extends CoreWebViewClient {
 
         // Check for video URLs (Basic check, can be expanded)
         if (isVideoUrl(url)) {
-            Log.d(TAG, "Intercepted video request: " + url);
+            Log.d(TAG, "Intercepted video request: " + url + " (Len: " + url.length() + ")");
+
+            // Filter short URLs - they are likely pre-roll ad proxies like /v.mp4
+            if (url.length() < MIN_VIDEO_URL_LENGTH) {
+                Log.d(TAG, "  -> REJECTED (Short URL < " + MIN_VIDEO_URL_LENGTH + " chars - likely ad proxy)");
+                // Don't notify - continue sniffing for real video
+                return null;
+            }
+
+            Log.d(TAG, "  -> ACCEPTED (URL length >= " + MIN_VIDEO_URL_LENGTH + ")");
             if (controller != null) {
                 controller.onVideoDetected(url, request.getRequestHeaders());
             }
@@ -59,17 +71,8 @@ public class SnifferWebViewClient extends CoreWebViewClient {
         return super.shouldInterceptRequest(view, request);
     }
 
-    @Override
-    public void onPageStarted(WebView view, String url, android.graphics.Bitmap favicon) {
-        super.onPageStarted(view, url, favicon);
-        Log.d(TAG, "onPageStarted: " + url);
-        String cookies = android.webkit.CookieManager.getInstance().getCookie(url);
-        Log.d(TAG, "COOKIES at onPageStarted: " + (cookies != null ? cookies : "null"));
-    }
-
     private boolean isVideoUrl(String url) {
         String lower = url.toLowerCase();
         return lower.endsWith(".mp4") || lower.endsWith(".m3u8") || lower.contains(".mp4?") || lower.contains(".m3u8?");
     }
-
 }

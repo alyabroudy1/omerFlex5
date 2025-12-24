@@ -227,6 +227,7 @@ public class VideoSniffer {
         @Override
         public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
             String url = request.getUrl().toString();
+            Log.d(TAG, "shouldOverrideUrlLoading (Redirect check): " + url);
 
             // STRICT: Block any non-HTTP/HTTPS redirect (e.g. intent://, market://,
             // mailto:)
@@ -235,6 +236,7 @@ public class VideoSniffer {
                 return true; // Block it
             }
 
+            Log.d(TAG, "ALLOWED Redirect (HTTP/S): " + url);
             return super.shouldOverrideUrlLoading(view, request);
         }
 
@@ -261,17 +263,22 @@ public class VideoSniffer {
             }
 
             // 2. Check Regex
-            if (VIDEO_PATTERN.matcher(url).matches() || url.contains("/hls/") || url.contains("/dash/")) {
+            boolean matchesRegex = VIDEO_PATTERN.matcher(url).matches() || url.contains("/hls/")
+                    || url.contains("/dash/");
+            if (matchesRegex) {
+                Log.d(TAG, "Regex MATCH for: " + url);
                 if (!isAdUrl(url)) {
-                    notifyVideoFound(url, request.getRequestHeaders());
+                    // Validate video size before accepting (skip small pre-roll ads)
+                    validateVideoSize(url, request.getRequestHeaders());
                 } else {
-                    Log.d(TAG, "Filtered Ad URL: " + url);
+                    Log.d(TAG, "Refused Ad URL (Regex match but Ad): " + url);
                 }
                 return null;
             }
 
             // 3. Head Request for Content-Type (Slow Path)
             if (!isCommonResource(url) && (url.contains("video") || url.contains("play") || url.contains("stream"))) {
+                Log.d(TAG, "Starting HEAD check (potential video keyword): " + url);
                 checkContentType(url, request.getRequestHeaders());
             }
 
@@ -281,22 +288,43 @@ public class VideoSniffer {
 
     private boolean isAdUrl(String url) {
         String lower = url.toLowerCase();
+
+        // Debug Log for analysis
+        Log.d(TAG, "Checking isAdUrl: " + url);
+
         // Custom Blocklist
-        if (lower.contains("beacon.min.js"))
+        if (lower.contains("beacon.min.js")) {
+            Log.d(TAG, "BLOCKING Ad (beacon): " + url);
             return true;
-        if (lower.contains("googleads"))
+        }
+        if (lower.contains("googleads")) {
+            Log.d(TAG, "BLOCKING Ad (googleads): " + url);
             return true;
-        if (lower.contains("doubleclick"))
+        }
+        if (lower.contains("doubleclick")) {
+            Log.d(TAG, "BLOCKING Ad (doubleclick): " + url);
             return true;
-        if (lower.contains("analytics"))
+        }
+        if (lower.contains("analytics")) {
+            Log.d(TAG, "BLOCKING Ad (analytics): " + url);
             return true;
-        // Generic low-value video names
-        if (lower.endsWith("/ads.mp4") || lower.endsWith("/ad.mp4"))
+        }
+
+        // Generic low-value video names (explicit ad paths only)
+        if (lower.endsWith("/ads.mp4") || lower.endsWith("/ad.mp4")) {
+            Log.d(TAG, "BLOCKING Ad (explicit ad filename): " + url);
             return true;
+        }
+
         // Length check - strict but safe for absolute URLs
         // https://a.com/v.mp4 is ~21 chars.
-        if (lower.length() < 50)
+        // User reported issues with length check - relaxed to 15.
+        if (lower.length() < 50) {
+            Log.d(TAG, "BLOCKING Ad (Length < 50): " + url + " (Len: " + lower.length() + ")");
             return true;
+        }
+
+        Log.d(TAG, "ALLOWED (Not Ad): " + url);
         return false;
     }
 
@@ -330,6 +358,76 @@ public class VideoSniffer {
                 }
             } catch (Exception e) {
                 // Ignore
+            }
+        }).start();
+    }
+
+    /**
+     * Validate video size before accepting.
+     * Pre-roll ads are typically small (< 10MB), while real videos are much larger.
+     * Minimum threshold: 10MB (10 * 1024 * 1024 = 10485760 bytes)
+     */
+    private static final long MIN_VIDEO_SIZE_BYTES = 10 * 1024 * 1024; // 10MB
+
+    private void validateVideoSize(String urlString, Map<String, String> originalHeaders) {
+        new Thread(() -> {
+            try {
+                String cookies = CookieManager.getInstance().getCookie(urlString);
+                URL url = new URL(urlString);
+                HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+                conn.setRequestMethod("HEAD");
+                conn.setConnectTimeout(5000);
+                conn.setReadTimeout(5000);
+                conn.setRequestProperty("User-Agent", USER_AGENT);
+                conn.setInstanceFollowRedirects(true);
+                if (cookies != null) {
+                    conn.setRequestProperty("Cookie", cookies);
+                }
+                // Add Referer if available
+                if (webView != null) {
+                    handler.post(() -> {
+                        String referer = webView.getUrl();
+                        if (referer != null) {
+                            // Can't set header after connection is made, so just log
+                            Log.d(TAG, "Video validation Referer: " + referer);
+                        }
+                    });
+                }
+
+                int responseCode = conn.getResponseCode();
+                long contentLength = conn.getContentLengthLong();
+                String contentType = conn.getContentType();
+                conn.disconnect();
+
+                Log.d(TAG, "VideoSize Check: " + urlString);
+                Log.d(TAG, "  -> Response: " + responseCode + " | Content-Length: " + contentLength + " | Type: "
+                        + contentType);
+
+                // HLS/DASH streams don't have Content-Length, accept them directly
+                String lower = urlString.toLowerCase();
+                if (lower.contains(".m3u8") || lower.contains(".mpd") || lower.contains("/hls/")
+                        || lower.contains("/dash/")) {
+                    Log.d(TAG, "  -> ACCEPTED (Streaming format, no size check)");
+                    notifyVideoFound(urlString, originalHeaders);
+                    return;
+                }
+
+                // Check Content-Length
+                if (contentLength == -1) {
+                    // Unknown size - accept with warning (some servers don't report size)
+                    Log.d(TAG, "  -> ACCEPTED (Unknown size - server did not report Content-Length)");
+                    notifyVideoFound(urlString, originalHeaders);
+                } else if (contentLength >= MIN_VIDEO_SIZE_BYTES) {
+                    Log.d(TAG, "  -> ACCEPTED (Size: " + (contentLength / 1024 / 1024) + " MB >= 10MB threshold)");
+                    notifyVideoFound(urlString, originalHeaders);
+                } else {
+                    Log.d(TAG, "  -> REJECTED (Pre-roll Ad: Size " + (contentLength / 1024) + " KB < 10MB threshold)");
+                    // Don't notify - this is likely a pre-roll ad
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "VideoSize Check failed: " + e.getMessage());
+                // On error, accept the video anyway to avoid missing content
+                notifyVideoFound(urlString, originalHeaders);
             }
         }).start();
     }

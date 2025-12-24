@@ -59,11 +59,36 @@ public class MovieCardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
         if (getItemViewType(position) == VIEW_TYPE_LOAD_MORE) {
             return -1;
         }
-        // Use hash of ID, fallback to position if ID is invalid
+
+        Movie movie = movies.get(position);
+
+        // Generate composite ID for uniqueness:
+        // For series with multiple seasons in Continue Watching, combine mediaId with
+        // season/episode
         try {
-            return Long.parseLong(movies.get(position).getId());
+            long baseId = Long.parseLong(movie.getId());
+
+            // Add seasonId and episodeId to make unique for series with multiple entries
+            Long seasonId = movie.getSeasonId();
+            Long episodeId = movie.getEpisodeId();
+
+            if (seasonId != null || episodeId != null) {
+                // Combine IDs: shift baseId left and OR with season/episode
+                // Format: baseId * 1000000 + seasonId * 1000 + episodeId
+                long composite = baseId * 1000000L;
+                if (seasonId != null) {
+                    composite += seasonId * 1000L;
+                }
+                if (episodeId != null) {
+                    composite += episodeId;
+                }
+                return composite;
+            }
+
+            return baseId;
         } catch (Exception e) {
-            return movies.get(position).getId().hashCode();
+            // Fallback: use position to ensure uniqueness
+            return Integer.MAX_VALUE + position;
         }
     }
 

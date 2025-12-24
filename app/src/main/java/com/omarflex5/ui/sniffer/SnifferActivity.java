@@ -245,6 +245,135 @@ public class SnifferActivity extends AppCompatActivity {
         webView.dispatchTouchEvent(upEvent);
     }
 
+    /**
+     * Inject JavaScript to skip/speed up JWPlayer pre-roll video ads.
+     * Works by:
+     * 1. Trying to seek the ad to the end
+     * 2. Speeding up playback to 16x
+     * 3. Muting the ad
+     * 4. Clicking any skip button
+     */
+    private void injectAdSkipScript() {
+        if (webView == null)
+            return;
+
+        String adSkipScript = "javascript:(function() {" +
+                "console.log('[AdSkip] Initializing...');" +
+                // JWPlayer ad skip
+                "function skipJWAd() {" +
+                "  try {" +
+                "    if (typeof jwplayer !== 'undefined') {" +
+                "      var player = jwplayer();" +
+                "      if (player && player.getState) {" +
+                "        console.log('[AdSkip] JWPlayer found, state: ' + player.getState());" +
+                // Try to seek to end of ad
+                "        var duration = player.getDuration();" +
+                "        if (duration > 0 && duration < 30) {" + // Short video = ad
+                "          console.log('[AdSkip] Short video detected (' + duration + 's), seeking to end...');" +
+                "          player.seek(duration - 0.5);" +
+                "          player.setMute(true);" +
+                "        }" +
+                "      }" +
+                "    }" +
+                "  } catch(e) { console.log('[AdSkip] JWPlayer error: ' + e); }" +
+                "}" +
+                // HTML5 video speed up
+                "function speedUpVideos() {" +
+                "  var videos = document.getElementsByTagName('video');" +
+                "  for (var i = 0; i < videos.length; i++) {" +
+                "    var v = videos[i];" +
+                "    if (v.duration > 0 && v.duration < 30) {" + // Short video = ad
+                "      console.log('[AdSkip] Speeding up ad video: ' + v.duration + 's');" +
+                "      v.playbackRate = 16;" + // Max speed
+                "      v.muted = true;" +
+                "      v.currentTime = v.duration - 0.5;" + // Seek to near end
+                "    }" +
+                "  }" +
+                "}" +
+                // Click skip button if visible
+                "function clickSkipButton() {" +
+                "  var skipSelectors = [" +
+                "    '.jw-skip', '.skip-button', '.skip-ad', '[class*=\"skip\"]'," +
+                "    '.vast-skip-button', '.videoAdUiSkipButton', '[aria-label*=\"Skip\"]'" +
+                "  ];" +
+                "  for (var i = 0; i < skipSelectors.length; i++) {" +
+                "    var btn = document.querySelector(skipSelectors[i]);" +
+                "    if (btn && btn.offsetParent !== null) {" +
+                "      console.log('[AdSkip] Found skip button, clicking...');" +
+                "      btn.click();" +
+                "      return true;" +
+                "    }" +
+                "  }" +
+                "  return false;" +
+                "}" +
+                // Auto-start video by clicking on player elements
+                "function autoStartVideo() {" +
+                "  try {" +
+                // Try JWPlayer play()
+                "    if (typeof jwplayer !== 'undefined') {" +
+                "      var player = jwplayer();;" +
+                "      if (player && player.play) {" +
+                "        console.log('[AdSkip] Calling jwplayer.play()...');" +
+                "        player.play();" +
+                "      }" +
+                "    }" +
+                // Click on video element
+                "    var videos = document.getElementsByTagName('video');" +
+                "    for (var i = 0; i < videos.length; i++) {" +
+                "      if (videos[i].paused) {" +
+                "        console.log('[AdSkip] Video paused, clicking to start...');" +
+                "        videos[i].click();" +
+                "        videos[i].play();" +
+                "      }" +
+                "    }" +
+                // Click on common play button selectors
+                "    var playSelectors = [" +
+                "      '.jw-icon-playback', '.jw-display-icon-container', '.vjs-big-play-button'," +
+                "      '.play-button', '.poster', '[aria-label*=\"Play\"]', '.plyr__control--overlaid'," +
+                "      '.ytp-large-play-button', 'button[data-plyr=\"play\"]'" +
+                "    ];" +
+                "    for (var i = 0; i < playSelectors.length; i++) {" +
+                "      var btn = document.querySelector(playSelectors[i]);" +
+                "      if (btn && btn.offsetParent !== null) {" +
+                "        console.log('[AdSkip] Found play button: ' + playSelectors[i]);" +
+                "        btn.click();" +
+                "        break;" +
+                "      }" +
+                "    }" +
+                // Click on iframe to focus and potentially trigger play
+                "    var iframes = document.getElementsByTagName('iframe');" +
+                "    for (var i = 0; i < iframes.length; i++) {" +
+                "      var src = iframes[i].src || '';" +
+                "      if (src.indexOf('player') > -1 || src.indexOf('embed') > -1) {" +
+                "        console.log('[AdSkip] Found player iframe, focusing...');" +
+                "        iframes[i].focus();" +
+                "      }" +
+                "    }" +
+                "  } catch(e) { console.log('[AdSkip] autoStart error: ' + e); }" +
+                "}" +
+                // Run all methods
+                "autoStartVideo();" +
+                "skipJWAd();" +
+                "speedUpVideos();" +
+                "clickSkipButton();" +
+                // Repeat every second to catch delayed ads
+                "setInterval(function() {" +
+                "  autoStartVideo();" +
+                "  skipJWAd();" +
+                "  speedUpVideos();" +
+                "  clickSkipButton();" +
+                "}, 1000);" +
+                "console.log('[AdSkip] Script installed');" +
+                "})();";
+
+        runOnUiThread(() -> {
+            if (webView != null) {
+                webView.evaluateJavascript(adSkipScript, null);
+                Log.d(TAG, "Ad-skip script injected");
+            }
+        });
+    }
+
     private SniffingStrategy createStrategy(int type, String customJs) {
         SnifferCallback callback = new SnifferCallback() {
             @Override
@@ -347,7 +476,11 @@ public class SnifferActivity extends AppCompatActivity {
 
             @Override
             public void onPageLoaded(String url) {
-                // Standard page load
+                // Inject ad-skip script for JWPlayer (FaselHD uses JWPlayer)
+                if (webView != null && url.contains("faselhd")) {
+                    Log.d(TAG, "Injecting ad-skip script for FaselHD...");
+                    injectAdSkipScript();
+                }
             }
 
             @Override
@@ -365,7 +498,21 @@ public class SnifferActivity extends AppCompatActivity {
             }
         };
 
-        webView.setWebViewClient(new com.omarflex5.data.scraper.client.SnifferWebViewClient(this, controller));
+        com.omarflex5.data.scraper.client.SnifferWebViewClient client = new com.omarflex5.data.scraper.client.SnifferWebViewClient(
+                this, controller);
+
+        // CRITICAL: Set Redirect Policy (derived from initial URL)
+        // This prevents auto-redirects to ad domains like bestguiltypleasure.com
+        String initialUrl = getIntent().getStringExtra(EXTRA_URL);
+        if (initialUrl != null) {
+            com.omarflex5.data.scraper.policy.RedirectPolicy policy = new com.omarflex5.data.scraper.policy.RedirectPolicy(
+                    initialUrl);
+            client.setRedirectPolicy(policy);
+            Log.d(TAG, "Enforced RedirectPolicy for base: " + initialUrl);
+        }
+
+        client.setActivityContext(this); // For confirmation dialogs
+        webView.setWebViewClient(client);
         webView.setWebChromeClient(new com.omarflex5.data.scraper.client.CoreWebChromeClient(controller));
     }
 

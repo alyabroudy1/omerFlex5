@@ -82,8 +82,8 @@ public class ServerRepository {
                 arabseed.setBaseUrl("https://arabseed.show");
                 arabseed.setBasePriority(3);
                 arabseed.setCurrentPriority(3);
-                arabseed.setEnabled(false);
-                arabseed.setSearchable(false);
+                arabseed.setEnabled(true);
+                arabseed.setSearchable(true);
                 arabseed.setRequiresWebView(true);
                 arabseed.setSearchUrlPattern("/?s={query}");
                 arabseed.setParseStrategy("HTML");
@@ -114,8 +114,8 @@ public class ServerRepository {
                 akwam.setBaseUrl("https://ak.sv");
                 akwam.setBasePriority(5);
                 akwam.setCurrentPriority(5);
-                akwam.setEnabled(false);
-                akwam.setSearchable(false);
+                akwam.setEnabled(true);
+                akwam.setSearchable(true);
                 akwam.setRequiresWebView(true);
                 akwam.setSearchUrlPattern("/search?q={query}");
                 akwam.setParseStrategy("HTML");
