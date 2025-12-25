@@ -68,28 +68,27 @@ public class ServerRepository {
      * Ensures default servers are present in the database.
      */
     public void ensureDefaultServersSync() {
-        List<ServerEntity> all = serverDao.getSearchableByPriority();
+        List<ServerEntity> all = serverDao.getAll();
         if (all.isEmpty()) {
             Log.i(TAG, "Database empty. Injecting default servers...");
             long now = System.currentTimeMillis();
 
-            // Re-using the logic from AppDatabase but here for safety
             try {
-                // ArabSeed
-                ServerEntity arabseed = new ServerEntity();
-                arabseed.setName("arabseed");
-                arabseed.setLabel("عرب سيد");
-                arabseed.setBaseUrl("https://arabseed.show");
-                arabseed.setBasePriority(3);
-                arabseed.setCurrentPriority(3);
-                arabseed.setEnabled(true);
-                arabseed.setSearchable(true);
-                arabseed.setRequiresWebView(true);
-                arabseed.setSearchUrlPattern("/?s={query}");
-                arabseed.setParseStrategy("HTML");
-                arabseed.setCreatedAt(now);
-                arabseed.setUpdatedAt(now);
-                serverDao.insert(arabseed);
+                // MyCima
+                ServerEntity mycima = new ServerEntity();
+                mycima.setName("mycima");
+                mycima.setLabel("ماي سيما");
+                mycima.setBaseUrl("https://my-cima.watch");
+                mycima.setBasePriority(1);
+                mycima.setCurrentPriority(1);
+                mycima.setEnabled(false);
+                mycima.setSearchable(false);
+                mycima.setRequiresWebView(true);
+                mycima.setSearchUrlPattern("/search/{query}");
+                mycima.setParseStrategy("HTML");
+                mycima.setCreatedAt(now);
+                mycima.setUpdatedAt(now);
+                serverDao.insert(mycima);
 
                 // FaselHD
                 ServerEntity faselhd = new ServerEntity();
@@ -106,6 +105,22 @@ public class ServerRepository {
                 faselhd.setCreatedAt(now);
                 faselhd.setUpdatedAt(now);
                 serverDao.insert(faselhd);
+
+                // ArabSeed
+                ServerEntity arabseed = new ServerEntity();
+                arabseed.setName("arabseed");
+                arabseed.setLabel("عرب سيد");
+                arabseed.setBaseUrl("https://arabseed.show");
+                arabseed.setBasePriority(3);
+                arabseed.setCurrentPriority(3);
+                arabseed.setEnabled(true);
+                arabseed.setSearchable(true);
+                arabseed.setRequiresWebView(true);
+                arabseed.setSearchUrlPattern("/?s={query}");
+                arabseed.setParseStrategy("HTML");
+                arabseed.setCreatedAt(now);
+                arabseed.setUpdatedAt(now);
+                serverDao.insert(arabseed);
 
                 // Akwam
                 ServerEntity akwam = new ServerEntity();
@@ -268,6 +283,26 @@ public class ServerRepository {
         executor.execute(() -> {
             serverDao.updateSearchUrlPattern(serverName, pattern, System.currentTimeMillis());
             Log.d(TAG, "Updated search pattern for " + serverName + " to " + pattern);
+        });
+    }
+
+    /**
+     * Enable or disable a server by name.
+     */
+    public void enableServer(String serverName, boolean enabled) {
+        executor.execute(() -> {
+            serverDao.updateEnabled(serverName, enabled, System.currentTimeMillis());
+            Log.d(TAG, "Updated enabled state for " + serverName + " to " + enabled);
+        });
+    }
+
+    /**
+     * Set a server as searchable or not.
+     */
+    public void setSearchable(String serverName, boolean searchable) {
+        executor.execute(() -> {
+            serverDao.updateSearchable(serverName, searchable, System.currentTimeMillis());
+            Log.d(TAG, "Updated searchable state for " + serverName + " to " + searchable);
         });
     }
 

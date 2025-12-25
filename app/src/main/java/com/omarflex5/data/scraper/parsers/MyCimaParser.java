@@ -1,206 +1,256 @@
 package com.omarflex5.data.scraper.parsers;
 
+import android.util.Log;
+
 import com.omarflex5.data.local.entity.MediaType;
 import com.omarflex5.data.scraper.BaseHtmlParser;
+import org.jsoup.Jsoup;
+import org.jsoup.nodes.Document;
+import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
-/**
- * Parser for MyCima server (my-cima.me).
- * 
- * Search results: Grid of cards with poster, title, year
- * Detail pages: Movie/Series info with video sources
- */
 public class MyCimaParser extends BaseHtmlParser {
+
+    private static final String TAG = "MyCimaParser";
 
     public MyCimaParser(String html) {
         super(html);
     }
 
-    @Override
-    public List<ParsedItem> parseSearchResults() {
-        List<ParsedItem> results = new ArrayList<>();
-
-        // MyCima uses article.GridItem or similar for search results
-        // Pattern: Look for movie/series cards
-        Pattern cardPattern = Pattern.compile(
-                "<a[^>]+href=\"([^\"]+)\"[^>]*class=\"[^\"]*BlockItem[^\"]*\"[^>]*>.*?" +
-                        "<img[^>]+src=\"([^\"]+)\"[^>]*>.*?" +
-                        "<strong>([^<]+)</strong>",
-                Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
-
-        Matcher m = cardPattern.matcher(html);
-        while (m.find()) {
-            String url = m.group(1);
-            String poster = m.group(2);
-            String title = stripHtml(m.group(3));
-
-            if (title == null || title.isEmpty())
-                continue;
-
-            Integer year = extractYear(title);
-            String cleanedTitle = cleanTitle(title);
-            MediaType type = detectMediaType(url, title);
-
-            results.add(new ParsedItem()
-                    .setTitle(cleanedTitle)
-                    .setOriginalTitle(title)
-                    .setPosterUrl(poster)
-                    .setPageUrl(url)
-                    .setYear(year)
-                    .setType(type)
-                    .setMatchKey(createMatchKey(cleanedTitle, year, null, null)));
-        }
-
-        // Fallback: Try simpler pattern if no results
-        if (results.isEmpty()) {
-            results = parseSimpleCards();
-        }
-
-        return results;
+    public MyCimaParser(String html, String pageUrl) {
+        super(html, pageUrl);
     }
 
-    /**
-     * Fallback parser for simpler card structures.
-     */
-    private List<ParsedItem> parseSimpleCards() {
-        List<ParsedItem> results = new ArrayList<>();
+    @Override
+    public List<ParsedItem> parseSearchResults() {
+        List<ParsedItem> items = new ArrayList<>();
+        try {
+            Document doc = Jsoup.parse(html);
+            Elements elements = doc.select(".GridItem");
 
-        // Find all links with images
-        Pattern linkPattern = Pattern.compile(
-                "<a[^>]+href=\"(https?://[^\"]+)\"[^>]*>.*?" +
-                        "<img[^>]+src=\"([^\"]+)\"[^>]*(?:alt=\"([^\"]+)\")?[^>]*>",
-                Pattern.DOTALL);
+            for (Element element : elements) {
+                Element linkElement = element.selectFirst(".Thumb--GridItem > a");
+                if (linkElement == null)
+                    continue;
 
-        Matcher m = linkPattern.matcher(html);
-        while (m.find()) {
-            String url = m.group(1);
-            String poster = m.group(2);
-            String title = m.group(3);
+                String href = linkElement.attr("abs:href");
+                if (href.isEmpty())
+                    href = linkElement.attr("href");
 
-            // Filter: Only keep movie/series links
-            if (!url.contains("/film/") &&
-                    !url.contains("/movie/") &&
-                    !url.contains("/series/") &&
-                    !url.contains("/مسلسل/") &&
-                    !url.contains("/فيلم/")) {
-                continue;
+                String title = linkElement.select("strong").text();
+                // Remove year from title if present
+                Element yearLink = linkElement.selectFirst("strong .year");
+                String yearStr = "";
+                if (yearLink != null) {
+                    yearStr = yearLink.text().trim();
+                    title = title.replace(yearStr, "").trim();
+                }
+
+                String posterUrl = "";
+                Element bgElement = element.selectFirst(".BG--GridItem");
+                if (bgElement != null) {
+                    String style = bgElement.attr("style");
+                    // Extract from var(--image)
+                    if (style.contains("--image:url(")) {
+                        posterUrl = extractBetween(style, "--image:url(", ")");
+                    } else if (style.contains("background-image:url(")) {
+                        posterUrl = extractBetween(style, "background-image:url(", ")");
+                    }
+                    if (posterUrl != null)
+                        posterUrl = posterUrl.replace("'", "").replace("\"", "");
+                }
+
+                if (posterUrl == null || posterUrl.isEmpty()) {
+                    Element img = element.selectFirst("img");
+                    if (img != null) {
+                        posterUrl = img.attr("data-src");
+                        if (posterUrl.isEmpty())
+                            posterUrl = img.attr("src");
+                    }
+                }
+
+                MediaType type = detectMediaType(href, title);
+
+                ParsedItem item = new ParsedItem()
+                        .setTitle(title)
+                        .setPageUrl(href)
+                        .setPosterUrl(posterUrl)
+                        .setType(type);
+
+                if (!yearStr.isEmpty()) {
+                    try {
+                        item.setYear(Integer.parseInt(yearStr.replaceAll("[^0-9]", "")));
+                    } catch (Exception ignored) {
+                    }
+                }
+
+                items.add(item);
             }
-
-            if (title == null || title.isEmpty()) {
-                title = extractTitleFromUrl(url);
-            }
-
-            if (title == null || title.isEmpty())
-                continue;
-
-            Integer year = extractYear(title);
-            String cleanedTitle = cleanTitle(title);
-            MediaType type = detectMediaType(url, title);
-
-            results.add(new ParsedItem()
-                    .setTitle(cleanedTitle)
-                    .setOriginalTitle(title)
-                    .setPosterUrl(poster)
-                    .setPageUrl(url)
-                    .setYear(year)
-                    .setType(type)
-                    .setMatchKey(createMatchKey(cleanedTitle, year, null, null)));
+        } catch (Exception e) {
+            Log.e(TAG, "Error parsing search results", e);
         }
+        return items;
+    }
 
-        return results;
+    @Override
+    public BaseHtmlParser.ParsedSearchResult parseSearchResultsWithPagination() {
+        List<ParsedItem> items = parseSearchResults();
+        String nextPageUrl = null;
+        try {
+            Document doc = Jsoup.parse(html);
+            Element nextLink = doc.selectFirst(
+                    ".pagination a.next, .pagination ul.page-numbers li a:contains(›), .pagination ul.page-numbers li a[href*='/page/']");
+
+            // Specifically look for the "Next" sibling of "current"
+            if (nextLink == null) {
+                Element current = doc.selectFirst(".pagination .current");
+                if (current != null) {
+                    Element parent = current.parent();
+                    if (parent != null && parent.tagName().equals("li")) {
+                        Element nextLi = parent.nextElementSibling();
+                        if (nextLi != null) {
+                            nextLink = nextLi.selectFirst("a");
+                        }
+                    }
+                }
+            }
+
+            if (nextLink != null) {
+                nextPageUrl = nextLink.attr("abs:href");
+                if (nextPageUrl.isEmpty())
+                    nextPageUrl = nextLink.attr("href");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error parsing pagination", e);
+        }
+        return new ParsedSearchResult(items, nextPageUrl);
     }
 
     @Override
     public ParsedItem parseDetailPage() {
-        ParsedItem item = new ParsedItem();
-
-        // Title: Usually in h1 or specific class
-        String title = extractFirst("<h1[^>]*>([^<]+)</h1>", 1);
-        if (title == null) {
-            title = extractFirst("<title>([^<]+)</title>", 1);
-        }
-
-        if (title != null) {
-            title = stripHtml(title);
-            item.setTitle(cleanTitle(title));
-            item.setOriginalTitle(title);
-            item.setYear(extractYear(title));
-        }
-
-        // Poster
-        String poster = extractFirst(
-                "<img[^>]+class=\"[^\"]*poster[^\"]*\"[^>]+src=\"([^\"]+)\"", 1);
-        if (poster == null) {
-            poster = extractFirst("<meta property=\"og:image\" content=\"([^\"]+)\"", 1);
-        }
-        item.setPosterUrl(poster);
-
-        // Description
-        String desc = extractFirst(
-                "<div[^>]+class=\"[^\"]*StoryLine[^\"]*\"[^>]*>([^<]+)", 1);
-        if (desc == null) {
-            desc = extractFirst("<meta name=\"description\" content=\"([^\"]+)\"", 1);
-        }
-        item.setDescription(stripHtml(desc));
-
-        // Additional Metadata using Jsoup for robustness
+        ParsedItem result = new ParsedItem();
         try {
-            org.jsoup.nodes.Document doc = org.jsoup.Jsoup.parse(html);
+            Document doc = Jsoup.parse(html);
+            result.setPageUrl(pageUrl);
 
-            // Rating
-            org.jsoup.nodes.Element rateElem = doc.selectFirst(".rating, .imdb-rating, .rate");
-            if (rateElem != null) {
-                String rStr = rateElem.text().replaceAll("[^0-9.]", "");
-                if (!rStr.isEmpty())
-                    item.setRating(Float.parseFloat(rStr));
+            // Detailed page could be:
+            // 1. Series page (has seasons list)
+            // 2. Season page (has episodes list)
+            // 3. Episode page (has server list)
+            // 4. Movie page (has server list)
+
+            Element seasonsList = doc.selectFirst(".SeasonsList");
+            Element episodesList = doc.selectFirst(".EpisodesList");
+            Element watchServers = doc.selectFirst(".WatchServers");
+
+            if (seasonsList != null) {
+                result.setType(MediaType.SERIES);
+                parseSeries(doc, result);
+            } else if (episodesList != null) {
+                result.setType(MediaType.SEASON);
+                parseSeason(doc, result);
+            } else if (watchServers != null) {
+                // Could be episode or movie
+                if (pageUrl.contains("/episode/") || pageUrl.contains("حلقة")) {
+                    result.setType(MediaType.EPISODE);
+                } else {
+                    result.setType(MediaType.FILM);
+                }
+                parsePlayableContent(doc, result);
+            } else {
+                // Fallback: try to detect from URL
+                result.setType(detectMediaType(pageUrl, ""));
             }
 
-            // Categories
-            org.jsoup.select.Elements catLinks = doc.select(".cats a, a[href*='genre']");
-            for (org.jsoup.nodes.Element cat : catLinks) {
-                item.addCategory(cat.text().trim());
+            // Basic metadata
+            Element titleHeader = doc.selectFirst(".Title--Content--Single-begin h1");
+            if (titleHeader != null) {
+                result.setTitle(titleHeader.text().trim());
             }
 
-            // Year (if not already extracted from title)
-            if (item.getYear() == null || item.getYear() == 0) {
-                org.jsoup.nodes.Element yearElem = doc.selectFirst(".year, a[href*='release-year']");
-                if (yearElem != null) {
-                    String yStr = yearElem.text().replaceAll("[^0-9]", "");
-                    if (yStr.length() == 4)
-                        item.setYear(Integer.parseInt(yStr));
+            Element poster = doc.selectFirst(".Poster--Single-begin a.Img--Poster--Single-begin");
+            if (poster != null) {
+                String style = poster.attr("style");
+                if (style.contains("--img:url(")) {
+                    String imgUrl = extractBetween(style, "--img:url(", ")");
+                    if (imgUrl != null)
+                        result.setPosterUrl(imgUrl.replace("'", "").replace("\"", ""));
                 }
             }
+
+            Element story = doc.selectFirst(".StoryMovieContent");
+            if (story != null) {
+                result.setDescription(story.text().trim());
+            }
+
         } catch (Exception e) {
-            android.util.Log.e("MyCimaParser", "Error extracting metadata", e);
+            Log.e(TAG, "Error parsing detail page", e);
         }
-
-        // Type detection
-        item.setType(detectMediaType(html, title != null ? title : ""));
-
-        // Quality (if available)
-        String quality = extractFirst("(?i)(\\d{3,4}p|HD|BluRay|CAM|WEB-DL)", 1);
-        item.setQuality(quality);
-
-        return item;
+        return result;
     }
 
-    /**
-     * Extract title from URL slug.
-     */
-    private String extractTitleFromUrl(String url) {
-        // Get last path segment
-        String[] parts = url.split("/");
-        for (int i = parts.length - 1; i >= 0; i--) {
-            String part = parts[i].trim();
-            if (!part.isEmpty() && !part.matches("\\d+")) {
-                // Replace dashes/underscores with spaces
-                return part.replace("-", " ").replace("_", " ");
+    private void parseSeries(Document doc, ParsedItem result) {
+        Elements seasons = doc.select(".SeasonsList ul li a");
+        for (Element season : seasons) {
+            String title = season.text().trim();
+            String href = season.attr("abs:href");
+            if (href.isEmpty())
+                href = season.attr("href");
+
+            result.addSubItem(new ParsedItem()
+                    .setTitle(title)
+                    .setPageUrl(href)
+                    .setType(MediaType.SEASON));
+        }
+    }
+
+    private void parseSeason(Document doc, ParsedItem result) {
+        Elements episodes = doc.select(".EpisodesList a");
+        for (Element episode : episodes) {
+            String title = episode.select("episodetitle").text().trim();
+            if (title.isEmpty())
+                title = episode.text().trim();
+
+            String href = episode.attr("abs:href");
+            if (href.isEmpty())
+                href = episode.attr("href");
+
+            result.addSubItem(new ParsedItem()
+                    .setTitle(title)
+                    .setPageUrl(href)
+                    .setType(MediaType.EPISODE));
+        }
+    }
+
+    private void parsePlayableContent(Document doc, ParsedItem result) {
+        Elements servers = doc.select(".WatchServers ul li.server--item");
+        if (servers.isEmpty()) {
+            servers = doc.select(".WatchServers ul li");
+        }
+
+        for (Element server : servers) {
+            String name = server.text().trim();
+            // MyCima usually uses a data attribute or triggers a load
+            // In our architecture, we often return the page URL and let Sniffer handle it,
+            // or we return direct embed URLs if possible.
+            // MyCima servers often have an ID or specific URL.
+
+            // For now, let's just collect server names as subtitles if needed,
+            // but the Sniffer should pick up the player.
+            // If there's a specific "active" server or a list of server links:
+            String serverUrl = server.attr("data-url");
+            if (serverUrl.isEmpty())
+                serverUrl = server.attr("data-link");
+
+            if (!serverUrl.isEmpty()) {
+                result.addSubItem(new ParsedItem()
+                        .setTitle(name)
+                        .setPageUrl(serverUrl)
+                        .setType(MediaType.SERVER));
             }
         }
-        return null;
     }
 }

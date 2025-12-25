@@ -115,11 +115,11 @@ public abstract class AppDatabase extends RoomDatabase {
             ServerEntity mycima = new ServerEntity();
             mycima.setName("mycima");
             mycima.setLabel("ماي سيما");
-            mycima.setBaseUrl("https://my-cima.me");
+            mycima.setBaseUrl("https://my-cima.watch");
             mycima.setBasePriority(1);
             mycima.setCurrentPriority(1);
-            mycima.setEnabled(false); // Disabled for Production
-            mycima.setSearchable(false);
+            mycima.setEnabled(true); // Disabled for Production
+            mycima.setSearchable(true);
             mycima.setRequiresWebView(true); // CF protected
             mycima.setSearchUrlPattern("/search/{query}");
             mycima.setParseStrategy("HTML");

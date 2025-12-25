@@ -68,4 +68,10 @@ public interface ServerDao {
 
     @Query("UPDATE servers SET headersJson = :headers, updatedAt = :timestamp WHERE id = :id")
     void updateHeaders(long id, String headers, long timestamp);
+
+    @Query("UPDATE servers SET isEnabled = :enabled, updatedAt = :timestamp WHERE name = :name")
+    void updateEnabled(String name, boolean enabled, long timestamp);
+
+    @Query("UPDATE servers SET isSearchable = :searchable, updatedAt = :timestamp WHERE name = :name")
+    void updateSearchable(String name, boolean searchable, long timestamp);
 }

@@ -489,6 +489,15 @@ public class CastOptionsBottomSheet extends BottomSheetDialogFragment {
                 payload.put("url", castUrl);
                 payload.put("title", title != null ? title : "Casted Video");
 
+                // Add headers to payload if available (and not using proxy)
+                if (!useProxy && headers != null && !headers.isEmpty()) {
+                    org.json.JSONObject headersJson = new org.json.JSONObject();
+                    for (Map.Entry<String, String> entry : headers.entrySet()) {
+                        headersJson.put(entry.getKey(), entry.getValue());
+                    }
+                    payload.put("headers", headersJson);
+                }
+
                 // Send POST
                 java.net.URL url = new java.net.URL("http://" + device.host + ":" + device.port + "/cast");
                 java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();

@@ -198,7 +198,9 @@ public class ReceiverService extends Service {
                     JSONObject json = new JSONObject(jsonBody);
                     String url = json.optString("url");
                     String title = json.optString("title");
-                    // Extract headers if needed later
+
+                    // Extract headers if present
+                    JSONObject headersJson = json.optJSONObject("headers");
 
                     Log.d(TAG, "Received Cast Request: " + title);
 
@@ -207,6 +209,20 @@ public class ReceiverService extends Service {
                     intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
                     intent.putExtra(PlayerActivity.EXTRA_VIDEO_URL, url);
                     intent.putExtra(PlayerActivity.EXTRA_VIDEO_TITLE, title);
+
+                    // Pass headers to PlayerActivity via intent extras
+                    if (headersJson != null) {
+                        if (headersJson.has("Referer")) {
+                            intent.putExtra("EXTRA_REFERER", headersJson.optString("Referer"));
+                        }
+                        if (headersJson.has("User-Agent")) {
+                            intent.putExtra("EXTRA_USER_AGENT", headersJson.optString("User-Agent"));
+                        }
+                        if (headersJson.has("Cookie")) {
+                            intent.putExtra("EXTRA_COOKIE", headersJson.optString("Cookie"));
+                        }
+                    }
+
                     startActivity(intent);
 
                     return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "OK");
