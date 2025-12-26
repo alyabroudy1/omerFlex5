@@ -459,9 +459,17 @@ public class CastOptionsBottomSheet extends BottomSheetDialogFragment {
                 .show();
     }
 
-    private void startOmarFlexCast(Context context, com.omarflex5.cast.receiver.NsdDiscovery.OmarFlexDevice device) {
-        if (videoUrl == null)
+    public static void performCast(Context context, com.omarflex5.cast.receiver.NsdDiscovery.OmarFlexDevice device,
+            String videoUrl, String title, Map<String, String> headers) {
+        android.util.Log.d("OmarFlexCast",
+                "performCast called. Device: " + device.name + " (" + device.host + ":" + device.port + ")");
+        android.util.Log.d("OmarFlexCast",
+                "videoUrl: " + (videoUrl != null ? videoUrl.substring(0, Math.min(100, videoUrl.length())) : "null"));
+
+        if (videoUrl == null) {
+            android.util.Log.e("OmarFlexCast", "videoUrl is null, aborting");
             return;
+        }
 
         Toast.makeText(context, "Sending to " + device.name + "...", Toast.LENGTH_SHORT).show();
 
@@ -499,45 +507,65 @@ public class CastOptionsBottomSheet extends BottomSheetDialogFragment {
                 }
 
                 // Send POST
+                android.util.Log.d("OmarFlexCast", "Connecting to http://" + device.host + ":" + device.port + "/cast");
                 java.net.URL url = new java.net.URL("http://" + device.host + ":" + device.port + "/cast");
-                java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-                conn.setRequestMethod("POST");
-                conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-                conn.setDoOutput(true);
-                conn.setConnectTimeout(5000);
+                java.net.HttpURLConnection conn = null;
+                try {
+                    conn = (java.net.HttpURLConnection) url.openConnection();
+                    conn.setRequestMethod("POST");
+                    conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+                    conn.setRequestProperty("Connection", "close"); // Don't keep-alive
+                    conn.setDoOutput(true);
+                    conn.setConnectTimeout(5000);
+                    conn.setReadTimeout(10000); // Add read timeout
 
-                // Write body
-                try (java.io.OutputStream os = conn.getOutputStream()) {
-                    byte[] input = payload.toString().getBytes("utf-8");
-                    os.write(input, 0, input.length);
+                    // Write body
+                    android.util.Log.d("OmarFlexCast", "Sending payload: " + payload.toString());
+                    try (java.io.OutputStream os = conn.getOutputStream()) {
+                        byte[] input = payload.toString().getBytes("utf-8");
+                        os.write(input, 0, input.length);
+                        android.util.Log.d("OmarFlexCast", "Payload written, " + input.length + " bytes");
+                    }
+
+                    int code = conn.getResponseCode();
+                    android.util.Log.d("OmarFlexCast", "Response code: " + code);
+
+                    if (context instanceof android.app.Activity) {
+                        ((android.app.Activity) context).runOnUiThread(() -> {
+                            if (code == 200) {
+                                com.omarflex5.cast.receiver.OmarFlexSessionManager.getInstance(context).connect(device);
+                                Toast.makeText(context, "Playing on TV!", Toast.LENGTH_SHORT).show();
+                            } else {
+                                // Read error response if any
+                                Toast.makeText(context, "Failed: " + code, Toast.LENGTH_LONG).show();
+                                android.util.Log.e("OmarFlexCast", "Server returned: " + code);
+                            }
+                        });
+                    }
+                } finally {
+                    if (conn != null) {
+                        conn.disconnect();
+                        android.util.Log.d("OmarFlexCast", "Connection disconnected");
+                    }
                 }
 
-                int code = conn.getResponseCode();
+            } catch (java.net.ConnectException e) {
+                android.util.Log.e("OmarFlexCast", "Connection refused - server may be down", e);
+                // Disconnect session since server is unreachable
+                com.omarflex5.cast.receiver.OmarFlexSessionManager.getInstance(context).disconnect();
                 if (context instanceof android.app.Activity) {
                     ((android.app.Activity) context).runOnUiThread(() -> {
-                        if (code == 200) {
-                            com.omarflex5.cast.receiver.OmarFlexSessionManager.getInstance(context).connect(device);
-                            Toast.makeText(context, "Playing on TV!", Toast.LENGTH_SHORT).show();
-                        } else {
-                            // Read error response if any
-                            String errorMsg = "";
-                            try {
-                                java.io.InputStream es = conn.getErrorStream();
-                                if (es != null) {
-                                    byte[] buffer = new byte[es.available()];
-                                    es.read(buffer);
-                                    errorMsg = new String(buffer);
-                                }
-                            } catch (Exception ex) {
-                            }
-
-                            Toast.makeText(context, "Failed: " + code + " " + errorMsg, Toast.LENGTH_LONG)
-                                    .show();
-                            android.util.Log.e("OmarFlexCast", "Server returned: " + code + " " + errorMsg);
-                        }
+                        Toast.makeText(context, "TV unreachable. Please reconnect.", Toast.LENGTH_LONG).show();
                     });
                 }
-
+            } catch (java.net.SocketTimeoutException e) {
+                android.util.Log.e("OmarFlexCast", "Connection timed out", e);
+                com.omarflex5.cast.receiver.OmarFlexSessionManager.getInstance(context).disconnect();
+                if (context instanceof android.app.Activity) {
+                    ((android.app.Activity) context).runOnUiThread(() -> {
+                        Toast.makeText(context, "Connection timed out. Please reconnect.", Toast.LENGTH_LONG).show();
+                    });
+                }
             } catch (Exception e) {
                 android.util.Log.e("OmarFlexCast", "Cast Exception", e);
                 if (context instanceof android.app.Activity) {
@@ -548,5 +576,9 @@ public class CastOptionsBottomSheet extends BottomSheetDialogFragment {
                 }
             }
         }).start();
+    }
+
+    private void startOmarFlexCast(Context context, com.omarflex5.cast.receiver.NsdDiscovery.OmarFlexDevice device) {
+        performCast(context, device, videoUrl, title, headers);
     }
 }

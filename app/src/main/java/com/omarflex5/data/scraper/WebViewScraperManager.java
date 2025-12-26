@@ -299,8 +299,10 @@ public class WebViewScraperManager {
     }
 
     private void showWebViewDialog(Activity activity) {
+        Log.d(TAG, "showWebViewDialog called for activity: " + activity.getClass().getSimpleName());
         try {
             if (visibleDialog != null && visibleDialog.isShowing()) {
+                Log.d(TAG, "Dismissing existing dialog before showing new one.");
                 visibleDialog.dismiss();
             }
 
@@ -339,6 +341,7 @@ public class WebViewScraperManager {
             visibleDialog.setContentView(container);
             visibleDialog.setOnDismissListener(dialog -> {
                 // Optional: Cancel loading?
+                Log.d(TAG, "WebView Dialog Dismissed");
             });
             visibleDialog.show();
             webView.requestFocus();

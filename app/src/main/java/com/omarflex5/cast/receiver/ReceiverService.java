@@ -165,6 +165,14 @@ public class ReceiverService extends Service {
 
         @Override
         public Response serve(IHTTPSession session) {
+            Log.d(TAG, "serve() called. Method: " + session.getMethod() + ", URI: " + session.getUri());
+
+            // Health check / ping endpoint
+            if ("/ping".equals(session.getUri())) {
+                Log.d(TAG, "Ping received, server is alive");
+                return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "pong");
+            }
+
             if (Method.POST.equals(session.getMethod()) && "/cast".equals(session.getUri())) {
                 try {
                     String contentLengthStr = session.getHeaders().get("content-length");
@@ -176,22 +184,32 @@ public class ReceiverService extends Service {
                             // ignore
                         }
                     }
+                    Log.d(TAG, "Content-Length: " + contentLength);
 
                     String jsonBody = null;
                     if (contentLength > 0) {
                         byte[] buffer = new byte[contentLength];
-                        session.getInputStream().read(buffer, 0, contentLength);
-                        jsonBody = new String(buffer);
+                        int totalRead = 0;
+                        while (totalRead < contentLength) {
+                            int bytesRead = session.getInputStream().read(buffer, totalRead, contentLength - totalRead);
+                            if (bytesRead == -1)
+                                break;
+                            totalRead += bytesRead;
+                        }
+                        Log.d(TAG, "Total bytes read: " + totalRead);
+                        jsonBody = new String(buffer, 0, totalRead);
                     } else {
-                        // Fallback to reading everything if no content length (unlikely for
-                        // well-behaved client)
-                        // Or try parseBody as fallback
+                        // Fallback to reading everything if no content length
+                        Log.d(TAG, "No content-length, trying parseBody fallback");
                         Map<String, String> files = new HashMap<>();
                         session.parseBody(files);
                         jsonBody = files.get("postData");
                     }
 
+                    Log.d(TAG, "JSON Body: " + (jsonBody != null ? jsonBody : "null"));
+
                     if (jsonBody == null || jsonBody.isEmpty()) {
+                        Log.e(TAG, "Missing body, returning BAD_REQUEST");
                         return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "Missing Body");
                     }
 
@@ -202,7 +220,8 @@ public class ReceiverService extends Service {
                     // Extract headers if present
                     JSONObject headersJson = json.optJSONObject("headers");
 
-                    Log.d(TAG, "Received Cast Request: " + title);
+                    Log.d(TAG, "Received Cast Request: title=" + title + ", url="
+                            + (url != null && url.length() > 100 ? url.substring(0, 100) : url));
 
                     // Launch Player
                     Intent intent = new Intent(ReceiverService.this, PlayerActivity.class);
@@ -212,6 +231,7 @@ public class ReceiverService extends Service {
 
                     // Pass headers to PlayerActivity via intent extras
                     if (headersJson != null) {
+                        Log.d(TAG, "Headers present: " + headersJson.toString());
                         if (headersJson.has("Referer")) {
                             intent.putExtra("EXTRA_REFERER", headersJson.optString("Referer"));
                         }
@@ -224,14 +244,18 @@ public class ReceiverService extends Service {
                     }
 
                     startActivity(intent);
+                    Log.d(TAG, "PlayerActivity started, returning OK");
 
-                    return newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "OK");
+                    Response response = newFixedLengthResponse(Response.Status.OK, MIME_PLAINTEXT, "OK");
+                    response.addHeader("Connection", "close");
+                    return response;
 
                 } catch (Exception e) {
                     Log.e(TAG, "Error handling cast request", e);
                     return newFixedLengthResponse(Response.Status.INTERNAL_ERROR, MIME_PLAINTEXT, e.getMessage());
                 }
             }
+            Log.w(TAG, "Request not handled, returning NOT_FOUND");
             return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not Found");
         }
     }

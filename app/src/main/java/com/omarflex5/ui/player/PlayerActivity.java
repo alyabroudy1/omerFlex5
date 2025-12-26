@@ -1222,49 +1222,21 @@ public class PlayerActivity extends com.omarflex5.ui.base.BaseActivity {
                     castDeviceIndicator.setVisibility(View.VISIBLE);
                 }
 
-                // Perform Cast
-                new Thread(() -> {
-                    try {
-                        org.json.JSONObject payload = new org.json.JSONObject();
-                        payload.put("url", videoUrl);
-                        payload.put("title", videoTitle != null ? videoTitle : "Casted Video");
+                // Prepare headers
+                com.omarflex5.util.MediaUtils.ParsedMedia parsedMedia = com.omarflex5.util.MediaUtils
+                        .parseUrlWithHeaders(videoUrl);
+                String mediaUrl = parsedMedia.getUrl();
+                java.util.Map<String, String> headers = parsedMedia.getHeaders();
 
-                        java.net.URL url = new java.net.URL("http://" + device.host + ":" + device.port + "/cast");
-                        java.net.HttpURLConnection conn = (java.net.HttpURLConnection) url.openConnection();
-                        conn.setRequestMethod("POST");
-                        conn.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-                        conn.setDoOutput(true);
-                        conn.setConnectTimeout(3000);
+                if (getIntent().hasExtra("EXTRA_USER_AGENT"))
+                    headers.put("User-Agent", getIntent().getStringExtra("EXTRA_USER_AGENT"));
+                if (getIntent().hasExtra("EXTRA_REFERER"))
+                    headers.put("Referer", getIntent().getStringExtra("EXTRA_REFERER"));
+                if (getIntent().hasExtra("EXTRA_COOKIE"))
+                    headers.put("Cookie", getIntent().getStringExtra("EXTRA_COOKIE"));
 
-                        try (java.io.OutputStream os = conn.getOutputStream()) {
-                            byte[] input = payload.toString().getBytes("utf-8");
-                            os.write(input, 0, input.length);
-                        }
-
-                        int code = conn.getResponseCode();
-                        runOnUiThread(() -> {
-                            if (code == 200) {
-                                Toast.makeText(PlayerActivity.this, "Resuming on TV...", Toast.LENGTH_SHORT).show();
-                            } else {
-                                // Cast failed
-                                Toast.makeText(PlayerActivity.this, "Auto-Cast failed: " + code, Toast.LENGTH_SHORT)
-                                        .show();
-                                if (castDeviceIndicator != null)
-                                    castDeviceIndicator.setVisibility(View.GONE);
-                            }
-                        });
-                    } catch (Exception e) {
-                        runOnUiThread(() -> {
-                            // Silent fail or toast? Toast for now to help user debug
-                            // Toast.makeText(PlayerActivity.this, "Auto-Cast Error: " + e.getMessage(),
-                            // Toast.LENGTH_SHORT).show();
-                            if (castDeviceIndicator != null)
-                                castDeviceIndicator.setVisibility(View.GONE);
-                        });
-                    }
-                }).start();
+                com.omarflex5.ui.cast.CastOptionsBottomSheet.performCast(this, device, mediaUrl, videoTitle, headers);
             }
         }
     }
-
 }

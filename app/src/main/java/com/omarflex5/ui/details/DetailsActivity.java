@@ -676,18 +676,21 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
     }
 
     private void showLoading() {
+        Log.d("DetailsDebug", "showLoading() called");
         loadingLayout.setVisibility(View.VISIBLE);
         recyclerView.setVisibility(View.GONE);
         errorLayout.setVisibility(View.GONE);
     }
 
     private void showContent() {
+        Log.d("DetailsDebug", "showContent() called");
         loadingLayout.setVisibility(View.GONE);
         recyclerView.setVisibility(View.VISIBLE);
         errorLayout.setVisibility(View.GONE);
     }
 
     private void showError(String message) {
+        Log.e("DetailsDebug", "showError() called: " + message);
         loadingLayout.setVisibility(View.GONE);
         recyclerView.setVisibility(View.GONE);
         errorLayout.setVisibility(View.VISIBLE);

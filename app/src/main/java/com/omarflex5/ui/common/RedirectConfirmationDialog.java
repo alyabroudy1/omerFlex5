@@ -86,9 +86,19 @@ public class RedirectConfirmationDialog {
                 // Set up auto-reject timeout
                 Runnable timeoutRunnable = () -> {
                     if (!handled[0] && dialog.isShowing()) {
+                        if (activity.isFinishing()
+                                || (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.JELLY_BEAN_MR1
+                                        && activity.isDestroyed())) {
+                            Log.d(TAG, "Activity destroyed, skipping dismiss");
+                            return;
+                        }
                         handled[0] = true;
                         Log.d(TAG, "TIMEOUT - auto-rejected redirect to: " + domain);
-                        dialog.dismiss();
+                        try {
+                            dialog.dismiss();
+                        } catch (Exception e) {
+                            Log.w(TAG, "Error dismissing dialog", e);
+                        }
                         if (callback != null)
                             callback.onReject();
                     }
