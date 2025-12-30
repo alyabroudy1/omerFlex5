@@ -10,6 +10,7 @@ import com.omarflex5.data.local.dao.ServerDao;
 import com.omarflex5.data.local.entity.ServerEntity;
 
 import java.util.List;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -24,6 +25,8 @@ public class ServerRepository {
 
     private final ServerDao serverDao;
     private final ExecutorService executor;
+    // In-memory cache to bridge async DB writes and immediate reads
+    private final ConcurrentHashMap<Long, ServerEntity> serverCache = new ConcurrentHashMap<>();
 
     private ServerRepository(Context context) {
         AppDatabase db = AppDatabase.getInstance(context);
@@ -113,8 +116,8 @@ public class ServerRepository {
                 arabseed.setBaseUrl("https://arabseed.show");
                 arabseed.setBasePriority(3);
                 arabseed.setCurrentPriority(3);
-                arabseed.setEnabled(true);
-                arabseed.setSearchable(true);
+                arabseed.setEnabled(false);
+                arabseed.setSearchable(false);
                 arabseed.setRequiresWebView(true);
                 arabseed.setSearchUrlPattern("/?s={query}");
                 arabseed.setParseStrategy("HTML");
@@ -129,8 +132,8 @@ public class ServerRepository {
                 akwam.setBaseUrl("https://ak.sv");
                 akwam.setBasePriority(5);
                 akwam.setCurrentPriority(5);
-                akwam.setEnabled(true);
-                akwam.setSearchable(true);
+                akwam.setEnabled(false);
+                akwam.setSearchable(false);
                 akwam.setRequiresWebView(true);
                 akwam.setSearchUrlPattern("/search?q={query}");
                 akwam.setParseStrategy("HTML");
@@ -153,10 +156,34 @@ public class ServerRepository {
     }
 
     public void getServerById(long id, OnResultCallback<ServerEntity> callback) {
+        // 1. Check in-memory cache first (bridges async DB write gap)
+        ServerEntity cached = serverCache.get(id);
+        if (cached != null) {
+            Log.d(TAG, "Server cache HIT for ID: " + id);
+            callback.onResult(cached);
+            return;
+        }
+
+        // 2. Fallback to DB
         executor.execute(() -> {
             ServerEntity server = serverDao.getById(id);
+            if (server != null) {
+                serverCache.put(id, server); // Populate cache
+            }
             callback.onResult(server);
         });
+    }
+
+    /**
+     * Update the in-memory server cache. Call this after modifying a ServerEntity's
+     * fields (e.g., cookies) to ensure subsequent getServerById calls return the
+     * updated instance, even before the async DB write completes.
+     */
+    public void updateServerCache(ServerEntity server) {
+        if (server != null && server.getId() > 0) {
+            serverCache.put(server.getId(), server);
+            Log.d(TAG, "Server cache UPDATED for ID: " + server.getId());
+        }
     }
 
     public void getCfProtectedServers(OnResultCallback<List<ServerEntity>> callback) {
@@ -225,10 +252,9 @@ public class ServerRepository {
         });
     }
 
-    // ==================== HEADER MANAGEMENT ====================
-
     /**
-     * Save important headers for a server (e.g., Referer).
+     * Save important headers for a server (e.g., Referer, User-Agent).
+     * MERGES new headers with existing ones instead of replacing.
      */
     public void saveHeaders(long serverId, java.util.Map<String, String> headers) {
         if (headers == null || headers.isEmpty())
@@ -236,9 +262,39 @@ public class ServerRepository {
 
         executor.execute(() -> {
             try {
-                String json = new com.google.gson.Gson().toJson(headers);
+                // 1. Get existing headers from DB
+                ServerEntity server = serverDao.getById(serverId);
+                java.util.Map<String, String> mergedHeaders = new java.util.HashMap<>();
+
+                if (server != null && server.getHeadersJson() != null && !server.getHeadersJson().isEmpty()) {
+                    try {
+                        java.util.Map<String, String> existing = new com.google.gson.Gson().fromJson(
+                                server.getHeadersJson(),
+                                new com.google.gson.reflect.TypeToken<java.util.Map<String, String>>() {
+                                }.getType());
+                        if (existing != null) {
+                            mergedHeaders.putAll(existing);
+                        }
+                    } catch (Exception e) {
+                        Log.w(TAG, "Error parsing existing headers, starting fresh: " + e.getMessage());
+                    }
+                }
+
+                // 2. Merge new headers (overwrites only specified keys)
+                mergedHeaders.putAll(headers);
+
+                // 3. Save to DB
+                String json = new com.google.gson.Gson().toJson(mergedHeaders);
                 serverDao.updateHeaders(serverId, json, System.currentTimeMillis());
-                Log.d(TAG, "Saved headers for server ID: " + serverId + " - " + headers.keySet());
+
+                // 4. Update in-memory cache to bridge async gap
+                if (server != null) {
+                    server.setHeadersJson(json);
+                    serverCache.put(serverId, server);
+                    Log.d(TAG, "Headers MERGED for server ID: " + serverId + " - " + mergedHeaders.keySet());
+                } else {
+                    Log.d(TAG, "Saved headers for server ID: " + serverId + " - " + mergedHeaders.keySet());
+                }
             } catch (Exception e) {
                 Log.e(TAG, "Failed to save headers: " + e.getMessage());
             }

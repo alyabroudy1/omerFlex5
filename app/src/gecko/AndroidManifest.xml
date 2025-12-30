@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Gecko flavor manifest additions -->
+    <application>
+        <activity
+            android:name="com.omarflex5.data.scraper.GeckoCfBypassActivity"
+            android:exported="false"
+            android:hardwareAccelerated="true"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden"
+            android:theme="@style/Theme.AppCompat.NoActionBar" />
+    </application>
+</manifest>

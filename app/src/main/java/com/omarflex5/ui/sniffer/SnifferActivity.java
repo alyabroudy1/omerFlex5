@@ -94,6 +94,13 @@ public class SnifferActivity extends AppCompatActivity {
     }
 
     public static Intent createIntent(Context context, String url, int strategyType) {
+        // MIGRATION: Route to EngineSnifferActivity for GeckoView flavor
+        // This allows gradual migration while keeping WebView logic intact
+        if (com.omarflex5.engine.WebEngineHelper.isGeckoViewFlavor()) {
+            Log.d(TAG, "Routing to EngineSnifferActivity for GeckoView flavor");
+            return com.omarflex5.ui.sniffer.EngineSnifferActivity.createIntent(context, url);
+        }
+
         Intent intent = new Intent(context, SnifferActivity.class);
         intent.putExtra(EXTRA_URL, url);
         intent.putExtra(EXTRA_STRATEGY, strategyType);

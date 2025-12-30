@@ -55,6 +55,7 @@ public class UnifiedSearchService {
     private final MutableLiveData<SearchState> searchState = new MutableLiveData<>(SearchState.idle());
     private String currentQuery = null;
     private MetadataContext currentContext = null;
+    private java.lang.ref.WeakReference<android.app.Activity> currentActivityRef = null;
 
     // Track tasks that failed Direct Search due to Cloudflare
     private final List<SearchTask> lastFailedTasks = new ArrayList<>();
@@ -116,10 +117,14 @@ public class UnifiedSearchService {
      * 3. If Fast Mode yields 0 results, Auto-Trigger Queue for failed servers.
      */
     public void search(String query) {
-        search(query, null);
+        search(query, null, null);
     }
 
     public void search(String query, MetadataContext context) {
+        search(query, context, null);
+    }
+
+    public void search(String query, MetadataContext context, android.app.Activity activity) {
         if (query == null || query.trim().isEmpty()) {
             searchState.postValue(SearchState.idle());
             return;
@@ -127,6 +132,7 @@ public class UnifiedSearchService {
 
         currentQuery = query.trim();
         currentContext = context;
+        currentActivityRef = activity != null ? new java.lang.ref.WeakReference<>(activity) : null;
         searchState.postValue(SearchState.loading(currentQuery));
         lastFailedTasks.clear(); // Clear previous session failures
         paginationQueue.clear(); // Clear previous pagination queue
@@ -245,33 +251,35 @@ public class UnifiedSearchService {
         List<SearchResult> results = new ArrayList<>();
         CountDownLatch latch = new CountDownLatch(1);
 
-        scraperManager.search(task.server, task.url, allowFallback, null, new WebViewScraperManager.ScraperCallback() {
-            @Override
-            public void onSuccess(String html, Map<String, String> cookies) {
-                try {
-                    results.addAll(parseResults(task.server, html, context));
-                    serverRepository.recordSuccess(task.server);
-                } catch (Exception e) {
-                    Log.e(TAG, "Parsing error in searchSingleTask", e);
-                } finally {
-                    latch.countDown();
-                }
-            }
-
-            @Override
-            public void onError(String message) {
-                if ("CLOUDFLARE_DETECTED".equals(message)) {
-                    Log.w(TAG, "Capturing CF Failure for task: " + task.url);
-                    synchronized (lastFailedTasks) {
-                        lastFailedTasks.add(task);
+        android.app.Activity activity = currentActivityRef != null ? currentActivityRef.get() : null;
+        scraperManager.search(task.server, task.url, allowFallback, activity,
+                new WebViewScraperManager.ScraperCallback() {
+                    @Override
+                    public void onSuccess(String html, Map<String, String> cookies) {
+                        try {
+                            results.addAll(parseResults(task.server, html, context));
+                            serverRepository.recordSuccess(task.server);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Parsing error in searchSingleTask", e);
+                        } finally {
+                            latch.countDown();
+                        }
                     }
-                } else {
-                    Log.e(TAG, "Search failed on " + task.server.getName() + ": " + message);
-                    serverRepository.recordFailure(task.server);
-                }
-                latch.countDown();
-            }
-        });
+
+                    @Override
+                    public void onError(String message) {
+                        if ("CLOUDFLARE_DETECTED".equals(message)) {
+                            Log.w(TAG, "Capturing CF Failure for task: " + task.url);
+                            synchronized (lastFailedTasks) {
+                                lastFailedTasks.add(task);
+                            }
+                        } else {
+                            Log.e(TAG, "Search failed on " + task.server.getName() + ": " + message);
+                            serverRepository.recordFailure(task.server);
+                        }
+                        latch.countDown();
+                    }
+                });
 
         try {
             latch.await(PARALLEL_TIMEOUT_SECONDS, TimeUnit.SECONDS);
@@ -355,7 +363,8 @@ public class UnifiedSearchService {
         Log.d(TAG, "Processing QUEUED task: " + task.url);
 
         // IN THE QUEUE: Allow Fallback = TRUE
-        scraperManager.search(task.server, task.url, true, null, new WebViewScraperManager.ScraperCallback() {
+        android.app.Activity activity = currentActivityRef != null ? currentActivityRef.get() : null;
+        scraperManager.search(task.server, task.url, true, activity, new WebViewScraperManager.ScraperCallback() {
             @Override
             public void onSuccess(String html, Map<String, String> cookies) {
                 executor.execute(() -> {

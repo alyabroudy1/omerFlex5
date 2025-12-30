@@ -9,6 +9,8 @@ import androidx.work.NetworkType;
 import androidx.work.OneTimeWorkRequest;
 import androidx.work.WorkManager;
 
+import com.omarflex5.engine.EngineInitializer;
+import com.omarflex5.engine.FlavorEngineInitializer;
 import com.omarflex5.worker.ContentDiscoveryWorker;
 
 import java.time.LocalDate;
@@ -22,6 +24,11 @@ public class OmerFlexApp extends Application {
     @Override
     public void onCreate() {
         super.onCreate();
+
+        // Initialize web engine factory for current flavor (WebView or GeckoView)
+        EngineInitializer initializer = new FlavorEngineInitializer();
+        initializer.initialize(this);
+
         checkAndScheduleFeeder();
     }
 

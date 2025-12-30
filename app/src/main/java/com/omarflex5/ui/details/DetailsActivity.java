@@ -673,6 +673,11 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
                         mediaId, seasonId, episodeId);
             }
         }
+
+        // Handle GeckoCfBypassActivity result
+        if (scraperManager != null) {
+            scraperManager.handleGeckoCfBypassResult(requestCode, resultCode, data);
+        }
     }
 
     private void showLoading() {

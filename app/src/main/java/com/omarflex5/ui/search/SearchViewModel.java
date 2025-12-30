@@ -88,8 +88,12 @@ public class SearchViewModel extends AndroidViewModel {
     }
 
     public void search(String query, UnifiedSearchService.MetadataContext context) {
+        search(query, context, null);
+    }
+
+    public void search(String query, UnifiedSearchService.MetadataContext context, android.app.Activity activity) {
         queryInput.setValue(query);
-        searchService.search(query, context);
+        searchService.search(query, context, activity);
     }
 
     /**

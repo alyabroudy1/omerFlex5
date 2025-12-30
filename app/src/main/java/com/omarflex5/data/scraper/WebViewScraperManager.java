@@ -18,6 +18,8 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
+import com.omarflex5.engine.WebEngineFactory;
+
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import com.omarflex5.data.local.entity.ServerEntity;
@@ -291,6 +293,96 @@ public class WebViewScraperManager {
         });
     }
 
+    /**
+     * Launch the GeckoView-based CF bypass activity (for gecko flavor).
+     * This uses GeckoView with WebExtension to pass CF challenges requiring BigInt.
+     */
+    private static final int GECKO_CF_BYPASS_REQUEST_CODE = 9001;
+    private ScraperCallback pendingGeckoCallback;
+    private ServerEntity pendingGeckoServer;
+
+    private void launchGeckoCfBypass(ServerEntity server, String url, Activity activity, ScraperCallback callback) {
+        if (activity == null || activity.isFinishing()) {
+            callback.onError("Activity not available for Gecko CF bypass");
+            return;
+        }
+
+        Log.d(TAG, "Launching GeckoCfBypassActivity for: " + url);
+        pendingGeckoCallback = callback;
+        pendingGeckoServer = server;
+
+        try {
+            // Use reflection to avoid compile-time dependency on gecko-flavor-only class
+            Class<?> cfActivityClass = Class.forName("com.omarflex5.data.scraper.GeckoCfBypassActivity");
+            java.lang.reflect.Method createIntent = cfActivityClass.getMethod("createIntent",
+                    Context.class, String.class, long.class);
+            android.content.Intent intent = (android.content.Intent) createIntent.invoke(null,
+                    activity, url, server.getId());
+            activity.startActivityForResult(intent, GECKO_CF_BYPASS_REQUEST_CODE);
+        } catch (Exception e) {
+            Log.e(TAG, "Failed to launch GeckoCfBypassActivity: " + e.getMessage());
+            // Fallback to WebView if reflection fails
+            loadWithCfBypass(server, url, activity, callback);
+        }
+    }
+
+    /**
+     * Handle result from GeckoCfBypassActivity. Call this from the host activity's
+     * onActivityResult.
+     */
+    public void handleGeckoCfBypassResult(int requestCode, int resultCode, android.content.Intent data) {
+        if (requestCode != GECKO_CF_BYPASS_REQUEST_CODE)
+            return;
+
+        if (resultCode == Activity.RESULT_OK && data != null && pendingGeckoCallback != null) {
+            String cookies = data.getStringExtra("cookies");
+            String userAgent = data.getStringExtra("user_agent");
+            String html = data.getStringExtra("html");
+
+            if (cookies != null && cookies.contains("cf_clearance")) {
+                Log.d(TAG, "GeckoCfBypassActivity returned cookies successfully");
+
+                // Save cookies to DB and CookieManager
+                if (pendingGeckoServer != null) {
+                    saveCookies(pendingGeckoServer, cookies);
+
+                    // Also save UA if different - CRITICAL: Update in-memory FIRST
+                    if (userAgent != null) {
+                        java.util.Map<String, String> headers = new java.util.HashMap<>();
+                        headers.put("User-Agent", userAgent);
+
+                        // 1. Update in-memory object (sync) - CRITICAL for next request
+                        String headersJson = new com.google.gson.Gson().toJson(headers);
+                        pendingGeckoServer.setHeadersJson(headersJson);
+
+                        // 2. Update cache (to bridge async DB write gap)
+                        serverRepository.updateServerCache(pendingGeckoServer);
+
+                        // 3. Save to DB (async)
+                        serverRepository.saveHeaders(pendingGeckoServer.getId(), headers);
+
+                        Log.d(TAG, ">>> Updated headers in-memory + cache: " + headers.keySet());
+                    }
+                }
+
+                // Return success with HTML and cookies
+                java.util.Map<String, String> cookieMap = parseCookies(cookies);
+                String pageHtml = (html != null && !html.isEmpty()) ? html : "";
+                Log.d(TAG, "Returning HTML from GeckoCfBypass: " + pageHtml.length() + " chars");
+                pendingGeckoCallback.onSuccess(pageHtml, cookieMap);
+            } else {
+                pendingGeckoCallback.onError("No cf_clearance cookie returned");
+            }
+        } else {
+            if (pendingGeckoCallback != null) {
+                pendingGeckoCallback.onError("Gecko CF bypass cancelled or failed");
+            }
+        }
+
+        pendingGeckoCallback = null;
+        pendingGeckoServer = null;
+    }
+
     private void updateDialogStatus(String message) {
         if (webView != null && webView.getTag() instanceof android.widget.TextView) {
             android.widget.TextView st = (android.widget.TextView) webView.getTag();
@@ -435,7 +527,12 @@ public class WebViewScraperManager {
         server.setCfCookiesJson(cookiesJson);
         server.setCfCookiesExpireAt(expiresAt);
 
-        // 3. Flush to disk to ensure WebView persistence
+        // 3. CRITICAL: Update repository cache to bridge async DB write gap
+        // Without this, subsequent getServerById calls from new Activities would
+        // load stale data from DB before async write completes.
+        serverRepository.updateServerCache(server);
+
+        // 4. Flush to disk to ensure WebView persistence
         CookieManager.getInstance().flush();
 
         Log.d(TAG, "External Save: Persisted " + cookies.size() + " cookies for " + server.getName());
@@ -656,6 +753,14 @@ public class WebViewScraperManager {
 
                 // Attach cookies if available
                 Map<String, String> cookies = getSavedCookies(server);
+                Log.d(TAG, ">>> COOKIE DEBUG: Server ID=" + server.getId() + ", Name=" + server.getName() +
+                        ", CookiesJson="
+                        + (server.getCfCookiesJson() != null
+                                ? server.getCfCookiesJson().substring(0,
+                                        Math.min(100, server.getCfCookiesJson().length())) + "..."
+                                : "NULL"));
+                Log.d(TAG, ">>> COOKIE DEBUG: Parsed " + cookies.size() + " cookies, has cf_clearance="
+                        + cookies.containsKey("cf_clearance"));
                 if (!cookies.isEmpty()) {
                     StringBuilder cookieHeader = new StringBuilder();
                     for (Map.Entry<String, String> entry : cookies.entrySet()) {
@@ -664,6 +769,9 @@ public class WebViewScraperManager {
                         cookieHeader.append(entry.getKey()).append("=").append(entry.getValue());
                     }
                     builder.header("Cookie", cookieHeader.toString());
+                    Log.d(TAG, ">>> COOKIE DEBUG: Cookie header attached");
+                } else {
+                    Log.w(TAG, ">>> COOKIE DEBUG: NO COOKIES TO ATTACH!");
                 }
 
                 // Attach saved headers if available
@@ -685,9 +793,22 @@ public class WebViewScraperManager {
                 if (com.omarflex5.data.scraper.util.CfDetector.isCloudflareResponse(code, body)) {
 
                     if (allowWebViewFallback) {
-                        // Failover to WebView
-                        Log.d(TAG, "Direct request hit Cloudflare (" + code + "). Falling back to WebView.");
-                        mainHandler.post(() -> loadWithCfBypass(server, url, postData, activity, callback));
+                        // DEBUG: Log factory state
+                        boolean factoryInit = WebEngineFactory.isInitialized();
+                        boolean isGecko = factoryInit && WebEngineFactory.getInstance().isGeckoView();
+                        Log.d(TAG, "CF fallback check: factoryInit=" + factoryInit + ", isGecko=" + isGecko
+                                + ", activity=" + (activity != null));
+
+                        // Check if we're on GeckoView flavor - use GeckoCfBypassActivity
+                        if (factoryInit && isGecko && activity != null) {
+                            Log.d(TAG, "Direct request hit Cloudflare (" + code
+                                    + "). Falling back to GeckoCfBypassActivity.");
+                            mainHandler.post(() -> launchGeckoCfBypass(server, url, activity, callback));
+                        } else {
+                            // Failover to WebView
+                            Log.d(TAG, "Direct request hit Cloudflare (" + code + "). Falling back to WebView.");
+                            mainHandler.post(() -> loadWithCfBypass(server, url, postData, activity, callback));
+                        }
                     } else {
                         // Strict Fast Mode: Fail immediately so caller can queue it
                         Log.d(TAG, "Direct request hit Cloudflare (" + code + "). Reporting CLOUDFLARE_DETECTED.");
@@ -704,6 +825,32 @@ public class WebViewScraperManager {
                     headersToSave.put("Referer", resolvedUrl);
                     serverRepository.saveHeaders(server.getId(), headersToSave);
 
+                    // CRITICAL: Extract and update cookies from response (Cookie Rotation)
+                    // Cloudflare often rotates the cf_clearance code on successful requests.
+                    // If we don't save it, the next request will use the old/stale one.
+                    java.util.List<String> setCookies = response.headers("Set-Cookie");
+                    if (!setCookies.isEmpty()) {
+                        Log.d(TAG, "Received " + setCookies.size() + " Set-Cookie headers. Updating...");
+
+                        // Parse existing cookies first
+                        Map<String, String> currentCookies = getSavedCookies(server);
+
+                        // Overlay new cookies
+                        for (String cookieLine : setCookies) {
+                            // Simple parser: Name=Value
+                            String[] parts = cookieLine.split(";", 2);
+                            if (parts.length > 0) {
+                                String[] kv = parts[0].trim().split("=", 2);
+                                if (kv.length == 2) {
+                                    currentCookies.put(kv[0], kv[1]);
+                                    Log.d(TAG, "Updated cookie: " + kv[0]);
+                                }
+                            }
+                        }
+                        // Persist updated bake
+                        saveCookies(server, currentCookies);
+                    }
+
                     callback.onSuccess(body, cookies);
                 } else {
                     if (!body.isEmpty()) {
@@ -716,7 +863,13 @@ public class WebViewScraperManager {
             } catch (Exception e) {
                 Log.e(TAG, "Direct request failed: " + e.getMessage());
                 if (allowWebViewFallback) {
-                    mainHandler.post(() -> loadWithCfBypass(server, url, postData, activity, callback));
+                    // Check if we're on GeckoView flavor - use GeckoCfBypassActivity
+                    if (WebEngineFactory.isInitialized() && WebEngineFactory.getInstance().isGeckoView()
+                            && activity != null) {
+                        mainHandler.post(() -> launchGeckoCfBypass(server, url, activity, callback));
+                    } else {
+                        mainHandler.post(() -> loadWithCfBypass(server, url, postData, activity, callback));
+                    }
                 } else {
                     callback.onError("CONNECTION_ERROR");
                 }

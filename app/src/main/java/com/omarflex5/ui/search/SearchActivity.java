@@ -93,11 +93,19 @@ public class SearchActivity extends com.omarflex5.ui.base.BaseActivity {
 
         if (query != null && !query.isEmpty()) {
             Log.d(TAG, "Starting search for: " + query + (context != null ? " with TMDB context" : ""));
-            viewModel.search(query, context);
+            viewModel.search(query, context, this);
         } else {
             textStatus.setText("لا يوجد استعلام بحث");
             textStatus.setVisibility(View.VISIBLE);
         }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, android.content.Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+        // Handle GeckoCfBypassActivity result
+        com.omarflex5.data.scraper.WebViewScraperManager.getInstance(this)
+                .handleGeckoCfBypassResult(requestCode, resultCode, data);
     }
 
     private void initViews() {

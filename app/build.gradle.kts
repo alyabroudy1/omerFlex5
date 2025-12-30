@@ -17,6 +17,14 @@ android {
         versionName = "4.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        
+        // CRITICAL: Force app to run in 32-bit mode (armeabi-v7a)
+        // This is required because we are only bundling the 32-bit GeckoView library to save space.
+        // If we don't filter here, the OS might launch in 64-bit mode if other 64-bit libs exist,
+        // causing "libmozglue.so not found" crash.
+        ndk {
+            abiFilters.add("armeabi-v7a")
+        }
     }
 
     buildTypes {
@@ -32,14 +40,35 @@ android {
         sourceCompatibility = JavaVersion.VERSION_11
         targetCompatibility = JavaVersion.VERSION_11
     }
+
+    // Product flavors for WebView vs GeckoView
+    flavorDimensions += "engine"
+    productFlavors {
+        create("webview") {
+            dimension = "engine"
+            // Default variant - uses Android WebView
+        }
+        create("gecko") {
+            dimension = "engine"
+            // GeckoView variant - better CF bypass
+            // GeckoView supports minSdk 21+, enabling Android 6 (API 23)
+            minSdk = 23
+        }
+    }
 }
 
 dependencies {
+    // GeckoView - only for gecko flavor
+    // Using v101 (last stable for API 23) with proven WebExtension support for cookie extraction
+    val geckoVersion = "101.0.20220608170832"
+    // Optimization: Target ONLY armeabi-v7a to reduce APK size
+    "geckoImplementation"("org.mozilla.geckoview:geckoview-armeabi-v7a:$geckoVersion")
     implementation(libs.appcompat)
     implementation(libs.material)
     implementation(libs.constraintlayout)
     implementation(libs.glide)
     annotationProcessor("com.github.bumptech.glide:compiler:4.16.0")
+    implementation("com.github.bumptech.glide:okhttp3-integration:4.16.0") // OkHttp for cookie-aware images
     implementation(libs.lifecycle.viewmodel)
     implementation(libs.lifecycle.livedata)
     implementation(libs.media3.exoplayer)
