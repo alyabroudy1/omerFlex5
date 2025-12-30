@@ -94,13 +94,6 @@ public class SnifferActivity extends AppCompatActivity {
     }
 
     public static Intent createIntent(Context context, String url, int strategyType) {
-        // MIGRATION: Route to EngineSnifferActivity for GeckoView flavor
-        // This allows gradual migration while keeping WebView logic intact
-        if (com.omarflex5.engine.WebEngineHelper.isGeckoViewFlavor()) {
-            Log.d(TAG, "Routing to EngineSnifferActivity for GeckoView flavor");
-            return com.omarflex5.ui.sniffer.EngineSnifferActivity.createIntent(context, url);
-        }
-
         Intent intent = new Intent(context, SnifferActivity.class);
         intent.putExtra(EXTRA_URL, url);
         intent.putExtra(EXTRA_STRATEGY, strategyType);
@@ -203,6 +196,15 @@ public class SnifferActivity extends AppCompatActivity {
         // We now enforce a DB restore + OkHttp Pre-fetch for maximum reliability.
         Log.d(TAG, "Enforcing DB restore for Cloudflare reliability...");
         scraperManager.restoreCookiesForUrl(targetUrl, () -> {
+            // CRITICAL: Inject cookies provided via Intent (e.g. from GeckoCfBypass)
+            // This ensures we use the exact session even if DB restore missed it or for
+            // different domains
+            String intentCookies = getIntent().getStringExtra("EXTRA_COOKIES");
+            if (intentCookies != null && !intentCookies.isEmpty()) {
+                setCookies(targetUrl, intentCookies);
+                Log.d(TAG, "Injected manual cookies from Intent");
+            }
+
             // Debug: Check restored values
             String ua = webView.getSettings().getUserAgentString();
             String cookies = CookieManager.getInstance().getCookie(targetUrl);

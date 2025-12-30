@@ -100,8 +100,8 @@ public class ServerRepository {
                 faselhd.setBaseUrl("https://www.faselhds.biz");
                 faselhd.setBasePriority(2);
                 faselhd.setCurrentPriority(2);
-                faselhd.setEnabled(true);
-                faselhd.setSearchable(true);
+                faselhd.setEnabled(false);
+                faselhd.setSearchable(false);
                 faselhd.setRequiresWebView(true);
                 faselhd.setSearchUrlPattern("/?s={query}");
                 faselhd.setParseStrategy("HTML");
@@ -113,13 +113,13 @@ public class ServerRepository {
                 ServerEntity arabseed = new ServerEntity();
                 arabseed.setName("arabseed");
                 arabseed.setLabel("عرب سيد");
-                arabseed.setBaseUrl("https://arabseed.show");
+                arabseed.setBaseUrl("https://a.asd.homes");
                 arabseed.setBasePriority(3);
                 arabseed.setCurrentPriority(3);
-                arabseed.setEnabled(false);
-                arabseed.setSearchable(false);
+                arabseed.setEnabled(true);
+                arabseed.setSearchable(true);
                 arabseed.setRequiresWebView(true);
-                arabseed.setSearchUrlPattern("/?s={query}");
+                arabseed.setSearchUrlPattern("/find/?word={query}");
                 arabseed.setParseStrategy("HTML");
                 arabseed.setCreatedAt(now);
                 arabseed.setUpdatedAt(now);
@@ -457,6 +457,37 @@ public class ServerRepository {
     }
 
     // ==================== CALLBACK INTERFACE ====================
+
+    /**
+     * Report a domain change to Firebase for other users.
+     * Only pushes if the change is significant (different host).
+     */
+    public void reportDomainChangeToFirebase(String serverName, String oldBaseUrl, String newBaseUrl) {
+        executor.execute(() -> {
+            try {
+                android.net.Uri oldUri = android.net.Uri.parse(oldBaseUrl);
+                android.net.Uri newUri = android.net.Uri.parse(newBaseUrl);
+
+                // Only report if host actually changed
+                if (oldUri.getHost() != null && !oldUri.getHost().equals(newUri.getHost())) {
+                    java.util.Map<String, Object> update = new java.util.HashMap<>();
+                    update.put("baseUrl", newBaseUrl);
+                    update.put("lastUpdated", com.google.firebase.Timestamp.now());
+                    update.put("updatedBy", android.os.Build.MODEL); // Anonymized device info
+
+                    com.google.firebase.firestore.FirebaseFirestore.getInstance()
+                            .collection("server_configs")
+                            .document(serverName)
+                            .update(update)
+                            .addOnSuccessListener(aVoid -> Log.i(TAG,
+                                    "Pushed domain change to Firebase: " + serverName + " -> " + newBaseUrl))
+                            .addOnFailureListener(e -> Log.w(TAG, "Failed to push domain change: " + e.getMessage()));
+                }
+            } catch (Exception e) {
+                Log.e(TAG, "Error reporting domain change: " + e.getMessage());
+            }
+        });
+    }
 
     public interface OnResultCallback<T> {
         void onResult(T result);

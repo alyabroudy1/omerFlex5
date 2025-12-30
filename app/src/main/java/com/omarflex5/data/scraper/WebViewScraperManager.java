@@ -337,7 +337,34 @@ public class WebViewScraperManager {
         if (resultCode == Activity.RESULT_OK && data != null && pendingGeckoCallback != null) {
             String cookies = data.getStringExtra("cookies");
             String userAgent = data.getStringExtra("user_agent");
-            String html = data.getStringExtra("html");
+
+            // HTML may come from file path (avoids Binder IPC limit) or Intent extra
+            // (fallback)
+            String html = null;
+            String htmlFilePath = data.getStringExtra("html_file_path");
+            if (htmlFilePath != null) {
+                // Read HTML from cache file
+                try {
+                    java.io.File htmlFile = new java.io.File(htmlFilePath);
+                    StringBuilder sb = new StringBuilder();
+                    java.io.BufferedReader reader = new java.io.BufferedReader(new java.io.FileReader(htmlFile));
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        sb.append(line).append("\n");
+                    }
+                    reader.close();
+                    html = sb.toString();
+                    Log.d(TAG, "Read HTML from cache file: " + html.length() + " chars");
+                    // Delete the temp file after reading
+                    htmlFile.delete();
+                } catch (java.io.IOException e) {
+                    Log.e(TAG, "Failed to read HTML from cache file: " + e.getMessage());
+                }
+            }
+            if (html == null) {
+                // Fallback to Intent extra
+                html = data.getStringExtra("html");
+            }
 
             if (cookies != null && cookies.contains("cf_clearance")) {
                 Log.d(TAG, "GeckoCfBypassActivity returned cookies successfully");
@@ -362,6 +389,27 @@ public class WebViewScraperManager {
                         serverRepository.saveHeaders(pendingGeckoServer.getId(), headers);
 
                         Log.d(TAG, ">>> Updated headers in-memory + cache: " + headers.keySet());
+
+                        // 4. Save to SharedPreferences for Glide (keyed by host)
+                        // Glide's OkHttp client reads this to match the User-Agent Cloudflare expects
+                        try {
+                            java.net.URI uri = new java.net.URI(pendingGeckoServer.getBaseUrl());
+                            String host = uri.getHost();
+                            context.getSharedPreferences("glide_ua", Context.MODE_PRIVATE)
+                                    .edit()
+                                    .putString("ua_" + host, userAgent)
+                                    .apply();
+                            Log.d(TAG, ">>> Saved User-Agent for Glide: " + host);
+                        } catch (Exception e) {
+                            Log.e(TAG, "Failed to save UA for Glide: " + e.getMessage());
+                        }
+                    }
+
+                    // Check for domain redirect (arabseed.show -> a.asd.homes)
+                    String finalUrl = data.getStringExtra("final_url");
+                    if (finalUrl != null) {
+                        Log.d(TAG, "GeckoView final URL: " + finalUrl);
+                        checkAndHandleRedirect(pendingGeckoServer, finalUrl);
                     }
                 }
 
@@ -532,8 +580,17 @@ public class WebViewScraperManager {
         // load stale data from DB before async write completes.
         serverRepository.updateServerCache(server);
 
-        // 4. Flush to disk to ensure WebView persistence
-        CookieManager.getInstance().flush();
+        // 4. CRITICAL: Set cookies in Android CookieManager for Glide
+        // GeckoView has its own cookie store that doesn't sync to CookieManager.
+        // Glide uses CookieManager via OkHttp, so we must explicitly set cookies.
+        CookieManager cm = CookieManager.getInstance();
+        String baseUrl = server.getBaseUrl();
+        for (Map.Entry<String, String> entry : cookies.entrySet()) {
+            String cookieValue = entry.getKey() + "=" + entry.getValue() + "; Path=/";
+            cm.setCookie(baseUrl, cookieValue);
+        }
+        cm.flush();
+        Log.d(TAG, "Set " + cookies.size() + " cookies in CookieManager for " + baseUrl);
 
         Log.d(TAG, "External Save: Persisted " + cookies.size() + " cookies for " + server.getName());
     }
@@ -595,11 +652,44 @@ public class WebViewScraperManager {
                     // 2. Update In-Memory Object (Sync) - CRITICAL for next request
                     server.setBaseUrl(newBase);
 
+                    // 3. Push to Firebase (Async) - Help other users
+                    serverRepository.reportDomainChangeToFirebase(server.getName(), base, newBase);
+
+                    // 4. CRITICAL: Sync cookies from old domain to new domain for Glide images
+                    syncCookiesToNewDomain(base, newBase);
+
                     Log.i(TAG, "Updated Server Base URL to: " + newBase);
                 }
             }
         } catch (Exception e) {
             Log.w(TAG, "Error checking redirect: " + e.getMessage());
+        }
+    }
+
+    /**
+     * Copy cookies from old domain to new domain in CookieManager.
+     * This ensures Glide can load images from the redirected domain.
+     */
+    private void syncCookiesToNewDomain(String oldBaseUrl, String newBaseUrl) {
+        try {
+            CookieManager cm = CookieManager.getInstance();
+            String oldCookies = cm.getCookie(oldBaseUrl);
+            if (oldCookies != null && !oldCookies.isEmpty()) {
+                Log.d(TAG, "Syncing cookies from " + oldBaseUrl + " to " + newBaseUrl);
+                // Parse and set each cookie individually
+                String[] cookies = oldCookies.split(";");
+                for (String cookie : cookies) {
+                    String trimmed = cookie.trim();
+                    if (!trimmed.isEmpty()) {
+                        // Add Path=/ to ensure cookie is valid for entire site
+                        cm.setCookie(newBaseUrl, trimmed + "; Path=/");
+                    }
+                }
+                cm.flush();
+                Log.d(TAG, "Synced " + cookies.length + " cookies to " + newBaseUrl);
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error syncing cookies to new domain: " + e.getMessage());
         }
     }
 

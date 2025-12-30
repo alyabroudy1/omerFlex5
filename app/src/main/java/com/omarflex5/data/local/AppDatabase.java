@@ -155,7 +155,7 @@ public abstract class AppDatabase extends RoomDatabase {
             arabseed.setEnabled(true); // Enabled for Production
             arabseed.setSearchable(true);
             arabseed.setRequiresWebView(true); // Sometimes CF
-            arabseed.setSearchUrlPattern("/?s={query}");
+            arabseed.setSearchUrlPattern("/find/?word={query}");
             arabseed.setParseStrategy("HTML");
             arabseed.setCreatedAt(now);
             arabseed.setUpdatedAt(now);

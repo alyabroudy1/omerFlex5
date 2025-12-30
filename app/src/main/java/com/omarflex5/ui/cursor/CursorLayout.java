@@ -280,7 +280,25 @@ public class CursorLayout extends FrameLayout {
         MotionEvent event = MotionEvent.obtain(time, time, action, x, y, 0);
 
         try {
-            this.dispatchTouchEvent(event);
+            // Dispatch directly to targetView (GeckoView/WebView) for web content clicks
+            if (targetView != null) {
+                // Translate coordinates to targetView's coordinate space
+                int[] locationOnScreen = new int[2];
+                targetView.getLocationOnScreen(locationOnScreen);
+                int[] myLocation = new int[2];
+                this.getLocationOnScreen(myLocation);
+
+                float adjustedX = x - (locationOnScreen[0] - myLocation[0]);
+                float adjustedY = y - (locationOnScreen[1] - myLocation[1]);
+
+                MotionEvent adjustedEvent = MotionEvent.obtain(time, time, action, adjustedX, adjustedY, 0);
+                targetView.dispatchTouchEvent(adjustedEvent);
+                adjustedEvent.recycle();
+                Log.d(TAG, "Dispatched touch to targetView: " + action + " at (" + adjustedX + ", " + adjustedY + ")");
+            } else {
+                // Fallback to layout dispatch
+                this.dispatchTouchEvent(event);
+            }
         } finally {
             event.recycle();
         }

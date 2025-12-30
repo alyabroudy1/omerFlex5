@@ -268,6 +268,7 @@ public class GeckoViewEngine implements IWebEngine {
                 return GeckoResult.fromValue(null);
             }
         });
+
     }
 
     @Override
@@ -305,9 +306,13 @@ public class GeckoViewEngine implements IWebEngine {
                 Log.d(TAG, "Setting referrer via loader.referrer(): " + referer);
             }
 
-            // Add other headers (excluding Referer which is forbidden)
+            // Add other headers (excluding Referer and Cookie which are forbidden)
+            // NOTE: Cookie header is forbidden in GeckoView's additionalHeaders()
+            // Cookies must be set via GeckoRuntime.StorageController.setCookies() or
+            // WebView.CookieManager.setCookie() BEFORE loading the URL
             Map<String, String> otherHeaders = new HashMap<>(headers);
             otherHeaders.remove("Referer");
+            otherHeaders.remove("Cookie"); // CRITICAL: Cookie is a forbidden header in GeckoView!
             if (!otherHeaders.isEmpty()) {
                 loader = loader.additionalHeaders(otherHeaders);
                 Log.d(TAG, "Setting additional headers: " + otherHeaders);
@@ -323,7 +328,11 @@ public class GeckoViewEngine implements IWebEngine {
     @Override
     public void loadHtml(String html, String baseUrl) {
         // Use load with data URI as alternative
-        session.load(new GeckoSession.Loader().data(html, "text/html"));
+        GeckoSession.Loader loader = new GeckoSession.Loader().data(html, "text/html");
+        if (baseUrl != null) {
+            loader.uri(baseUrl);
+        }
+        session.load(loader);
     }
 
     @Override

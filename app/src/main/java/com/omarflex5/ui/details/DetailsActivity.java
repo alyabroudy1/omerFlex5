@@ -553,6 +553,51 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
 
     private void startSniffer(String url) {
         Intent intent = SnifferActivity.createIntent(this, url, SnifferActivity.STRATEGY_VIDEO);
+
+        // Pass Session Data (Cookies & UA) to ensure Sniffer uses the same context as
+        // Scraper
+        if (currentServer != null) {
+            // 1. Pass User-Agent
+            if (currentServer.getHeadersJson() != null) {
+                try {
+                    Map<String, String> headers = new com.google.gson.Gson().fromJson(
+                            currentServer.getHeadersJson(),
+                            new com.google.gson.reflect.TypeToken<Map<String, String>>() {
+                            }.getType());
+                    if (headers != null && headers.containsKey("User-Agent")) {
+                        intent.putExtra("EXTRA_USER_AGENT", headers.get("User-Agent"));
+                    }
+                } catch (Exception e) {
+                    Log.e("DetailsActivity", "Failed to parse headers for Sniffer: " + e.getMessage());
+                }
+            }
+
+            // 2. Pass Cookies
+            if (currentServer.getCfCookiesJson() != null) {
+                try {
+                    Map<String, String> cookiesMap = new com.google.gson.Gson().fromJson(
+                            currentServer.getCfCookiesJson(),
+                            new com.google.gson.reflect.TypeToken<Map<String, String>>() {
+                            }.getType());
+                    // Convert Map to Cookie String (k=v; k=v)
+                    StringBuilder sb = new StringBuilder();
+                    for (Map.Entry<String, String> entry : cookiesMap.entrySet()) {
+                        if (sb.length() > 0)
+                            sb.append("; ");
+                        sb.append(entry.getKey()).append("=").append(entry.getValue());
+                    }
+                    intent.putExtra("EXTRA_COOKIES", sb.toString());
+                } catch (Exception e) {
+                    Log.e("DetailsActivity", "Failed to parse cookies for Sniffer: " + e.getMessage());
+                }
+            }
+
+            // 3. Pass Referer (Current URL)
+            if (this.url != null) {
+                intent.putExtra("EXTRA_REFERER", this.url);
+            }
+        }
+
         startActivityForResult(intent, REQUEST_VIDEO_BROWSER);
     }
 

@@ -93,6 +93,16 @@ public class UnifiedSearchService {
             }
         });
 
+        // Fix ArabSeed search URL pattern (Migration for existing users)
+        // Site uses /find/?word= instead of /?s= to avoid server redirect
+        serverRepository.getServerByName("arabseed", server -> {
+            if (server != null && server.getSearchUrlPattern() != null
+                    && server.getSearchUrlPattern().contains("?s=")) {
+                serverRepository.updateSearchUrlPattern("arabseed", "/find/?word={query}");
+                Log.i(TAG, "Migrated ArabSeed to /find/?word= pattern");
+            }
+        });
+
         // Sync with Firebase
         serverRepository.fetchRemoteConfigs();
     }

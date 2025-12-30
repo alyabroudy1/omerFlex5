@@ -54,6 +54,7 @@ public class GeckoCfBypassActivity extends AppCompatActivity {
     private long serverId;
     private boolean isChallengePassed = false;
     private static boolean extensionInstalled = false;
+    private String finalUrl = null; // Track resolved URL after redirects
 
     // Modern Chrome User-Agent for Cloudflare compatibility
     // NOTE: This will be overridden by WebConfig.getUserAgent(this) in
@@ -120,6 +121,7 @@ public class GeckoCfBypassActivity extends AppCompatActivity {
             @Override
             public void onPageStart(GeckoSession session, String url) {
                 log("Page Started: " + url);
+                finalUrl = url; // Track resolved URL for domain redirect detection
                 runOnUiThread(() -> progressBar.setVisibility(View.VISIBLE));
             }
 
@@ -208,7 +210,7 @@ public class GeckoCfBypassActivity extends AppCompatActivity {
         // Note: MessageDelegate must be set for each Activity instance, not just on
         // first install
         final GeckoRuntime finalRuntime = runtime;
-        final String EXPECTED_VERSION = "6.0"; // Must match manifest.json version
+        final String EXPECTED_VERSION = "15.0"; // Must match manifest.json version
 
         if (!extensionInstalled) {
             // First install
@@ -345,12 +347,21 @@ public class GeckoCfBypassActivity extends AppCompatActivity {
     }
 
     // Handle messages from WebExtension (port or one-off)
+    // Chunked transfer state
+    private String chunkedCookies = null;
+    private String chunkedUserAgent = null;
+    private String chunkedUrl = null;
+    private int totalChunks = 0;
+    private String[] htmlChunks = null;
+    private int receivedChunks = 0;
+
     private void handleExtensionMessage(Object message) {
         if (message instanceof org.json.JSONObject) {
             org.json.JSONObject json = (org.json.JSONObject) message;
             String type = json.optString("type", "");
 
             if ("CF_RESULT".equals(type)) {
+                // Single message (small HTML)
                 String cookies = json.optString("cookies", "");
                 String html = json.optString("html", "");
                 String ua = json.optString("userAgent", userAgent);
@@ -361,6 +372,59 @@ public class GeckoCfBypassActivity extends AppCompatActivity {
                 if (cookies.contains("cf_clearance")) {
                     finishWithSuccess(cookies, ua, html);
                 }
+            } else if ("CF_RESULT_START".equals(type)) {
+                // Start of chunked transfer
+                chunkedCookies = json.optString("cookies", "");
+                chunkedUserAgent = json.optString("userAgent", userAgent);
+                chunkedUrl = json.optString("url", "");
+                totalChunks = json.optInt("totalChunks", 0);
+                int totalLength = json.optInt("totalLength", 0);
+
+                htmlChunks = new String[totalChunks];
+                receivedChunks = 0;
+
+                log("CF_RESULT_START: expecting " + totalChunks + " chunks (" + totalLength + " chars total)");
+
+            } else if ("CF_RESULT_CHUNK".equals(type)) {
+                // Receive a chunk
+                int chunkIndex = json.optInt("chunkIndex", -1);
+                String data = json.optString("data", "");
+
+                if (htmlChunks != null && chunkIndex >= 0 && chunkIndex < totalChunks) {
+                    htmlChunks[chunkIndex] = data;
+                    receivedChunks++;
+                    log("CF_RESULT_CHUNK: received " + receivedChunks + "/" + totalChunks + " (" + data.length()
+                            + " chars)");
+                } else {
+                    log("CF_RESULT_CHUNK: invalid chunkIndex=" + chunkIndex);
+                }
+
+            } else if ("CF_RESULT_END".equals(type)) {
+                // End of chunked transfer - reassemble HTML
+                log("CF_RESULT_END: reassembling " + receivedChunks + " chunks");
+
+                if (htmlChunks != null && receivedChunks == totalChunks) {
+                    StringBuilder sb = new StringBuilder();
+                    for (String chunk : htmlChunks) {
+                        if (chunk != null) {
+                            sb.append(chunk);
+                        }
+                    }
+                    String fullHtml = sb.toString();
+                    log("Chunked transfer complete: " + fullHtml.length() + " chars reassembled");
+
+                    if (chunkedCookies != null && chunkedCookies.contains("cf_clearance")) {
+                        finishWithSuccess(chunkedCookies, chunkedUserAgent, fullHtml);
+                    }
+                } else {
+                    log("CF_RESULT_END: incomplete transfer, received=" + receivedChunks + ", expected=" + totalChunks);
+                }
+
+                // Clear chunked state
+                htmlChunks = null;
+                chunkedCookies = null;
+                chunkedUserAgent = null;
+                chunkedUrl = null;
             }
         } else {
             log("Extension message is not JSONObject: " + (message != null ? message.getClass().getName() : "null"));
@@ -381,21 +445,46 @@ public class GeckoCfBypassActivity extends AppCompatActivity {
 
         isChallengePassed = true;
 
-        // Limit HTML size to avoid Intent IPC size limit (~1MB)
-        // 500KB should be safe and enough for parsing
-        final int MAX_HTML_SIZE = 500 * 1024;
-        String safeHtml = html;
-        if (html != null && html.length() > MAX_HTML_SIZE) {
-            safeHtml = html.substring(0, MAX_HTML_SIZE);
-            log("WARNING: HTML truncated from " + html.length() + " to " + MAX_HTML_SIZE + " chars");
+        // Write HTML to cache file to avoid Intent IPC size limit (~1MB)
+        // Intent extras with large strings cause Binder overflow + device freeze
+        String htmlFilePath = null;
+        if (html != null && html.length() > 0) {
+            try {
+                java.io.File cacheDir = getCacheDir();
+                java.io.File htmlFile = new java.io.File(cacheDir,
+                        "cf_bypass_html_" + System.currentTimeMillis() + ".html");
+                java.io.FileWriter writer = new java.io.FileWriter(htmlFile);
+                writer.write(html);
+                writer.close();
+                htmlFilePath = htmlFile.getAbsolutePath();
+                log("HTML written to cache file: " + htmlFilePath + " (" + html.length() + " chars)");
+            } catch (java.io.IOException e) {
+                log("Failed to write HTML to cache file: " + e.getMessage());
+                // Fallback: truncate to 100KB (safe for Intent)
+                final int SAFE_SIZE = 100 * 1024;
+                if (html.length() > SAFE_SIZE) {
+                    html = html.substring(0, SAFE_SIZE);
+                    log("Fallback: HTML truncated to " + SAFE_SIZE + " chars for Intent");
+                }
+            }
         }
 
-        log("SUCCESS: cf_clearance found with HTML (" + (safeHtml != null ? safeHtml.length() : 0) + " chars)");
+        log("SUCCESS: cf_clearance found with HTML (" + (html != null ? html.length() : 0) + " chars)");
 
         Intent resultIntent = new Intent();
         resultIntent.putExtra(RESULT_COOKIES, cookies);
         resultIntent.putExtra(RESULT_USER_AGENT, userAgent);
-        resultIntent.putExtra(RESULT_HTML, safeHtml);
+        // Pass file path instead of HTML content (safe for Intent IPC)
+        if (htmlFilePath != null) {
+            resultIntent.putExtra("html_file_path", htmlFilePath);
+        } else if (html != null) {
+            // Fallback for small HTML or if file write failed
+            resultIntent.putExtra(RESULT_HTML, html);
+        }
+        // Include final URL for domain redirect detection
+        if (finalUrl != null) {
+            resultIntent.putExtra("final_url", finalUrl);
+        }
         setResult(RESULT_OK, resultIntent);
         finish();
     }

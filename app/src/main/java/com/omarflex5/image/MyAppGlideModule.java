@@ -36,12 +36,41 @@ public final class MyAppGlideModule extends AppGlideModule {
     @Override
     public void registerComponents(@NonNull Context context, @NonNull Glide glide, @NonNull Registry registry) {
         // Create OkHttpClient that uses WebView's CookieManager
+        // CRITICAL: Also add User-Agent interceptor because Cloudflare validates
+        // cf_clearance against the User-Agent used during bypass
         OkHttpClient client = new OkHttpClient.Builder()
                 .cookieJar(new WebViewCookieJar())
+                .addNetworkInterceptor(chain -> {
+                    okhttp3.Request originalRequest = chain.request();
+
+                    // Check if we have a stored User-Agent for this domain
+                    String userAgent = getUserAgentForDomain(context, originalRequest.url().host());
+
+                    if (userAgent != null && !userAgent.isEmpty()) {
+                        okhttp3.Request newRequest = originalRequest.newBuilder()
+                                .header("User-Agent", userAgent)
+                                .build();
+                        return chain.proceed(newRequest);
+                    }
+                    return chain.proceed(originalRequest);
+                })
                 .build();
 
         // Register the OkHttp client with Glide
         registry.replace(GlideUrl.class, InputStream.class, new OkHttpUrlLoader.Factory(client));
+    }
+
+    /**
+     * Get the stored User-Agent for a domain from SharedPreferences.
+     * This is set by WebViewScraperManager after successful CF bypass.
+     */
+    private String getUserAgentForDomain(Context context, String host) {
+        android.content.SharedPreferences prefs = context.getSharedPreferences("glide_ua", Context.MODE_PRIVATE);
+        String ua = prefs.getString("ua_" + host, null);
+        if (ua != null) {
+            android.util.Log.d("GlideCookies", "Using stored User-Agent for " + host);
+        }
+        return ua;
     }
 
     /**

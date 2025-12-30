@@ -215,25 +215,58 @@ public class VideoSniffingStrategy implements SniffingStrategy {
             script.append(customScript);
         }
 
+        script.append("           // Check HTML5 Video elements");
         script.append("           var videos = document.getElementsByTagName('video');");
         script.append("           for(var i=0; i<videos.length; i++) {");
         script.append("               checkVideo(videos[i].src);");
         script.append("               checkVideo(videos[i].currentSrc);");
+        script.append("               ");
+        script.append("               // Check Source tags");
+        script.append("               var sources = videos[i].getElementsByTagName('source');");
+        script.append("               for(var j=0; j<sources.length; j++) {");
+        script.append("                   checkVideo(sources[j].src);");
+        script.append("               }");
         script.append("           }");
-        script.append("           var iframes = document.getElementsByTagName('iframe');");
+        script.append("           ");
+        script.append("           // Check JWPlayer");
+        script.append("           if (typeof jwplayer !== 'undefined') {");
+        script.append("              try {");
+        script.append("                var player = jwplayer();");
+        script.append("                if (player && player.getPlaylistItem) {");
+        script.append("                  var item = player.getPlaylistItem();");
+        script.append("                  if (item && item.file) {");
+        script.append("                    checkVideo(item.file);");
+        script.append("                  }");
+        script.append("                }");
+        script.append("              } catch(e) {}");
+        script.append("           }");
+        script.append("");
+        script.append("           // Check Iframes");
+        script.append("           var iframes = document.querySelectorAll('iframe');");
         script.append("           for(var i=0; i<iframes.length; i++) {");
-        script.append("               checkVideo(iframes[i].src);");
-        script.append("               try {"); // Try to peer into same-origin iframes
+        script.append("               var src = iframes[i].src;");
         script.append(
-                "                   var innerDoc = iframes[i].contentDocument || iframes[i].contentWindow.document;");
-        script.append("                   if (innerDoc) {");
-        script.append("                       var innerVideos = innerDoc.getElementsByTagName('video');");
-        script.append("                       for(var j=0; j<innerVideos.length; j++) {");
-        script.append("                           checkVideo(innerVideos[j].src);");
-        script.append("                           checkVideo(innerVideos[j].currentSrc);");
-        script.append("                       }");
-        script.append("                   }");
-        script.append("               } catch(e) {}");
+                "               if (src && (src.includes('player') || src.includes('embed') || src.includes('video')) && !src.includes('unknown')) {");
+        script.append("                    if (src.includes('youtube') || src.includes('google')) continue;");
+        script.append(
+                "                    // If matches our patterns, treat as video source (likely recursive load needed if not direct)");
+        script.append(
+                "                    // But for now, we just report it if it looks like a direct video or monitor it");
+        script.append("                    checkVideo(src);");
+        script.append("                    ");
+        script.append("                    // Also try to peer into same-origin iframes");
+        script.append("                    try {");
+        script.append(
+                "                        var innerDoc = iframes[i].contentDocument || iframes[i].contentWindow.document;");
+        script.append("                         if (innerDoc) {");
+        script.append("                             var innerVideos = innerDoc.getElementsByTagName('video');");
+        script.append("                             for(var j=0; j<innerVideos.length; j++) {");
+        script.append("                                 checkVideo(innerVideos[j].src);");
+        script.append("                                 checkVideo(innerVideos[j].currentSrc);");
+        script.append("                             }");
+        script.append("                         }");
+        script.append("                    } catch(e) {}");
+        script.append("               }");
         script.append("           }");
         script.append("           ");
         script.append("           attemptClick();");

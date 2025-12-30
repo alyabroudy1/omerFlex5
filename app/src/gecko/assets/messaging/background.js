@@ -1,29 +1,37 @@
-// Background script v5 - Uses sendNativeMessage instead of port for stateless messaging
-// This ensures messages reach the current Activity's MessageDelegate
-// v5: Added RESET handling to support multiple GeckoCfBypassActivity sessions
-console.log("[CookieExtractor] Background script started (v5 - with RESET support)");
+// Background script v8 - Added GET_COOKIES handler for redirected page cookie check
+// Reset state on NEW_PAGE, fixed chunked transfer
+// Uses sendNativeMessage instead of port for stateless messaging
+console.log("[CookieExtractor] Background script started (v8 - GET_COOKIES support)");
 
 let resultSent = false; // Flag to stop polling once we have HTML result
 let cookieCheckInterval = null;
 
 // Send message to native app via sendNativeMessage (stateless, no port)
 function sendToNative(message) {
-    if (resultSent) {
-        console.log("[CookieExtractor] Result already sent, skipping...");
+    // Don't block chunked messages - only check resultSent for final messages
+    const isFinalMessage = (message.type === "CF_RESULT" || message.type === "CF_RESULT_END");
+
+    if (resultSent && isFinalMessage) {
+        console.log("[CookieExtractor] Result already sent, skipping final message...");
         return;
     }
 
     try {
         // Use sendNativeMessage - this is stateless and routes to current MessageDelegate
         browser.runtime.sendNativeMessage("GeckoCfBypass", message).then(() => {
-            resultSent = true;
-            console.log("[CookieExtractor] Sent via sendNativeMessage: type=" + message.type);
+            // Only set resultSent after final message (not START or CHUNK)
+            if (isFinalMessage) {
+                resultSent = true;
+                console.log("[CookieExtractor] Sent via sendNativeMessage: type=" + message.type + " (FINAL)");
 
-            // Stop polling after success
-            if (cookieCheckInterval) {
-                clearInterval(cookieCheckInterval);
-                cookieCheckInterval = null;
-                console.log("[CookieExtractor] Stopped cookie polling after success");
+                // Stop polling after success
+                if (cookieCheckInterval) {
+                    clearInterval(cookieCheckInterval);
+                    cookieCheckInterval = null;
+                    console.log("[CookieExtractor] Stopped cookie polling after success");
+                }
+            } else {
+                console.log("[CookieExtractor] Sent via sendNativeMessage: type=" + message.type);
             }
         }).catch(err => {
             console.error("[CookieExtractor] sendNativeMessage error:", err);
@@ -37,20 +45,43 @@ function sendToNative(message) {
 browser.runtime.onMessage.addListener((message, sender, sendResponse) => {
     console.log("[CookieExtractor] Received from content script:", message.type);
 
-    if (message.type === "CF_RESULT") {
-        // Forward to native app via sendNativeMessage (stateless)
+    // Handle NEW_PAGE - reset state for new page load (important for expired cookie scenarios)
+    if (message.type === "NEW_PAGE") {
+        console.log("[CookieExtractor] NEW_PAGE received from: " + message.url);
+        // Only reset if we already sent a result (prevents unnecessary resets)
+        if (resultSent) {
+            console.log("[CookieExtractor] Resetting state for new page (previous result was sent)");
+            resetState();
+        }
+        return false;
+    }
+
+    // Handle GET_COOKIES - content script requesting current cookies on page load
+    if (message.type === "GET_COOKIES") {
+        // Return cookies asynchronously
+        browser.cookies.getAll({}).then((cookies) => {
+            let cookieString = cookies.map(c => `${c.name}=${c.value}`).join("; ");
+            sendResponse({ cookies: cookieString });
+        }).catch(err => {
+            sendResponse({ cookies: "" });
+        });
+        return true; // Async response
+    }
+
+    // Forward all CF_RESULT types to native (including chunked messages)
+    if (message.type === "CF_RESULT" ||
+        message.type === "CF_RESULT_START" ||
+        message.type === "CF_RESULT_CHUNK" ||
+        message.type === "CF_RESULT_END") {
         sendToNative(message);
     }
 
     return false; // Sync response
 });
 
-// Listen for native messages (including RESET)
-browser.runtime.onConnectNative && browser.runtime.onMessageExternal && console.log("[CookieExtractor] External listeners available");
-
 // Reset function to clear state for new CF bypass session
 function resetState() {
-    console.log("[CookieExtractor] RESET received - resetting state for new CF bypass session");
+    console.log("[CookieExtractor] RESET - clearing state for new CF bypass session");
     resultSent = false;
     if (!cookieCheckInterval) {
         cookieCheckInterval = setInterval(checkAndSendCookies, 2000);
@@ -58,20 +89,29 @@ function resetState() {
     }
 }
 
-// Register as message handler to receive RESET from native
-// The native app will call this via port message when GeckoCfBypassActivity starts
+// IMPORTANT: Reset state on every script load (background script restarts = new session)
+// This ensures fresh state when GeckoCfBypassActivity launches
+resetState();
+
+// Establish native port connection to receive RESET from Java
+let nativePort = null;
 try {
-    browser.runtime.onConnect.addListener((port) => {
-        console.log("[CookieExtractor] Port connected: " + port.name);
-        port.onMessage.addListener((message) => {
-            console.log("[CookieExtractor] Port message received:", message);
-            if (message.type === "RESET") {
-                resetState();
-            }
-        });
+    nativePort = browser.runtime.connectNative("GeckoCfBypass");
+    console.log("[CookieExtractor] Native port connected");
+
+    nativePort.onMessage.addListener((message) => {
+        console.log("[CookieExtractor] Native port message:", JSON.stringify(message));
+        if (message && message.type === "RESET") {
+            resetState();
+        }
+    });
+
+    nativePort.onDisconnect.addListener(() => {
+        console.log("[CookieExtractor] Native port disconnected");
+        nativePort = null;
     });
 } catch (e) {
-    console.log("[CookieExtractor] onConnect not available:", e);
+    console.log("[CookieExtractor] connectNative failed (expected if not supported):", e);
 }
 
 // Broadcast cookie found to all tabs
@@ -130,4 +170,30 @@ try {
     });
 } catch (e) {
     console.error("[CookieExtractor] onChanged listener error:", e);
+}
+// Resource Sniffing Logic
+try {
+    browser.webRequest.onBeforeRequest.addListener(
+        function (details) {
+            if (details.url) {
+                const lowerUrl = details.url.toLowerCase();
+                if (lowerUrl.includes(".m3u8") || lowerUrl.includes(".mp4") ||
+                    lowerUrl.includes(".mpd") || lowerUrl.includes("/hls/") ||
+                    lowerUrl.includes("manifest")) {
+
+                    console.log("[CookieExtractor] Video resource detected: " + details.url);
+
+                    // Send to native app
+                    sendToNative({
+                        type: "RESOURCE_LOADED",
+                        url: details.url
+                    });
+                }
+            }
+        },
+        { urls: ["<all_urls>"] },
+        []
+    );
+} catch (e) {
+    console.error("[CookieExtractor] webRequest listener error:", e);
 }

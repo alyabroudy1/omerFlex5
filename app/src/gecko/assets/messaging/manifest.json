@@ -1,7 +1,7 @@
 {
     "manifest_version": 2,
     "name": "CookieExtractor",
-    "version": "6.0",
+    "version": "15.0",
     "description": "Extracts HttpOnly cookies and HTML content for GeckoView CF bypass",
     "permissions": [
         "cookies",
@@ -9,6 +9,7 @@
         "nativeMessaging",
         "nativeMessagingFromContent",
         "geckoViewAddons",
+        "webRequest",
         "<all_urls>"
     ],
     "background": {
@@ -20,6 +21,10 @@
         {
             "matches": [
                 "<all_urls>"
+            ],
+            "exclude_matches": [
+                "*://challenges.cloudflare.com/*",
+                "*://*.challenges.cloudflare.com/*"
             ],
             "js": [
                 "content.js"
