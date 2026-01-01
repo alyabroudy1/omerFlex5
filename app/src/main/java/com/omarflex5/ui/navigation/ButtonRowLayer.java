@@ -44,6 +44,13 @@ public class ButtonRowLayer implements FocusLayer {
         this(name, createList(button1, button2), nextLayerDown);
     }
 
+    /**
+     * Convenience constructor for three buttons (Watch Now, Mute, Fullscreen).
+     */
+    public ButtonRowLayer(String name, View button1, View button2, View button3, String nextLayerDown) {
+        this(name, createList(button1, button2, button3), nextLayerDown);
+    }
+
     private static List<View> createList(View... views) {
         List<View> list = new ArrayList<>();
         for (View v : views) {

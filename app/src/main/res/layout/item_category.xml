@@ -1,19 +1,34 @@
 <?xml version="1.0" encoding="utf-8"?>
-<TextView xmlns:android="http://schemas.android.com/apk/res/android"
-    android:id="@+id/text_category_name"
-    android:layout_width="wrap_content"
+<!-- PS4 style category item for vertical sidebar -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/category_container"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="4dp"
-    android:background="@drawable/selector_category_background"
+    android:orientation="horizontal"
+    android:gravity="center_vertical"
+    android:paddingVertical="12dp"
+    android:paddingHorizontal="10dp"
+    android:layout_marginVertical="3dp"
+    android:layout_marginHorizontal="4dp"
+    android:background="@drawable/selector_ps4_category"
+    android:stateListAnimator="@animator/ps4_category_focus"
     android:clickable="true"
     android:focusable="true"
     android:focusableInTouchMode="false"
-    android:gravity="center"
-    android:includeFontPadding="false"
-    android:paddingStart="16dp"
-    android:paddingTop="8dp"
-    android:paddingEnd="16dp"
-    android:paddingBottom="8dp"
-    android:textColor="@color/white"
-    android:textSize="14sp"
-    android:textStyle="bold" />
+    android:duplicateParentState="false">
+
+    <!-- Category Name - Text Only -->
+    <TextView
+        android:id="@+id/text_category_name"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_weight="1"
+        android:gravity="center"
+        android:textColor="@color/ps4_text_primary"
+        android:textSize="14sp"
+        android:textStyle="bold"
+        android:maxLines="1"
+        android:ellipsize="end" />
+
+</LinearLayout>

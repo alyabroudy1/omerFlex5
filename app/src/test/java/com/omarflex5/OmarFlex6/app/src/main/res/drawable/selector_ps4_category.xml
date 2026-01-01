@@ -1,0 +1,76 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PS4 style category selector with clear focus and select states -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    
+    <!-- Focused + Selected state - PS4 blue filled with white border -->
+    <item android:state_focused="true" android:state_selected="true">
+        <layer-list>
+            <!-- Outer glow -->
+            <item android:left="-4dp" android:top="-4dp" android:right="-4dp" android:bottom="-4dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="#400070D1" />
+                    <corners android:radius="14dp" />
+                </shape>
+            </item>
+            <!-- Blue fill -->
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="#0070D1" />
+                    <corners android:radius="10dp" />
+                </shape>
+            </item>
+            <!-- White border -->
+            <item android:left="2dp" android:top="2dp" android:right="2dp" android:bottom="2dp">
+                <shape android:shape="rectangle">
+                    <stroke android:width="2dp" android:color="#FFFFFF" />
+                    <corners android:radius="8dp" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    
+    <!-- Focused state only - white border with subtle fill -->
+    <item android:state_focused="true">
+        <layer-list>
+            <!-- Outer glow -->
+            <item android:left="-4dp" android:top="-4dp" android:right="-4dp" android:bottom="-4dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="#220070D1" />
+                    <corners android:radius="14dp" />
+                </shape>
+            </item>
+            <!-- Subtle fill with white border -->
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="#15FFFFFF" />
+                    <stroke android:width="2dp" android:color="#FFFFFF" />
+                    <corners android:radius="10dp" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    
+    <!-- Selected state only - PS4 blue fill -->
+    <item android:state_selected="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#0070D1" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+    
+    <!-- Pressed state -->
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#30FFFFFF" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+    
+    <!-- Default state - transparent -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+            <corners android:radius="10dp" />
+        </shape>
+    </item>
+</selector>

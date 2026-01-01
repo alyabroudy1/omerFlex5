@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PS4 style hero gradient overlay - RTL Version (180 degree angle for right side shadow) -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Right side gradient for title/description area (RTL) -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="linear"
+                android:angle="180"
+                android:startColor="#E6000000"
+                android:centerColor="#80000000"
+                android:endColor="#00000000"
+                android:centerX="0.7" />
+        </shape>
+    </item>
+    <!-- Bottom gradient for controls -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:type="linear"
+                android:angle="90"
+                android:startColor="#CC000000"
+                android:centerColor="#40000000"
+                android:endColor="#00000000"
+                android:centerY="0.4" />
+        </shape>
+    </item>
+</layer-list>

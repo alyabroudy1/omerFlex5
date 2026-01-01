@@ -12,21 +12,22 @@ if (window.location.hostname.includes("challenges.cloudflare.com") ||
     let resultSent = false; // Flag to prevent duplicate sends
 
     // Tell background script a new page is loaded - this resets state for expired cookie scenarios
-    browser.runtime.sendMessage({ type: "NEW_PAGE", url: window.location.href }).catch(() => {
-        // Ignore errors - background script might not be ready yet
-    });
+    // IMPORTANT: Only top frame should send this to avoid duplicate resets
+    if (window.self === window.top) {
+        browser.runtime.sendMessage({ type: "NEW_PAGE", url: window.location.href }).catch(() => {
+            // Ignore errors - background script might not be ready yet
+        });
+    }
 
     // Check if this is a CF challenge frame
     function isChallengeFrame() {
+        // ... (check implementation unchanged) ...
         if (window.self !== window.top) {
-            try {
-                // Check if we can access top (same origin)
-                var ignored = window.top.location.href;
-            } catch (e) {
-                // Cross-origin iframe, likely an ad or tracker
-                return true;
-            }
+            // Treat ALL iframes as non-target frames for HTML extraction purposes
+            // We only want the top-level page content
+            return true;
         }
+
         const url = window.location.href;
         if (url.includes("challenge-platform") || url.includes("turnstile") || url.includes("challenges.cloudflare.com")) {
             return true;
@@ -134,10 +135,16 @@ if (window.location.hostname.includes("challenges.cloudflare.com") ||
             }, 3000);
         }
     }
-
+    // ... (skip lines) ...
     // Send full result (cookies + HTML) to native via background script
     function sendResultToNative(cookies, retryCount = 0) {
         if (resultSent) return;
+
+        // CRITICAL: Only top frame should send HTML
+        if (window.self !== window.top) {
+            console.log("[CookieExtractor] Skipping - not top frame");
+            return;
+        }
 
         // Filter checks
         if (isChallengeFrame()) {

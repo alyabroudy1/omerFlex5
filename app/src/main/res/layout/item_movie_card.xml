@@ -1,22 +1,26 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- PS4 style movie card for vertical scroll layout -->
 <androidx.cardview.widget.CardView xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
     android:id="@+id/card_view"
-    android:layout_width="wrap_content"
+    android:layout_width="match_parent"
     android:layout_height="wrap_content"
-    android:layout_margin="4dp"
+    android:layout_marginVertical="8dp"
+    android:layout_marginHorizontal="4dp"
     android:clickable="true"
     android:focusable="true"
     android:focusableInTouchMode="false"
-    android:foreground="@drawable/selector_card_focus"
-    app:cardBackgroundColor="@color/netflix_card_background"
-    app:cardCornerRadius="4dp"
-    app:cardElevation="4dp">
+    android:foreground="@drawable/selector_ps4_card"
+    android:stateListAnimator="@animator/ps4_focus_scale"
+    app:cardBackgroundColor="@color/ps4_card_bg"
+    app:cardCornerRadius="12dp"
+    app:cardElevation="8dp">
 
     <RelativeLayout
-        android:layout_width="120dp"
-        android:layout_height="180dp">
+        android:layout_width="match_parent"
+        android:layout_height="220dp">
 
+        <!-- Movie Poster - Full Bleed -->
         <ImageView
             android:id="@+id/image_poster"
             android:layout_width="match_parent"
@@ -24,64 +28,70 @@
             android:contentDescription="@string/app_name"
             android:scaleType="centerCrop" />
 
-
-
+        <!-- Gradient overlay on poster (bottom fade only) -->
         <View
             android:layout_width="match_parent"
-            android:layout_height="match_parent"
+            android:layout_height="120dp"
+            android:layout_alignParentBottom="true"
             android:background="@drawable/gradient_movie_overlay" />
 
+        <!-- Server/Source Badge (top right) -->
         <TextView
             android:id="@+id/text_server_badge"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_alignParentTop="true"
             android:layout_alignParentEnd="true"
-            android:layout_margin="4dp"
+            android:layout_margin="8dp"
             android:background="@drawable/badge_background"
-            android:paddingHorizontal="4dp"
-            android:paddingVertical="1dp"
+            android:paddingHorizontal="8dp"
+            android:paddingVertical="4dp"
             android:textColor="#FFFFFF"
             android:textSize="9sp"
             android:textStyle="bold"
             android:visibility="gone"
             android:text="TMDB" />
 
-        <!-- Favorites Icon (Top Left) -->
+        <!-- Favorite Icon (top left) -->
         <ImageView
             android:id="@+id/icon_favorite"
-            android:layout_width="16dp"
-            android:layout_height="16dp"
+            android:layout_width="24dp"
+            android:layout_height="24dp"
             android:layout_alignParentTop="true"
             android:layout_alignParentStart="true"
-            android:layout_margin="4dp"
-            android:src="@drawable/ic_heart_filled"
+            android:layout_margin="8dp"
+            android:src="@drawable/ic_favorite"
             android:visibility="gone"
-            app:tint="#E50914" />
+            app:tint="@color/ps4_blue" />
 
-        <!-- Watched Icon (Center Overlay or Top Right near badge) -->
+        <!-- Watched Icon (below favorite) -->
         <ImageView
             android:id="@+id/icon_watched"
             android:layout_width="24dp"
             android:layout_height="24dp"
-            android:layout_centerInParent="true"
+            android:layout_below="@id/icon_favorite"
+            android:layout_alignParentStart="true"
+            android:layout_marginStart="8dp"
             android:src="@drawable/ic_check_circle"
             android:visibility="gone"
-            app:tint="#4CAF50" />
+            app:tint="@color/ps4_blue" />
 
+        <!-- Info Container (Overlaid at bottom) -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_alignParentBottom="true"
             android:orientation="vertical"
-            android:padding="6dp">
+            android:padding="10dp"
+            android:background="@android:color/transparent">
 
+            <!-- Title -->
             <TextView
                 android:id="@+id/text_title"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:textColor="#FFFFFF"
-                android:textSize="12sp"
+                android:textColor="@color/white"
+                android:textSize="14sp"
                 android:textStyle="bold"
                 android:maxLines="2"
                 android:ellipsize="end"
@@ -90,28 +100,30 @@
                 android:shadowDy="1"
                 android:shadowRadius="2" />
 
+            <!-- Categories Badge Container -->
             <LinearLayout
                 android:id="@+id/layout_categories_badge"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:orientation="vertical"
-                android:layout_marginTop="2dp"
+                android:orientation="horizontal"
+                android:layout_marginTop="4dp"
                 android:visibility="gone" />
 
+            <!-- Year and Rating Row -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:layout_marginTop="2dp"
+                android:layout_marginTop="4dp"
                 android:gravity="center_vertical">
-                
+
                 <TextView
                     android:id="@+id/text_year"
                     android:layout_width="0dp"
                     android:layout_weight="1"
                     android:layout_height="wrap_content"
-                    android:textColor="#CCCCCC"
-                    android:textSize="10sp"
+                    android:textColor="#DDDDDD"
+                    android:textSize="11sp"
                     android:maxLines="1" />
 
                 <TextView
@@ -119,21 +131,29 @@
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
                     android:textColor="#FFD700"
-                    android:textSize="10sp"
-                    android:textStyle="bold" />
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    android:shadowColor="#000000"
+                    android:shadowDx="1"
+                    android:shadowDy="1"
+                    android:shadowRadius="2" />
             </LinearLayout>
 
         </LinearLayout>
+
+        <!-- Progress Bar at bottom -->
         <ProgressBar
             android:id="@+id/progress_watch"
             style="@android:style/Widget.ProgressBar.Horizontal"
             android:layout_width="match_parent"
             android:layout_height="4dp"
             android:layout_alignParentBottom="true"
-            android:progressTint="#E50914"
-            android:progressBackgroundTint="#00000000"
+            android:layout_marginBottom="0dp"
+            android:progressTint="@color/ps4_blue"
+            android:progressBackgroundTint="#40FFFFFF"
             android:visibility="gone"
             android:max="100" />
+
     </RelativeLayout>
 
 </androidx.cardview.widget.CardView>

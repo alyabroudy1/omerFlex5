@@ -65,6 +65,10 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
     private boolean isMuted = false;
     private ContentObserver volumeObserver;
 
+    // PS4 Layout - Watch Now and Search buttons
+    private Button btnWatchNow;
+    private ImageButton btnSearch;
+
     // YouTube controls overlay
     private YouTubeControlsOverlay youtubeControlsOverlay;
 
@@ -206,6 +210,22 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
         // Mute button
         btnMute = findViewById(R.id.btn_mute);
         btnMute.setOnClickListener(v -> toggleMute());
+
+        // Watch Now button (PS4 layout)
+        btnWatchNow = findViewById(R.id.btn_watch_now);
+        btnWatchNow.setOnClickListener(v -> {
+            if (lastSelectedMovie != null) {
+                new DefaultMovieClickController().handleClick(HomeActivity.this, lastSelectedMovie);
+            }
+        });
+
+        // Search button (PS4 layout - in sidebar)
+        btnSearch = findViewById(R.id.btn_search);
+        btnSearch.setOnClickListener(v -> {
+            android.content.Intent intent = new android.content.Intent(HomeActivity.this,
+                    com.omarflex5.ui.search.SearchActivity.class);
+            startActivity(intent);
+        });
 
         // Setup volume observer
         setupVolumeObserver();
@@ -355,12 +375,11 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
     }
 
     private void setupAdapters() {
-        // CRITICAL: Set horizontal layout managers explicitly (XML orientation is
-        // ignored)
+        // PS4 3-column layout: VERTICAL layout managers for sidebar and movies
         recyclerCategories.setLayoutManager(
-                new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false));
+                new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
         recyclerMovies.setLayoutManager(
-                new LinearLayoutManager(this, LinearLayoutManager.HORIZONTAL, false));
+                new LinearLayoutManager(this, LinearLayoutManager.VERTICAL, false));
 
         categoryAdapter = new CategoryAdapter();
         categoryAdapter.setListener(new CategoryAdapter.OnCategoryListener() {
@@ -381,8 +400,13 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
                 // Reset movie scroll to top for new category
                 recyclerMovies.scrollToPosition(0);
 
-                // Auto-select last focused movie for this category (done in observer after
-                // movies load)
+                // Reset saved position in movies layer
+                if (focusController != null) {
+                    com.omarflex5.ui.navigation.FocusLayer moviesLayer = focusController.getCurrentLayer();
+                    if (moviesLayer instanceof com.omarflex5.ui.navigation.VerticalRecyclerLayer) {
+                        ((com.omarflex5.ui.navigation.VerticalRecyclerLayer) moviesLayer).setSavedAdapterPosition(0);
+                    }
+                }
             }
 
             @Override
@@ -455,35 +479,42 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
     }
 
     /**
-     * Setup the TV Focus Navigation Controller with layer-based navigation.
-     * This replaces the old delegate-based system with a cleaner, centralized
-     * approach.
+     * Setup the TV Focus Navigation Controller with PS4-style 3-column navigation.
+     * 
+     * Layout: [Sidebar (12%)] [Movies (25%)] [Hero (63%)]
+     * 
+     * Navigation:
+     * - Sidebar: UP/DOWN scroll, RIGHT -> Movies, LEFT blocked
+     * - Movies: UP/DOWN scroll, LEFT -> Sidebar, RIGHT -> Hero
+     * - Hero: LEFT -> Movies, RIGHT blocked, internal button navigation
      */
     private void setupNavigation() {
-        // Create controller (RTL = true for Arabic)
-        focusController = new com.omarflex5.ui.navigation.TvFocusController(true);
+        // Detect RTL from system locale
+        boolean isRtl = getResources().getConfiguration()
+                .getLayoutDirection() == android.view.View.LAYOUT_DIRECTION_RTL;
+        focusController = new com.omarflex5.ui.navigation.TvFocusController(isRtl);
         focusController.setDebugEnabled(true); // Enable for debugging
 
-        // Hero layer: mute/fullscreen buttons
-        // UP = blocked, DOWN = categories, LEFT/RIGHT = between buttons
+        // COLUMN 1: Sidebar (Categories) - VERTICAL scroll
+        // LEFT = blocked (edge), RIGHT = movies
+        focusController.registerLayer(
+                new com.omarflex5.ui.navigation.VerticalRecyclerLayer(
+                        "sidebar", recyclerCategories, null, "movies"));
+
+        // COLUMN 2: Movies - VERTICAL scroll
+        // LEFT = sidebar, RIGHT = hero
+        focusController.registerLayer(
+                new com.omarflex5.ui.navigation.VerticalRecyclerLayer(
+                        "movies", recyclerMovies, "sidebar", "hero"));
+
+        // COLUMN 3: Hero - Button row (Watch Now, Mute, Fullscreen)
+        // LEFT = movies, RIGHT = blocked (after fullscreen)
         focusController.registerLayer(
                 new com.omarflex5.ui.navigation.ButtonRowLayer(
-                        "hero", btnMute, btnFullscreen, "categories"));
+                        "hero", btnWatchNow, btnMute, btnFullscreen, "movies"));
 
-        // Categories layer: horizontal RecyclerView
-        // UP = hero, DOWN = movies, LEFT/RIGHT = scroll
-        focusController.registerLayer(
-                new com.omarflex5.ui.navigation.RecyclerLayer(
-                        "categories", recyclerCategories, "hero", "movies"));
-
-        // Movies layer: horizontal RecyclerView
-        // UP = categories, DOWN = blocked, LEFT/RIGHT = scroll
-        focusController.registerLayer(
-                new com.omarflex5.ui.navigation.RecyclerLayer(
-                        "movies", recyclerMovies, "categories", null));
-
-        // Set initial layer to categories
-        focusController.setCurrentLayer("categories");
+        // Set initial layer to sidebar (categories)
+        focusController.setCurrentLayer("sidebar");
     }
 
     /**
