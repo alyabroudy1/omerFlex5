@@ -114,7 +114,25 @@ public class UpdateDialog extends DialogFragment {
         });
     }
 
+    private boolean waitingForPermission = false;
+
     private void startDownload() {
+        if (updateInfo == null)
+            return;
+
+        // Check permission first
+        Context context = requireContext();
+        if (!UpdateManager.getInstance().checkInstallPermission(context)) {
+            Toast.makeText(context, "Please grant permission to install updates", Toast.LENGTH_LONG).show();
+            waitingForPermission = true;
+            UpdateManager.getInstance().requestInstallPermission(context);
+            return;
+        }
+
+        realStartDownload();
+    }
+
+    private void realStartDownload() {
         if (updateInfo == null)
             return;
 
@@ -157,6 +175,19 @@ public class UpdateDialog extends DialogFragment {
     @Override
     public void onResume() {
         super.onResume();
+
+        // Check if we were waiting for permission
+        if (waitingForPermission) {
+            if (UpdateManager.getInstance().checkInstallPermission(requireContext())) {
+                waitingForPermission = false;
+                realStartDownload();
+            } else {
+                // Permission still not granted. User might have cancelled.
+                // Reset flag so they can try clicking Update again.
+                waitingForPermission = false;
+            }
+        }
+
         IntentFilter filter = new IntentFilter();
         filter.addAction(DownloadService.ACTION_DOWNLOAD_PROGRESS);
         filter.addAction(DownloadService.ACTION_DOWNLOAD_COMPLETE);
