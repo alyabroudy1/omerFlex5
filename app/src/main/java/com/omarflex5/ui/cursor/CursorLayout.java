@@ -251,6 +251,10 @@ public class CursorLayout extends FrameLayout {
 
     private void handleCenterKey(KeyEvent event) {
         if (event.getAction() == KeyEvent.ACTION_DOWN) {
+            // Prevent spamming clicks if key is held down
+            if (event.getRepeatCount() > 0)
+                return;
+
             resetCursorTimeout();
             startClickAnimation();
             dispatchClickEvents();
@@ -269,34 +273,77 @@ public class CursorLayout extends FrameLayout {
         float clickX = cursorPosition.x + CURSOR_SIZE / 2f;
         float clickY = cursorPosition.y + CURSOR_SIZE / 2f;
 
+        long downTime = SystemClock.uptimeMillis();
+
         // Dispatch touch events to layout (will propagate to target)
-        dispatchTouchEventToLayout(MotionEvent.ACTION_DOWN, clickX, clickY);
+        // ACTION_DOWN
+        dispatchTouchEventToLayout(MotionEvent.ACTION_DOWN, clickX, clickY, downTime);
+
+        // ACTION_UP after small delay
         handler.postDelayed(
-                () -> dispatchTouchEventToLayout(MotionEvent.ACTION_UP, clickX, clickY), 50);
+                () -> dispatchTouchEventToLayout(MotionEvent.ACTION_UP, clickX, clickY, downTime), 50);
     }
 
-    private void dispatchTouchEventToLayout(int action, float x, float y) {
-        long time = SystemClock.uptimeMillis();
-        MotionEvent event = MotionEvent.obtain(time, time, action, x, y, 0);
+    private void dispatchTouchEventToLayout(int action, float x, float y, long downTime) {
+        long eventTime = SystemClock.uptimeMillis();
+
+        // Ensure eventTime is at least downTime (sanity check)
+        if (eventTime < downTime)
+            eventTime = downTime;
+
+        // Define PointerProperties for MOUSE
+        MotionEvent.PointerProperties[] pp = { new MotionEvent.PointerProperties() };
+        pp[0].id = 0;
+        pp[0].toolType = MotionEvent.TOOL_TYPE_MOUSE;
+
+        // Define PointerCoords with absolute coordinates
+        MotionEvent.PointerCoords[] pc = { new MotionEvent.PointerCoords() };
+        // We need to transform coordinates relative to the target view
+        if (targetView != null) {
+            int[] targetLocation = new int[2];
+            targetView.getLocationOnScreen(targetLocation);
+            int[] cursorLocation = new int[2];
+            this.getLocationOnScreen(cursorLocation);
+
+            // Calculate absolute screen coordinates of the cursor
+            float screenX = cursorLocation[0] + x;
+            float screenY = cursorLocation[1] + y;
+
+            // Transform to targetView's local coordinates
+            pc[0].x = screenX - targetLocation[0];
+            pc[0].y = screenY - targetLocation[1];
+        } else {
+            pc[0].x = x;
+            pc[0].y = y;
+        }
+
+        pc[0].pressure = (action == MotionEvent.ACTION_DOWN) ? 1.0f : 0.0f;
+        pc[0].size = 1;
+
+        // Determine Button State: PRIMARY button is pressed during DOWN
+        int buttonState = 0;
+        if (action == MotionEvent.ACTION_DOWN) {
+            buttonState = MotionEvent.BUTTON_PRIMARY;
+        }
+
+        MotionEvent event = MotionEvent.obtain(
+                downTime, eventTime, action,
+                1, pp, pc,
+                0, // metaState
+                buttonState,
+                1.0f, 1.0f, // precision
+                0, // deviceId
+                0, // edgeFlags
+                InputDevice.SOURCE_MOUSE,
+                0 // flags
+        );
 
         try {
-            // Dispatch directly to targetView (GeckoView/WebView) for web content clicks
             if (targetView != null) {
-                // Translate coordinates to targetView's coordinate space
-                int[] locationOnScreen = new int[2];
-                targetView.getLocationOnScreen(locationOnScreen);
-                int[] myLocation = new int[2];
-                this.getLocationOnScreen(myLocation);
-
-                float adjustedX = x - (locationOnScreen[0] - myLocation[0]);
-                float adjustedY = y - (locationOnScreen[1] - myLocation[1]);
-
-                MotionEvent adjustedEvent = MotionEvent.obtain(time, time, action, adjustedX, adjustedY, 0);
-                targetView.dispatchTouchEvent(adjustedEvent);
-                adjustedEvent.recycle();
-                Log.d(TAG, "Dispatched touch to targetView: " + action + " at (" + adjustedX + ", " + adjustedY + ")");
+                targetView.dispatchTouchEvent(event);
+                Log.d(TAG, "Dispatched MOUSE event to target: " + (action == MotionEvent.ACTION_DOWN ? "DOWN" : "UP")
+                        + " at " + pc[0].x + "," + pc[0].y + " downTime=" + downTime);
             } else {
-                // Fallback to layout dispatch
                 this.dispatchTouchEvent(event);
             }
         } finally {
@@ -305,32 +352,37 @@ public class CursorLayout extends FrameLayout {
     }
 
     private void dispatchHoverEvent() {
-        if (targetView == null)
-            return;
-
-        long time = SystemClock.uptimeMillis();
-        MotionEvent.PointerProperties[] pp = { new MotionEvent.PointerProperties() };
-        pp[0].id = 0;
-        pp[0].toolType = MotionEvent.TOOL_TYPE_MOUSE;
-
-        MotionEvent.PointerCoords[] pc = { new MotionEvent.PointerCoords() };
-        pc[0].x = cursorPosition.x + targetView.getScrollX();
-        pc[0].y = cursorPosition.y + targetView.getScrollY();
-        pc[0].pressure = 0;
-        pc[0].size = 1;
-
-        MotionEvent event = MotionEvent.obtain(
-                time, time,
-                MotionEvent.ACTION_HOVER_MOVE,
-                1, pp, pc,
-                0, 0, 1, 1, 0, 0,
-                InputDevice.SOURCE_MOUSE, 0);
-
-        try {
-            targetView.dispatchGenericMotionEvent(event);
-        } finally {
-            event.recycle();
-        }
+        // Disabled to reduce lag during D-pad movement.
+        // GeckoView can get overwhelmed by constant hover events during rapid
+        // navigation.
+        /*
+         * if (targetView == null)
+         * return;
+         * 
+         * long time = SystemClock.uptimeMillis();
+         * MotionEvent.PointerProperties[] pp = { new MotionEvent.PointerProperties() };
+         * pp[0].id = 0;
+         * pp[0].toolType = MotionEvent.TOOL_TYPE_MOUSE;
+         * 
+         * MotionEvent.PointerCoords[] pc = { new MotionEvent.PointerCoords() };
+         * pc[0].x = cursorPosition.x + targetView.getScrollX();
+         * pc[0].y = cursorPosition.y + targetView.getScrollY();
+         * pc[0].pressure = 0;
+         * pc[0].size = 1;
+         * 
+         * MotionEvent event = MotionEvent.obtain(
+         * time, time,
+         * MotionEvent.ACTION_HOVER_MOVE,
+         * 1, pp, pc,
+         * 0, 0, 1, 1, 0, 0,
+         * InputDevice.SOURCE_MOUSE, 0);
+         * 
+         * try {
+         * targetView.dispatchGenericMotionEvent(event);
+         * } finally {
+         * event.recycle();
+         * }
+         */
     }
 
     @Override
