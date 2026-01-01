@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PS4 style movie card selector with clear focus and select states -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    
+    <!-- Focused + Selected state - strong PS4 blue glow with white accent -->
+    <item android:state_focused="true" android:state_selected="true">
+        <layer-list>
+            <!-- Outer strong blue glow -->
+            <item android:left="-8dp" android:top="-8dp" android:right="-8dp" android:bottom="-8dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="#550070D1" />
+                    <corners android:radius="20dp" />
+                </shape>
+            </item>
+            <!-- Middle blue border -->
+            <item android:left="-2dp" android:top="-2dp" android:right="-2dp" android:bottom="-2dp">
+                <shape android:shape="rectangle">
+                    <stroke android:width="4dp" android:color="#0070D1" />
+                    <corners android:radius="16dp" />
+                </shape>
+            </item>
+            <!-- Inner white accent -->
+            <item>
+                <shape android:shape="rectangle">
+                    <stroke android:width="2dp" android:color="#FFFFFF" />
+                    <corners android:radius="12dp" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+
+    <!-- Focused state only - PS4 blue glow with white border -->
+    <item android:state_focused="true">
+        <layer-list>
+            <!-- Outer blue glow -->
+            <item android:left="-6dp" android:top="-6dp" android:right="-6dp" android:bottom="-6dp">
+                <shape android:shape="rectangle">
+                    <solid android:color="#330070D1" />
+                    <corners android:radius="18dp" />
+                </shape>
+            </item>
+            <!-- White border -->
+            <item>
+                <shape android:shape="rectangle">
+                    <stroke android:width="3dp" android:color="#FFFFFF" />
+                    <corners android:radius="12dp" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    
+    <!-- Selected state only - subtle blue border -->
+    <item android:state_selected="true">
+        <shape android:shape="rectangle">
+            <stroke android:width="2dp" android:color="#0070D1" />
+            <corners android:radius="12dp" />
+        </shape>
+    </item>
+    
+    <!-- Pressed state -->
+    <item android:state_pressed="true">
+        <layer-list>
+            <item>
+                <shape android:shape="rectangle">
+                    <solid android:color="#20FFFFFF" />
+                    <corners android:radius="12dp" />
+                </shape>
+            </item>
+        </layer-list>
+    </item>
+    
+    <!-- Default state - transparent -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="@android:color/transparent" />
+        </shape>
+    </item>
+</selector>

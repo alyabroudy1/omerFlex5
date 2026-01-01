@@ -258,15 +258,18 @@ public class CategoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
 
     class CategoryViewHolder extends RecyclerView.ViewHolder {
         TextView categoryText;
+        View container;
         AnimatorSet pulseAnimator;
 
         public CategoryViewHolder(@NonNull View itemView) {
             super(itemView);
-            categoryText = (TextView) itemView;
+            // PS4 layout: itemView is LinearLayout container, text is inside
+            container = itemView;
+            categoryText = itemView.findViewById(R.id.text_category_name);
 
-            categoryText.setOnFocusChangeListener((v, hasFocus) -> {
+            container.setOnFocusChangeListener((v, hasFocus) -> {
                 if (hasFocus) {
-                    v.animate().scaleX(1.1f).scaleY(1.1f).setDuration(150)
+                    v.animate().scaleX(1.05f).scaleY(1.05f).setDuration(150)
                             .setInterpolator(new AccelerateDecelerateInterpolator()).start();
                     startPulseAnimation(v);
                 } else {
@@ -275,7 +278,7 @@ public class CategoryAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolde
                 }
             });
 
-            categoryText.setOnClickListener(v -> {
+            container.setOnClickListener(v -> {
                 int position = getAdapterPosition();
                 if (position != RecyclerView.NO_POSITION) {
                     // Update selection

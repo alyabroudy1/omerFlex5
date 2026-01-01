@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- PS4 style button selector for Watch Now -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    
+    <!-- Focused state - bright blue -->
+    <item android:state_focused="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#0070D1" />
+            <corners android:radius="4dp" />
+        </shape>
+    </item>
+    
+    <!-- Pressed state -->
+    <item android:state_pressed="true">
+        <shape android:shape="rectangle">
+            <solid android:color="#003B70" />
+            <corners android:radius="4dp" />
+        </shape>
+    </item>
+    
+    <!-- Default state - dark blue -->
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#005090" />
+            <corners android:radius="4dp" />
+        </shape>
+    </item>
+</selector>
