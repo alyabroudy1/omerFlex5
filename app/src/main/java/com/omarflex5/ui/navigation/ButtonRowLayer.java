@@ -19,36 +19,48 @@ public class ButtonRowLayer implements FocusLayer {
 
     private final String name;
     private final List<View> buttons;
+    private final String nextLayerLeft;
+    private final String nextLayerRight;
+    private final String nextLayerUp;
     private final String nextLayerDown;
     private int currentIndex = 0;
 
     /**
-     * @param name          Unique layer name (e.g., "hero")
-     * @param buttons       List of buttons in this row, in visual order (LTR for
-     *                      calculations)
-     * @param nextLayerDown Name of layer to transition to when pressing DOWN
+     * @param name           Unique layer name (e.g., "hero")
+     * @param buttons        List of buttons in this row
+     * @param nextLayerLeft  Layer to transition to on LEFT
+     * @param nextLayerRight Layer to transition to on RIGHT
+     * @param nextLayerUp    Layer to transition to on UP
+     * @param nextLayerDown  Layer to transition to on DOWN
      */
-    public ButtonRowLayer(String name, List<View> buttons, String nextLayerDown) {
+    public ButtonRowLayer(String name, List<View> buttons,
+            String nextLayerLeft, String nextLayerRight, String nextLayerUp, String nextLayerDown) {
         this.name = name;
         this.buttons = buttons;
+        this.nextLayerLeft = nextLayerLeft;
+        this.nextLayerRight = nextLayerRight;
+        this.nextLayerUp = nextLayerUp;
         this.nextLayerDown = nextLayerDown;
 
-        // Default to last button (rightmost in LTR, which is leftmost visually in RTL)
-        this.currentIndex = buttons.size() > 0 ? buttons.size() - 1 : 0;
+        // Default to first button (leftmost in LTR)
+        this.currentIndex = 0;
     }
 
     /**
-     * Convenience constructor for two buttons.
+     * Convenience constructor for backward compatibility (Down only) - assumes
+     * blocked others
      */
-    public ButtonRowLayer(String name, View button1, View button2, String nextLayerDown) {
-        this(name, createList(button1, button2), nextLayerDown);
+    public ButtonRowLayer(String name, List<View> buttons, String nextLayerDown) {
+        this(name, buttons, null, null, null, nextLayerDown);
     }
 
     /**
-     * Convenience constructor for three buttons (Watch Now, Mute, Fullscreen).
+     * Convenience constructor for "Hero" row (Watch, Mute, Fullscreen) with
+     * Left/Down support
      */
-    public ButtonRowLayer(String name, View button1, View button2, View button3, String nextLayerDown) {
-        this(name, createList(button1, button2, button3), nextLayerDown);
+    public ButtonRowLayer(String name, View button1, View button2, View button3, String nextLayerLeft,
+            String nextLayerDown) {
+        this(name, createList(button1, button2, button3), nextLayerLeft, null, null, nextLayerDown);
     }
 
     private static List<View> createList(View... views) {
@@ -86,10 +98,14 @@ public class ButtonRowLayer implements FocusLayer {
     @Override
     public String getNextLayerName(Direction direction) {
         switch (direction) {
+            case LEFT:
+                return nextLayerLeft;
+            case RIGHT:
+                return nextLayerRight;
+            case UP:
+                return nextLayerUp;
             case DOWN:
                 return nextLayerDown;
-            case UP:
-                return null; // Blocked - no layer above
             default:
                 return null;
         }
@@ -112,13 +128,12 @@ public class ButtonRowLayer implements FocusLayer {
                 nextIndex = currentIndex + 1;
                 break;
             default:
-                return true;
+                return true; // Should not happen if canNavigateWithin is correct
         }
 
-        // Check bounds
+        // Check bounds - Return FALSE to allow transition to neighbor layer
         if (nextIndex < 0 || nextIndex >= buttons.size()) {
-            // At edge, consume but don't move
-            return true;
+            return false;
         }
 
         // Move to next button

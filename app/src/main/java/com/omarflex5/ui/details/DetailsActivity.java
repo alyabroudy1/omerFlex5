@@ -7,11 +7,11 @@ import android.util.Log;
 import android.view.MenuItem;
 import android.view.View;
 import android.widget.Button;
+import android.widget.ImageButton;
 import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.appcompat.widget.Toolbar;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
 
@@ -52,7 +52,8 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
     private View errorLayout;
     private TextView errorText;
     private Button btnRetry;
-    private Toolbar toolbar;
+    private ImageButton btnBack;
+    private TextView toolbarTitle;
 
     private String url;
     private String title;
@@ -237,12 +238,11 @@ public class DetailsActivity extends com.omarflex5.ui.base.BaseActivity {
     }
 
     private void initViews() {
-        toolbar = findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
-        if (getSupportActionBar() != null) {
-            getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-            getSupportActionBar().setTitle(title != null ? title : "Loading...");
-        }
+        btnBack = findViewById(R.id.btn_back);
+        toolbarTitle = findViewById(R.id.toolbar_title);
+
+        btnBack.setOnClickListener(v -> finish());
+        toolbarTitle.setText(title != null ? title : "Loading...");
 
         recyclerView = findViewById(R.id.recycler_details);
         loadingLayout = findViewById(R.id.layout_loading);

@@ -74,6 +74,18 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
             categoriesLayout = itemView.findViewById(R.id.layout_categories_badge);
             serverBadge = itemView.findViewById(R.id.text_server_badge);
 
+            // FORCE correct layout params immediately on ViewHolder creation (fixes initial
+            // state)
+            if (ratingText != null
+                    && ratingText.getLayoutParams() instanceof android.widget.RelativeLayout.LayoutParams) {
+                android.widget.RelativeLayout.LayoutParams params = (android.widget.RelativeLayout.LayoutParams) ratingText
+                        .getLayoutParams();
+                params.addRule(android.widget.RelativeLayout.ALIGN_PARENT_RIGHT, android.widget.RelativeLayout.TRUE);
+                params.addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT, 0);
+                params.addRule(android.widget.RelativeLayout.CENTER_VERTICAL, android.widget.RelativeLayout.TRUE);
+                ratingText.setLayoutParams(params);
+            }
+
             itemView.setOnClickListener(v -> {
                 int pos = getAdapterPosition();
                 if (pos != RecyclerView.NO_POSITION && listener != null) {
@@ -134,8 +146,31 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
             yearText.setText(meta.toString());
             yearText.setVisibility(View.VISIBLE);
 
-            // Rating - Not available in search result usually
-            ratingText.setVisibility(View.GONE);
+            // Rating - Not available in search result usually, use INVISIBLE to preserve
+            // layout anchor
+            ratingText.setVisibility(View.INVISIBLE);
+            android.util.Log.d("RATING_DEBUG", "[SearchResult] Card: " + result.title + " | Visibility: INVISIBLE");
+
+            // FORCE correct layout params on every bind (fixes RecyclerView recycling
+            // corruption)
+            if (ratingText.getLayoutParams() instanceof android.widget.RelativeLayout.LayoutParams) {
+                android.widget.RelativeLayout.LayoutParams params = (android.widget.RelativeLayout.LayoutParams) ratingText
+                        .getLayoutParams();
+                params.addRule(android.widget.RelativeLayout.ALIGN_PARENT_RIGHT, android.widget.RelativeLayout.TRUE);
+                params.addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT, 0); // Remove any left rule
+                params.addRule(android.widget.RelativeLayout.CENTER_VERTICAL, android.widget.RelativeLayout.TRUE);
+                ratingText.setLayoutParams(params);
+            }
+
+            // Log layout positions after a slight delay to ensure layout is complete
+            final String resultTitle = result.title;
+            ratingText.post(() -> {
+                int[] location = new int[2];
+                ratingText.getLocationOnScreen(location);
+                android.util.Log.d("RATING_DEBUG",
+                        "[SearchResult] Card: " + resultTitle + " | RatingX: " + location[0] + " | RatingWidth: "
+                                + ratingText.getWidth() + " | Parent: " + ((View) ratingText.getParent()).getWidth());
+            });
 
             // Categories
             if (categoriesLayout != null) {
@@ -161,7 +196,7 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
                         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                                 ViewGroup.LayoutParams.WRAP_CONTENT,
                                 ViewGroup.LayoutParams.WRAP_CONTENT);
-                        params.setMargins(0, 0, 0, 4); // Bottom margin
+                        params.setMargins(0, 0, 8, 0); // Right margin
                         badge.setLayoutParams(params);
 
                         categoriesLayout.addView(badge);

@@ -100,8 +100,8 @@ public class ServerRepository {
                 faselhd.setBaseUrl("https://www.faselhds.biz");
                 faselhd.setBasePriority(2);
                 faselhd.setCurrentPriority(2);
-                faselhd.setEnabled(false);
-                faselhd.setSearchable(false);
+                faselhd.setEnabled(true);
+                faselhd.setSearchable(true);
                 faselhd.setRequiresWebView(true);
                 faselhd.setSearchUrlPattern("/?s={query}");
                 faselhd.setParseStrategy("HTML");
@@ -132,8 +132,8 @@ public class ServerRepository {
                 akwam.setBaseUrl("https://ak.sv");
                 akwam.setBasePriority(5);
                 akwam.setCurrentPriority(5);
-                akwam.setEnabled(false);
-                akwam.setSearchable(false);
+                akwam.setEnabled(true);
+                akwam.setSearchable(true);
                 akwam.setRequiresWebView(true);
                 akwam.setSearchUrlPattern("/search?q={query}");
                 akwam.setParseStrategy("HTML");

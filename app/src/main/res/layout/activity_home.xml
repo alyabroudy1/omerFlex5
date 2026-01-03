@@ -18,30 +18,11 @@
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="match_parent"
+        android:clipChildren="false"
+        android:clipToPadding="false"
         android:orientation="vertical">
 
-        <!-- Top System Bar (Clock) -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:paddingHorizontal="48dp"
-            android:paddingTop="16dp"
-            android:paddingBottom="8dp"
-            android:gravity="end|center_vertical">
 
-            <TextClock
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:format12Hour="h:mm a"
-                android:textColor="#E0E0E0"
-                android:textSize="16sp"
-                android:fontFamily="sans-serif-medium"
-                android:shadowColor="#80000000"
-                android:shadowDx="1"
-                android:shadowDy="1"
-                android:shadowRadius="2" />
-        </LinearLayout>
 
         <!-- Main 3-Column Content -->
         <LinearLayout
@@ -49,6 +30,8 @@
             android:layout_width="match_parent"
             android:layout_height="0dp"
             android:layout_weight="1"
+            android:clipChildren="false"
+            android:clipToPadding="false"
             android:orientation="horizontal">
 
             <!-- COLUMN 1: Categories Sidebar (12%) -->
@@ -56,7 +39,7 @@
                 android:id="@+id/sidebar_wrapper"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_weight="0.12">
+                android:layout_weight="0.17">
 
                 <!-- Centered sidebar with rounded corners, 80% height -->
                 <LinearLayout
@@ -66,8 +49,11 @@
                     android:orientation="vertical"
                     android:background="@drawable/bg_ps4_sidebar"
                     android:paddingVertical="12dp"
+
                     android:paddingHorizontal="8dp"
                     android:elevation="8dp"
+                    android:clipChildren="false"
+                    android:clipToPadding="false"
                     app:layout_constraintTop_toTopOf="parent"
                     app:layout_constraintBottom_toBottomOf="parent"
                     app:layout_constraintStart_toStartOf="parent"
@@ -123,12 +109,16 @@
             <FrameLayout
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
+                android:clipChildren="false"
+                android:clipToPadding="false"
+                android:elevation="20dp"
                 android:layout_weight="0.25">
 
                 <com.omarflex5.ui.view.NavigableRecyclerView
                     android:id="@+id/recycler_movies"
                     android:layout_width="match_parent"
                     android:layout_height="match_parent"
+                    android:clipChildren="false"
                     android:clipToPadding="false"
                     android:descendantFocusability="afterDescendants"
                     android:focusable="true"
@@ -168,7 +158,7 @@
                 android:id="@+id/hero_container"
                 android:layout_width="0dp"
                 android:layout_height="match_parent"
-                android:layout_weight="0.63"
+                android:layout_weight="0.58"
                 android:focusable="true"
                 android:focusableInTouchMode="false"
                 android:descendantFocusability="afterDescendants">
@@ -268,12 +258,12 @@
                             android:id="@+id/btn_watch_now"
                             android:layout_width="wrap_content"
                             android:layout_height="48dp"
-                            android:text="Watch Now"
+                            android:text="شاهد الآن"
                             android:textColor="@color/white"
                             android:textSize="14sp"
                             android:textStyle="bold"
                             android:paddingHorizontal="24dp"
-                            android:background="@drawable/selector_ps4_button"
+                            android:background="@drawable/selector_ps4_category"
                             app:backgroundTint="@null"
                             android:focusable="true"
                             android:nextFocusLeft="@id/recycler_movies"

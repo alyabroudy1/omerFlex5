@@ -18,13 +18,7 @@ android {
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         
-        // CRITICAL: Force app to run in 32-bit mode (armeabi-v7a)
-        // This is required because we are only bundling the 32-bit GeckoView library to save space.
-        // If we don't filter here, the OS might launch in 64-bit mode if other 64-bit libs exist,
-        // causing "libmozglue.so not found" crash.
-        ndk {
-            abiFilters.add("armeabi-v7a")
-        }
+
     }
 
     buildTypes {
@@ -53,6 +47,12 @@ android {
             // GeckoView variant - better CF bypass
             // GeckoView supports minSdk 21+, enabling Android 6 (API 23)
             minSdk = 23
+            
+            // CRITICAL: Force gecko flavor to run in 32-bit mode (armeabi-v7a)
+            // This is required because we are only bundling the 32-bit GeckoView library to save space.
+            ndk {
+                abiFilters.add("armeabi-v7a")
+            }
         }
     }
 }

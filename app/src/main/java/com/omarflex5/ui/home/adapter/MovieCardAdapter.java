@@ -272,6 +272,18 @@ public class MovieCardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             serverBadge = itemView.findViewById(R.id.text_server_badge);
             watchProgress = itemView.findViewById(R.id.progress_watch);
 
+            // FORCE correct layout params immediately on ViewHolder creation (fixes initial
+            // state)
+            if (ratingText != null
+                    && ratingText.getLayoutParams() instanceof android.widget.RelativeLayout.LayoutParams) {
+                android.widget.RelativeLayout.LayoutParams params = (android.widget.RelativeLayout.LayoutParams) ratingText
+                        .getLayoutParams();
+                params.addRule(android.widget.RelativeLayout.ALIGN_PARENT_RIGHT, android.widget.RelativeLayout.TRUE);
+                params.addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT, 0);
+                params.addRule(android.widget.RelativeLayout.CENTER_VERTICAL, android.widget.RelativeLayout.TRUE);
+                ratingText.setLayoutParams(params);
+            }
+
             // Focus change - only visual animation (scale + pulse)
             cardView.setOnFocusChangeListener((v, hasFocus) -> {
                 if (hasFocus) {
@@ -411,7 +423,7 @@ public class MovieCardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
                 if (meta != null && !meta.isEmpty()) {
                     meta += " • " + type;
                 } else {
-                    meta = type;
+                    meta = type; // Display type if year is missing
                 }
                 yearText.setText(meta);
             }
@@ -419,8 +431,39 @@ public class MovieCardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
             if (ratingText != null && movie.getRating() != null && !movie.getRating().isEmpty()) {
                 ratingText.setText("★ " + movie.getRating());
                 ratingText.setVisibility(View.VISIBLE);
+                android.util.Log.d("RATING_DEBUG",
+                        "Card: " + movie.getTitle() + " | Rating: " + movie.getRating() + " | Visibility: VISIBLE");
             } else if (ratingText != null) {
-                ratingText.setVisibility(View.GONE);
+                // Keep layout anchors! Use INVISIBLE not GONE
+                ratingText.setText("★ 0.0"); // Dummy text to maintain width/height
+                ratingText.setVisibility(View.INVISIBLE);
+                android.util.Log.d("RATING_DEBUG",
+                        "Card: " + movie.getTitle() + " | Rating: NULL/EMPTY | Visibility: INVISIBLE");
+            }
+
+            // FORCE correct layout params on every bind (fixes RecyclerView recycling
+            // corruption)
+            if (ratingText != null
+                    && ratingText.getLayoutParams() instanceof android.widget.RelativeLayout.LayoutParams) {
+                android.widget.RelativeLayout.LayoutParams params = (android.widget.RelativeLayout.LayoutParams) ratingText
+                        .getLayoutParams();
+                params.addRule(android.widget.RelativeLayout.ALIGN_PARENT_RIGHT, android.widget.RelativeLayout.TRUE);
+                params.addRule(android.widget.RelativeLayout.ALIGN_PARENT_LEFT, 0); // Remove any left rule
+                params.addRule(android.widget.RelativeLayout.CENTER_VERTICAL, android.widget.RelativeLayout.TRUE);
+                ratingText.setLayoutParams(params);
+            }
+
+            // Log layout positions after a slight delay to ensure layout is complete
+            if (ratingText != null) {
+                final String movieTitle = movie.getTitle();
+                ratingText.post(() -> {
+                    int[] location = new int[2];
+                    ratingText.getLocationOnScreen(location);
+                    android.util.Log.d("RATING_DEBUG",
+                            "Card: " + movieTitle + " | RatingX: " + location[0] + " | RatingWidth: "
+                                    + ratingText.getWidth() + " | Parent: "
+                                    + ((View) ratingText.getParent()).getWidth());
+                });
             }
 
             if (categoriesLayout != null) {
@@ -446,7 +489,7 @@ public class MovieCardAdapter extends RecyclerView.Adapter<RecyclerView.ViewHold
                         LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(
                                 ViewGroup.LayoutParams.WRAP_CONTENT,
                                 ViewGroup.LayoutParams.WRAP_CONTENT);
-                        params.setMargins(0, 0, 0, 4); // Bottom margin for stack
+                        params.setMargins(0, 0, 8, 0); // Right margin for spacing
                         badge.setLayoutParams(params);
 
                         categoriesLayout.addView(badge);

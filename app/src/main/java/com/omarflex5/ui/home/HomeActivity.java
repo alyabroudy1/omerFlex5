@@ -7,6 +7,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.provider.Settings;
 import android.util.Log;
+import android.view.KeyEvent;
 import android.view.View;
 import android.widget.Button;
 import android.widget.ImageButton;
@@ -56,6 +57,7 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
 
     // Fullscreen toggle
     private View heroContainer;
+    private View sidebarWrapper;
     private View gradientOverlay;
     private ImageButton btnFullscreen;
     private boolean isFullscreen = false;
@@ -93,6 +95,9 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
     // Pagination state tracking
     private boolean isLoadingMore = false;
     private int previousMovieCount = 0;
+
+    // Track last focused view before fullscreen to restore it
+    private int lastFocusIdBeforeFullscreen = -1;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -185,6 +190,7 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
 
         // Fullscreen components
         heroContainer = findViewById(R.id.hero_container);
+        sidebarWrapper = findViewById(R.id.sidebar_wrapper);
         gradientOverlay = findViewById(R.id.gradient_overlay);
         youtubeWebView = findViewById(R.id.youtube_webview);
         btnFullscreen = findViewById(R.id.btn_fullscreen);
@@ -215,7 +221,9 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
         btnWatchNow = findViewById(R.id.btn_watch_now);
         btnWatchNow.setOnClickListener(v -> {
             if (lastSelectedMovie != null) {
-                new DefaultMovieClickController().handleClick(HomeActivity.this, lastSelectedMovie);
+                // Ensure a valid click controller is used
+                MovieClickController controller = new DefaultMovieClickController();
+                controller.handleClick(HomeActivity.this, lastSelectedMovie);
             }
         });
 
@@ -302,12 +310,20 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
         isFullscreen = !isFullscreen;
 
         if (isFullscreen) {
+            // Save current focus to restore later
+            View current = getCurrentFocus();
+            if (current != null) {
+                lastFocusIdBeforeFullscreen = current.getId();
+            }
+
             // Enter fullscreen
             recyclerCategories.setVisibility(View.GONE);
             recyclerMovies.setVisibility(View.GONE);
             heroTitle.setVisibility(View.GONE);
             heroDescription.setVisibility(View.GONE);
             gradientOverlay.setVisibility(View.GONE);
+            btnWatchNow.setVisibility(View.GONE);
+            sidebarWrapper.setVisibility(View.GONE);
 
             // Expand hero container to full screen
             LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) heroContainer.getLayoutParams();
@@ -333,10 +349,12 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
             heroTitle.setVisibility(View.VISIBLE);
             heroDescription.setVisibility(View.VISIBLE);
             gradientOverlay.setVisibility(View.VISIBLE);
+            btnWatchNow.setVisibility(View.VISIBLE);
+            sidebarWrapper.setVisibility(View.VISIBLE);
 
             // Restore hero container weight
             LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) heroContainer.getLayoutParams();
-            params.weight = 6;
+            params.weight = 0.58f;
             heroContainer.setLayoutParams(params);
 
             // Hide ExoPlayer controller
@@ -347,10 +365,17 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
             btnFullscreen.setVisibility(View.VISIBLE);
             btnMute.setVisibility(View.VISIBLE);
 
-            // Restore focus to categories row using TvFocusController
-            recyclerCategories.postDelayed(() -> {
-                focusController.setCurrentLayer("categories");
-            }, 100);
+            // Restore focus
+            if (lastFocusIdBeforeFullscreen != -1) {
+                View viewToFocus = findViewById(lastFocusIdBeforeFullscreen);
+                if (viewToFocus != null && viewToFocus.getVisibility() == View.VISIBLE) {
+                    viewToFocus.postDelayed(viewToFocus::requestFocus, 100);
+                } else {
+                    btnFullscreen.postDelayed(btnFullscreen::requestFocus, 100);
+                }
+            } else {
+                btnFullscreen.postDelayed(btnFullscreen::requestFocus, 100);
+            }
         }
     }
 
@@ -393,6 +418,13 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
 
                 // Update current category
                 currentCategoryId = category.getId();
+
+                // Toggle Load More button: Disable for "Continue Watching"
+                if ("continue".equals(category.getId())) {
+                    movieCardAdapter.setShowLoadMore(false);
+                } else {
+                    movieCardAdapter.setShowLoadMore(true);
+                }
 
                 // Tell ViewModel to load movies for this category
                 viewModel.selectCategory(category);
@@ -496,22 +528,76 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
         focusController.setDebugEnabled(true); // Enable for debugging
 
         // COLUMN 1: Sidebar (Categories) - VERTICAL scroll
-        // LEFT = blocked (edge), RIGHT = movies
+        // LEFT = blocked (edge), RIGHT = movies, UP = search (handled by layer)
+        // COLUMN 1: Sidebar (Categories) - VERTICAL scroll
+        // LEFT = blocked (edge), RIGHT = movies, UP = search, DOWN = blocked
         focusController.registerLayer(
                 new com.omarflex5.ui.navigation.VerticalRecyclerLayer(
-                        "sidebar", recyclerCategories, null, "movies"));
+                        "sidebar", recyclerCategories, null, "movies", "search", null));
 
+        // Search Button Layer (Above sidebar)
+        // LEFT = blocked, RIGHT = movies, DOWN = sidebar
+        focusController.registerLayer(
+                new com.omarflex5.ui.navigation.ButtonRowLayer(
+                        "search", java.util.Collections.singletonList(btnSearch),
+                        null, "movies", null, "sidebar"));
+
+        // COLUMN 2: Movies - VERTICAL scroll
+        // LEFT = sidebar, RIGHT = hero
         // COLUMN 2: Movies - VERTICAL scroll
         // LEFT = sidebar, RIGHT = hero
         focusController.registerLayer(
                 new com.omarflex5.ui.navigation.VerticalRecyclerLayer(
-                        "movies", recyclerMovies, "sidebar", "hero"));
+                        "movies", recyclerMovies, "sidebar", "hero", null, null));
 
+        // COLUMN 3: Hero - Button row (Watch Now, Mute, Fullscreen)
+        // LEFT = movies, RIGHT = blocked (after fullscreen)
         // COLUMN 3: Hero - Button row (Watch Now, Mute, Fullscreen)
         // LEFT = movies, RIGHT = blocked (after fullscreen)
         focusController.registerLayer(
                 new com.omarflex5.ui.navigation.ButtonRowLayer(
-                        "hero", btnWatchNow, btnMute, btnFullscreen, "movies"));
+                        "hero", btnWatchNow, btnMute, btnFullscreen, "movies", "movies"));
+
+        // Setup Auto-Hide Sidebar logic
+        focusController.setOnLayerChangeListener(newLayerName -> {
+            if ("sidebar".equals(newLayerName)) {
+                // Expand sidebar
+                /*
+                 * Note: Changing visibility or layout params might cause re-layout glitches.
+                 * Ideally, we just change alpha or use a transition. But user asked for
+                 * "auto hidden".
+                 * Since sidebar wrapper has weight 0.17, let's just ensure it's fully visible.
+                 */
+                sidebarWrapper.animate().alpha(1.0f).setDuration(200).start();
+                // If we were collapsing width, restore it here. But simple alpha/translation is
+                // safer.
+                // Let's try translation for a drawer effect? Or just Alpha which is cleaner.
+                // Actually, "auto hidden" usually means it collapses width.
+                LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) sidebarWrapper.getLayoutParams();
+                if (params.weight < 0.17f) {
+                    params.weight = 0.17f;
+                    sidebarWrapper.setLayoutParams(params);
+                }
+            } else {
+                // Collapse sidebar when focus is elsewhere
+                // Reduce weight to make it small (icons only?) or 0?
+                // User said "more auto hidden", implying it's not hiding enough.
+                // Let's reduce weight drastically or set width to something small fixed if it
+                // was fixed width.
+                // It's weighted. Let's try reducing weight to 0.05 (icon width approx) or 0
+                // (gone).
+                // User wants "icons only" or "gone"? "more auto hidden" -> let's try collapsing
+                // to very thin strip or 0.
+                // Let's try 0.05f to keep icons visible? Or 0 to hide.
+                // If the sidebar has icons, keeping them visible is standard TV UI (collapsed
+                // state).
+                // Also ensure Search button handles visibility
+                LinearLayout.LayoutParams params = (LinearLayout.LayoutParams) sidebarWrapper.getLayoutParams();
+                params.weight = 0.05f;
+                sidebarWrapper.setLayoutParams(params);
+                // And fade text? Adapter probably handles text visibility.
+            }
+        });
 
         // Set initial layer to sidebar (categories)
         focusController.setCurrentLayer("sidebar");
@@ -525,19 +611,32 @@ public class HomeActivity extends com.omarflex5.ui.base.BaseActivity {
     public boolean dispatchKeyEvent(android.view.KeyEvent event) {
         int keyCode = event.getKeyCode();
 
-        // Handle YouTube fullscreen controls first
+        // Handle Global Fullscreen Back/Escape Logic
+        if (isFullscreen
+                && (keyCode == android.view.KeyEvent.KEYCODE_BACK || keyCode == android.view.KeyEvent.KEYCODE_ESCAPE)) {
+            if (event.getAction() == android.view.KeyEvent.ACTION_UP) {
+                // Ignore action up to prevent double triggering if needed, or handle on UP
+                // only?
+                // Standard for Back is usually UP, but sometimes DOWN is used to consume.
+                // Let's handle on UP to be safe, but return true on DOWN to consume.
+                if (youtubeWebView != null && youtubeWebView.getVisibility() == View.VISIBLE
+                        && youtubeControlsOverlay != null && youtubeControlsOverlay.isVisible()) {
+                    youtubeControlsOverlay.hide();
+                } else {
+                    toggleFullscreen();
+                }
+            }
+            return true;
+        }
+
+        // Handle YouTube fullscreen controls first (Specifics)
         if (event.getAction() == android.view.KeyEvent.ACTION_DOWN) {
             if (isFullscreen && youtubeWebView != null && youtubeWebView.getVisibility() == View.VISIBLE) {
-                if (keyCode == android.view.KeyEvent.KEYCODE_BACK) {
-                    if (youtubeControlsOverlay != null && youtubeControlsOverlay.isVisible()) {
-                        youtubeControlsOverlay.hide();
-                    } else {
-                        toggleFullscreen();
-                    }
-                    return true;
-                }
-
+                // If overlay is hidden, show it on any dpad key?
                 if (youtubeControlsOverlay != null && !youtubeControlsOverlay.isVisible()) {
+                    // Only for dpad keys or ok
+                    if (KeyEvent.isModifierKey(keyCode))
+                        return super.dispatchKeyEvent(event); // skip modifiers
                     youtubeControlsOverlay.show();
                     return true;
                 }

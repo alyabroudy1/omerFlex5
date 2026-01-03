@@ -40,14 +40,17 @@
     </LinearLayout>
 
     <!-- Close Button -->
-    <Button
+    <ImageButton
         android:id="@+id/btn_close_sniffer"
-        android:layout_width="wrap_content"
-        android:layout_height="wrap_content"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
         android:layout_gravity="top|end"
         android:layout_margin="16dp"
-        android:backgroundTint="#E50914"
-        android:text="✕ CLOSE"
-        android:textColor="#FFFFFF" />
+        android:background="@drawable/selector_icon_button_focus"
+        android:src="@drawable/ic_close"
+        android:tint="#FFFFFF"
+        android:contentDescription="إغلاق"
+        android:focusable="true"
+        android:focusableInTouchMode="false" />
 
 </FrameLayout>

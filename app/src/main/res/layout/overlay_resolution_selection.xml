@@ -54,14 +54,17 @@
                     android:textSize="14sp" />
             </LinearLayout>
 
-            <Button
+            <ImageButton
                 android:id="@+id/btn_close_overlay"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:backgroundTint="#1E1E1E"
-                android:text="✕"
-                android:textColor="#FFFFFF"
-                android:textSize="18sp" />
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/selector_icon_button_focus"
+                android:src="@drawable/ic_close"
+                android:tint="#FFFFFF"
+                android:contentDescription="إغلاق"
+                android:focusable="true"
+                android:focusableInTouchMode="false"
+                android:nextFocusDown="@id/recycler_resolutions_overlay" />
         </LinearLayout>
 
         <!-- Content Container -->

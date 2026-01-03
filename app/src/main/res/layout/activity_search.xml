@@ -22,7 +22,7 @@
                 android:id="@+id/btn_back"
                 android:layout_width="48dp"
                 android:layout_height="48dp"
-                android:background="@drawable/selector_button_focus"
+                android:background="@drawable/selector_icon_button_focus"
                 android:src="@drawable/ic_arrow_back"
                 android:tint="#FFFFFF"
                 android:contentDescription="رجوع"
@@ -32,16 +32,39 @@
                 android:nextFocusUp="@id/btn_back"
                 android:nextFocusLeft="@id/btn_back" />
 
-            <TextView
-                android:id="@+id/text_title"
+            <EditText
+                android:id="@+id/edit_search"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
                 android:layout_marginStart="16dp"
-                android:text="نتائج البحث"
+                android:layout_marginEnd="8dp"
+                android:background="@drawable/selector_edittext_focus"
+                android:hint="بحث عن أفلام أو مسلسلات..."
+                android:textColorHint="#888888"
                 android:textColor="#FFFFFF"
-                android:textSize="20sp"
-                android:textStyle="bold" />
+                android:textSize="16sp"
+                android:padding="12dp"
+                android:singleLine="true"
+                android:imeOptions="actionSearch"
+                android:inputType="text"
+                android:focusable="true"
+                android:nextFocusDown="@id/recycler_results"
+                android:nextFocusUp="@id/edit_search"
+                android:nextFocusLeft="@id/btn_back"
+                android:nextFocusRight="@id/btn_search_action"/>
+
+            <ImageButton
+                android:id="@+id/btn_search_action"
+                android:layout_width="48dp"
+                android:layout_height="48dp"
+                android:background="@drawable/selector_icon_button_focus"
+                android:src="@drawable/ic_search"
+                android:tint="#FFFFFF"
+                android:contentDescription="بحث"
+                android:focusable="true"
+                android:nextFocusDown="@id/recycler_results"
+                android:nextFocusLeft="@id/edit_search" />
         </LinearLayout>
 
         <!-- Status -->
@@ -62,32 +85,35 @@
             android:layout_height="0dp"
             android:layout_weight="1"
             android:padding="8dp"
+            android:paddingBottom="48dp"
             android:clipToPadding="false"
+            android:clipChildren="false"
             android:focusable="true"
             android:descendantFocusability="afterDescendants" />
 
-        <!-- Load More Button (TV Remote Navigatable) -->
-        <Button
-            android:id="@+id/btn_load_more"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
-            android:layout_margin="16dp"
-            android:background="@drawable/selector_button_focus"
-            android:paddingHorizontal="32dp"
-            android:paddingVertical="16dp"
-            android:text="@string/load_more"
-            android:textColor="#FFFFFF"
-            android:textSize="16sp"
-            android:textStyle="bold"
-            android:visibility="gone"
-            android:focusable="true"
-            android:focusableInTouchMode="true"
-            android:nextFocusUp="@id/recycler_results"
-            android:nextFocusDown="@id/btn_load_more"
-            android:nextFocusLeft="@id/btn_load_more"
-            android:nextFocusRight="@id/btn_load_more" />
     </LinearLayout>
+
+    <!-- Load More Button - Floating at bottom center -->
+    <TextView
+        android:id="@+id/btn_load_more"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom|center_horizontal"
+        android:layout_marginBottom="16dp"
+        android:background="@drawable/selector_load_more_button"
+        android:paddingHorizontal="16dp"
+        android:paddingVertical="8dp"
+        android:text="@string/load_more"
+        android:textColor="#FFFFFF"
+        android:textSize="14sp"
+        android:visibility="gone"
+        android:focusable="true"
+        android:focusableInTouchMode="true"
+        android:clickable="true"
+        android:nextFocusUp="@id/recycler_results"
+        android:nextFocusDown="@id/btn_load_more"
+        android:nextFocusLeft="@id/btn_load_more"
+        android:nextFocusRight="@id/btn_load_more" />
 
     <!-- Empty View -->
     <LinearLayout

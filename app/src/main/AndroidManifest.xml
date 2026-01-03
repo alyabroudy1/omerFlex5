@@ -69,6 +69,7 @@
             android:name=".ui.search.SearchActivity"
             android:exported="false"
             android:screenOrientation="landscape"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.OmarFlex5" />
 
         <activity

@@ -18,7 +18,7 @@
 
     <RelativeLayout
         android:layout_width="match_parent"
-        android:layout_height="220dp">
+        android:layout_height="280dp">
 
         <!-- Movie Poster - Full Bleed -->
         <ImageView
@@ -94,6 +94,7 @@
                 android:textSize="14sp"
                 android:textStyle="bold"
                 android:maxLines="2"
+                android:hyphenationFrequency="none"
                 android:ellipsize="end"
                 android:shadowColor="#000000"
                 android:shadowDx="1"
@@ -110,26 +111,18 @@
                 android:visibility="gone" />
 
             <!-- Year and Rating Row -->
-            <LinearLayout
+            <RelativeLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginTop="4dp"
-                android:gravity="center_vertical">
-
-                <TextView
-                    android:id="@+id/text_year"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="wrap_content"
-                    android:textColor="#DDDDDD"
-                    android:textSize="11sp"
-                    android:maxLines="1" />
+                android:layoutDirection="ltr"
+                android:layout_marginTop="4dp">
 
                 <TextView
                     android:id="@+id/text_rating"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
+                    android:layout_alignParentRight="true"
+                    android:layout_centerVertical="true"
                     android:textColor="#FFD700"
                     android:textSize="11sp"
                     android:textStyle="bold"
@@ -137,7 +130,19 @@
                     android:shadowDx="1"
                     android:shadowDy="1"
                     android:shadowRadius="2" />
-            </LinearLayout>
+
+                <TextView
+                    android:id="@+id/text_year"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_toLeftOf="@id/text_rating"
+                    android:layout_centerVertical="true"
+                    android:layout_alignParentLeft="true"
+                    android:layout_marginRight="8dp"
+                    android:textColor="#DDDDDD"
+                    android:textSize="11sp"
+                    android:maxLines="1" />
+            </RelativeLayout>
 
         </LinearLayout>
 

@@ -26,6 +26,8 @@ public class VerticalRecyclerLayer implements FocusLayer {
     private final RecyclerView recyclerView;
     private final String nextLayerLeft;
     private final String nextLayerRight;
+    private final String nextLayerUp;
+    private final String nextLayerDown;
     private int savedAdapterPosition = 0;
 
     /**
@@ -33,13 +35,17 @@ public class VerticalRecyclerLayer implements FocusLayer {
      * @param recyclerView   The RecyclerView for this layer
      * @param nextLayerLeft  Layer to transition to on LEFT (null to block)
      * @param nextLayerRight Layer to transition to on RIGHT (null to block)
+     * @param nextLayerUp    Layer to transition to on UP (null to block)
+     * @param nextLayerDown  Layer to transition to on DOWN (null to block)
      */
     public VerticalRecyclerLayer(String name, RecyclerView recyclerView,
-            String nextLayerLeft, String nextLayerRight) {
+            String nextLayerLeft, String nextLayerRight, String nextLayerUp, String nextLayerDown) {
         this.name = name;
         this.recyclerView = recyclerView;
         this.nextLayerLeft = nextLayerLeft;
         this.nextLayerRight = nextLayerRight;
+        this.nextLayerUp = nextLayerUp;
+        this.nextLayerDown = nextLayerDown;
 
         // Passively track focus changes to keep savedAdapterPosition in sync
         recyclerView.getViewTreeObserver().addOnGlobalFocusChangeListener((oldFocus, newFocus) -> {
@@ -100,6 +106,10 @@ public class VerticalRecyclerLayer implements FocusLayer {
                 return nextLayerLeft;
             case RIGHT:
                 return nextLayerRight;
+            case UP:
+                return nextLayerUp;
+            case DOWN:
+                return nextLayerDown;
             default:
                 return null;
         }

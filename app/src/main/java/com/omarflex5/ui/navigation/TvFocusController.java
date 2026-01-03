@@ -31,6 +31,15 @@ public class TvFocusController {
     // Focus lock to prevent focus stealing during updates
     private boolean focusLocked = false;
     private String lockedLayerName = null;
+    private OnLayerChangeListener layerChangeListener;
+
+    public interface OnLayerChangeListener {
+        void onLayerChanged(String newLayerName);
+    }
+
+    public void setOnLayerChangeListener(OnLayerChangeListener listener) {
+        this.layerChangeListener = listener;
+    }
 
     public TvFocusController(boolean isRTL) {
         this.isRTL = isRTL;
@@ -50,6 +59,8 @@ public class TvFocusController {
         layers.put(layer.getName(), layer);
         if (currentLayerName == null) {
             currentLayerName = layer.getName();
+            if (layerChangeListener != null)
+                layerChangeListener.onLayerChanged(currentLayerName);
         }
         log("Registered layer: " + layer.getName());
     }
@@ -92,14 +103,20 @@ public class TvFocusController {
         if (!focusLocked) {
             // Find which layer owns this view
             FocusLayer owningLayer = findLayerForView(focusedView);
-            if (owningLayer != null) {
+            if (owningLayer != null && !owningLayer.getName().equals(currentLayerName)) {
                 currentLayerName = owningLayer.getName();
+                owningLayer.saveFocusState();
+                if (layerChangeListener != null)
+                    layerChangeListener.onLayerChanged(currentLayerName);
+            } else if (owningLayer != null) {
                 owningLayer.saveFocusState();
             }
         }
 
         return handleKeyEvent(event);
     }
+
+    // ... [handleNavigation]
 
     /**
      * Core navigation logic.
@@ -151,9 +168,13 @@ public class TvFocusController {
 
         currentLayerName = nextLayerName;
         nextLayer.requestFocus();
+        if (layerChangeListener != null)
+            layerChangeListener.onLayerChanged(currentLayerName);
         log("Transitioned to layer: " + nextLayerName);
         return true;
     }
+
+    // ... [handleNavigation]
 
     /**
      * Find which layer contains the given view.
@@ -193,6 +214,8 @@ public class TvFocusController {
             if (next != null) {
                 next.requestFocus();
             }
+            if (layerChangeListener != null)
+                layerChangeListener.onLayerChanged(currentLayerName);
         }
     }
 

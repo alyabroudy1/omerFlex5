@@ -5,7 +5,11 @@ import android.content.Intent;
 import android.os.Bundle;
 import android.util.Log;
 import android.view.View;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.Button;
+import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.ProgressBar;
 import android.widget.TextView;
 
@@ -45,8 +49,9 @@ public class SearchActivity extends com.omarflex5.ui.base.BaseActivity {
     private RecyclerView recyclerResults;
     private ProgressBar progressBar;
     private TextView textStatus;
-    private TextView textTitle;
-    private Button btnLoadMore;
+    private EditText editSearch;
+    private ImageButton btnSearchAction;
+    private TextView btnLoadMore;
     private View emptyView;
 
     @Override
@@ -88,15 +93,46 @@ public class SearchActivity extends com.omarflex5.ui.base.BaseActivity {
         }
 
         if (movieTitle != null && !movieTitle.isEmpty()) {
-            textTitle.setText("البحث عن: " + movieTitle);
+            // For inheritance, pre-fill title but maybe don't search yet?
+            // Logic says: "query of the original movie title has to be editable"
+            // Usually EXTRA_MOVIE_TITLE comes with EXTRA_QUERY.
+            // If intent has movieTitle but no query, setting text is good.
+            editSearch.setText(movieTitle);
+            editSearch.setSelection(movieTitle.length());
         }
 
         if (query != null && !query.isEmpty()) {
+            editSearch.setText(query);
+            editSearch.setSelection(query.length());
             Log.d(TAG, "Starting search for: " + query + (context != null ? " with TMDB context" : ""));
             viewModel.search(query, context, this);
         } else {
-            textStatus.setText("لا يوجد استعلام بحث");
+            // No query - Focus input and show keyboard
+            textStatus.setText("ابحث عن أفلام...");
             textStatus.setVisibility(View.VISIBLE);
+
+            editSearch.requestFocus();
+            // Post to ensure layout is complete before showing keyboard
+            editSearch.postDelayed(() -> {
+                InputMethodManager imm = (InputMethodManager) getSystemService(
+                        android.content.Context.INPUT_METHOD_SERVICE);
+                if (imm != null) {
+                    imm.showSoftInput(editSearch, InputMethodManager.SHOW_IMPLICIT);
+                }
+            }, 200);
+        }
+    }
+
+    private void performSearch() {
+        String query = editSearch.getText().toString().trim();
+        if (!query.isEmpty()) {
+            // Hide keyboard
+            InputMethodManager imm = (InputMethodManager) getSystemService(
+                    android.content.Context.INPUT_METHOD_SERVICE);
+            if (imm != null) {
+                imm.hideSoftInputFromWindow(editSearch.getWindowToken(), 0);
+            }
+            viewModel.search(query, null, this);
         }
     }
 
@@ -112,9 +148,20 @@ public class SearchActivity extends com.omarflex5.ui.base.BaseActivity {
         recyclerResults = findViewById(R.id.recycler_results);
         progressBar = findViewById(R.id.progress_bar);
         textStatus = findViewById(R.id.text_status);
-        textTitle = findViewById(R.id.text_title);
+        editSearch = findViewById(R.id.edit_search);
+        btnSearchAction = findViewById(R.id.btn_search_action);
         btnLoadMore = findViewById(R.id.btn_load_more);
         emptyView = findViewById(R.id.empty_view);
+
+        editSearch.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
+                performSearch();
+                return true;
+            }
+            return false;
+        });
+
+        btnSearchAction.setOnClickListener(v -> performSearch());
 
         btnLoadMore.setOnClickListener(v -> viewModel.loadMore());
         findViewById(R.id.btn_back).setOnClickListener(v -> finish());
@@ -158,15 +205,15 @@ public class SearchActivity extends com.omarflex5.ui.base.BaseActivity {
         focusController = new com.omarflex5.ui.navigation.TvFocusController(isRTL);
         focusController.setDebugEnabled(true);
 
-        // Header Layer (Back Button + Search Bar)
-        // UP: Block, DOWN: Results, LEFT/RIGHT: Block
-        focusController.registerLayer(new com.omarflex5.ui.navigation.SingleViewLayer(
+        // Header Layer (Back + Input + Search)
+        // UP: Block, DOWN: Results, LEFT/RIGHT: Internal
+        focusController.registerLayer(new com.omarflex5.ui.navigation.ButtonRowLayer(
                 "header",
                 findViewById(R.id.btn_back),
-                null, // UP
-                "results", // DOWN
+                editSearch,
+                btnSearchAction,
                 null, // LEFT
-                null // RIGHT
+                "results" // DOWN
         ));
 
         // Results Layer (Grid)
@@ -203,9 +250,17 @@ public class SearchActivity extends com.omarflex5.ui.base.BaseActivity {
     @Override
     public boolean dispatchKeyEvent(android.view.KeyEvent event) {
         if (focusController != null) {
+            View currentFocus = getCurrentFocus();
+
+            // Allow EditText to handle Left/Right navigation for cursor movement
+            if (currentFocus instanceof EditText &&
+                    (event.getKeyCode() == android.view.KeyEvent.KEYCODE_DPAD_LEFT ||
+                            event.getKeyCode() == android.view.KeyEvent.KEYCODE_DPAD_RIGHT)) {
+                return super.dispatchKeyEvent(event);
+            }
+
             // Let the controller handle D-pad navigation
             // We pass the current focus to help the controller detect layer changes logic
-            View currentFocus = getCurrentFocus();
             if (focusController.handleKeyEvent(event, currentFocus)) {
                 return true;
             }
