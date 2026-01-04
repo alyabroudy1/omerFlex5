@@ -24,6 +24,7 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
 
     private List<UnifiedSearchService.SearchResult> results = new ArrayList<>();
     private OnResultClickListener listener;
+    private RecyclerView recyclerView;
 
     public interface OnResultClickListener {
         void onResultClick(UnifiedSearchService.SearchResult result);
@@ -31,6 +32,13 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
 
     public void setOnResultClickListener(OnResultClickListener listener) {
         this.listener = listener;
+    }
+
+    /**
+     * Set the RecyclerView reference for scroll-into-view functionality.
+     */
+    public void setRecyclerView(RecyclerView recyclerView) {
+        this.recyclerView = recyclerView;
     }
 
     public void setResults(List<UnifiedSearchService.SearchResult> results) {
@@ -102,6 +110,9 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
                             .setDuration(150)
                             .start();
                     v.setElevation(16f);
+
+                    // Scroll-into-view: Ensure full card is visible beyond footer
+                    scrollFocusedItemIntoView(v);
                 } else {
                     v.animate()
                             .scaleX(1.0f)
@@ -109,6 +120,61 @@ public class SearchResultAdapter extends RecyclerView.Adapter<SearchResultAdapte
                             .setDuration(150)
                             .start();
                     v.setElevation(4f);
+                }
+            });
+        }
+
+        /**
+         * Scrolls the RecyclerView to ensure the focused item is fully visible,
+         * accounting for the floating footer (Load More button) and header.
+         */
+        private void scrollFocusedItemIntoView(View focusedView) {
+            if (recyclerView == null)
+                return;
+
+            // Post to ensure layout is complete
+            focusedView.post(() -> {
+                if (recyclerView == null)
+                    return;
+
+                float density = focusedView.getContext().getResources().getDisplayMetrics().density;
+
+                // Get the view's position relative to screen
+                int[] viewLocation = new int[2];
+                focusedView.getLocationOnScreen(viewLocation);
+                int viewTop = viewLocation[1];
+                int viewBottom = viewLocation[1] + focusedView.getHeight();
+
+                // Account for scale animation (1.10x scale = 10% larger, grows from center)
+                int scaledHeight = (int) (focusedView.getHeight() * 1.10f);
+                int extraHeight = (scaledHeight - focusedView.getHeight()) / 2;
+                int viewTopScaled = viewTop - extraHeight;
+                int viewBottomScaled = viewBottom + extraHeight;
+
+                // Get RecyclerView's visible bounds
+                int[] recyclerLocation = new int[2];
+                recyclerView.getLocationOnScreen(recyclerLocation);
+                int recyclerTop = recyclerLocation[1];
+                int recyclerBottom = recyclerLocation[1] + recyclerView.getHeight();
+
+                // Extra padding to account for floating footer (Load More button)
+                // 80dp should cover the footer height + margin
+                int footerPadding = (int) (80 * density);
+                int visibleBottom = recyclerBottom - footerPadding;
+
+                // Extra padding for header area (small margin for visual comfort)
+                int headerPadding = (int) (16 * density);
+                int visibleTop = recyclerTop + headerPadding;
+
+                // If the card extends beyond visible bottom, scroll down
+                if (viewBottomScaled > visibleBottom) {
+                    int scrollAmount = viewBottomScaled - visibleBottom;
+                    recyclerView.smoothScrollBy(0, scrollAmount);
+                }
+                // If the card extends above visible top, scroll up
+                else if (viewTopScaled < visibleTop) {
+                    int scrollAmount = viewTopScaled - visibleTop; // Negative = scroll up
+                    recyclerView.smoothScrollBy(0, scrollAmount);
                 }
             });
         }

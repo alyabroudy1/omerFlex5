@@ -189,6 +189,9 @@ public class SearchActivity extends com.omarflex5.ui.base.BaseActivity {
                 .getConfiguration().orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE ? 4 : 2;
         recyclerResults.setLayoutManager(new GridLayoutManager(this, spanCount));
         recyclerResults.setAdapter(adapter);
+
+        // Provide RecyclerView reference for scroll-into-view functionality
+        adapter.setRecyclerView(recyclerResults);
     }
 
     @Override
