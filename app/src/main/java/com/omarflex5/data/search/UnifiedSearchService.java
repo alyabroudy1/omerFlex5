@@ -63,6 +63,14 @@ public class UnifiedSearchService {
     // Queue for pagination (next page URLs to fetch on "Load More")
     private final List<SearchTask> paginationQueue = new ArrayList<>();
 
+    // Queue for low-priority servers (priority > HIGH_PRIORITY_THRESHOLD)
+    private final List<SearchTask> lowPriorityQueue = new ArrayList<>();
+
+    // Only servers with basePriority <= this threshold get direct HTTP search
+    // Priority 1-3: MyCima, FaselHD, ArabSeed = Direct HTTP
+    // Priority 4+: Queue from start
+    private static final int HIGH_PRIORITY_THRESHOLD = 3;
+
     private static class SearchTask {
         final ServerEntity server;
         final String url;
@@ -144,8 +152,11 @@ public class UnifiedSearchService {
         currentContext = context;
         currentActivityRef = activity != null ? new java.lang.ref.WeakReference<>(activity) : null;
         searchState.postValue(SearchState.loading(currentQuery));
-        lastFailedTasks.clear(); // Clear previous session failures
-        paginationQueue.clear(); // Clear previous pagination queue
+
+        // Clear all queues for new search session
+        lastFailedTasks.clear();
+        paginationQueue.clear();
+        lowPriorityQueue.clear();
 
         Log.d(TAG, "Starting search: " + currentQuery + (context != null ? " with context" : ""));
 
@@ -161,56 +172,85 @@ public class UnifiedSearchService {
 
                     Log.d(TAG, "Found " + servers.size() + " searchable servers in DB.");
 
-                    // Strict Production Filter (Fasel Only) & Active Servers Check
-                    List<ServerEntity> activeServers = new ArrayList<>();
+                    // Partition servers by priority
+                    List<ServerEntity> highPriorityServers = new ArrayList<>();
+                    List<ServerEntity> lowPriorityServers = new ArrayList<>();
+
                     for (ServerEntity server : servers) {
-                        if (server.isEnabled()) {
-                            activeServers.add(server);
+                        if (!server.isEnabled())
+                            continue;
+
+                        if (server.getBasePriority() <= HIGH_PRIORITY_THRESHOLD) {
+                            // Priority 1-3: Direct HTTP (MyCima, FaselHD, ArabSeed)
+                            highPriorityServers.add(server);
+                        } else {
+                            // Priority 4+: Queue from start
+                            lowPriorityServers.add(server);
                         }
                     }
 
-                    // Generate All Search Tasks
-                    List<SearchTask> allTasks = new ArrayList<>();
-                    for (ServerEntity server : activeServers) {
+                    Log.d(TAG, "Partitioned: " + highPriorityServers.size() + " high-priority (direct), "
+                            + lowPriorityServers.size() + " low-priority (queued)");
+
+                    // Generate tasks for high-priority servers (Fast Mode)
+                    List<SearchTask> fastTasks = new ArrayList<>();
+                    for (ServerEntity server : highPriorityServers) {
                         List<String> urls = ParserFactory.getSearchUrls(server, currentQuery);
                         for (String url : urls) {
-                            allTasks.add(new SearchTask(server, url));
+                            fastTasks.add(new SearchTask(server, url));
+                            Log.d(TAG, "[FAST] Added: " + server.getName() + " (priority " + server.getBasePriority()
+                                    + ") -> " + url);
+                        }
+                    }
+
+                    // Add low-priority servers to queue immediately
+                    synchronized (lowPriorityQueue) {
+                        for (ServerEntity server : lowPriorityServers) {
+                            List<String> urls = ParserFactory.getSearchUrls(server, currentQuery);
+                            for (String url : urls) {
+                                lowPriorityQueue.add(new SearchTask(server, url));
+                                Log.d(TAG, "[QUEUE] Added to lowPriorityQueue: " + server.getName() + " (priority "
+                                        + server.getBasePriority() + ") -> " + url);
+                            }
                         }
                     }
 
                     Log.d(TAG,
-                            "Starting Hybrid Search with " + allTasks.size() + " tasks across " + activeServers.size()
-                                    + " servers.");
+                            "Fast Mode: " + fastTasks.size() + " tasks, Queue: " + lowPriorityQueue.size() + " tasks");
 
                     // Execute Fast Search (Strict Mode: allowFallback=false)
-                    List<SearchResult> allResults = searchFastTasks(allTasks, context);
+                    List<SearchResult> allResults = searchFastTasks(fastTasks, context);
 
                     // Deduplicate results
                     List<SearchResult> deduped = deduplicateResults(allResults);
 
+                    // Calculate total remaining queue tasks
+                    int totalQueuedTasks = 0;
+                    synchronized (paginationQueue) {
+                        totalQueuedTasks += paginationQueue.size();
+                    }
+                    synchronized (lastFailedTasks) {
+                        totalQueuedTasks += lastFailedTasks.size();
+                    }
+                    synchronized (lowPriorityQueue) {
+                        totalQueuedTasks += lowPriorityQueue.size();
+                    }
+
                     // Decision Time
-                    if (deduped.isEmpty() && !lastFailedTasks.isEmpty()) {
-                        Log.i(TAG, "Fast search empty. Auto-triggering queue for " + lastFailedTasks.size()
-                                + " tasks.");
+                    if (deduped.isEmpty() && totalQueuedTasks > 0) {
+                        Log.i(TAG, "Fast search empty. Auto-triggering queue for " + totalQueuedTasks + " tasks.");
 
-                        // Copy list to avoid concurrent modification issues
-                        List<SearchTask> toQueue = new ArrayList<>();
-                        synchronized (lastFailedTasks) {
-                            toQueue.addAll(lastFailedTasks);
-                        }
+                        // Build prioritized queue: pagination > cfRetry > lowPriority
+                        List<SearchTask> toQueue = buildPrioritizedQueue();
 
-                        // Auto-queue logic
-                        processNextQueuedTask(toQueue, 0, deduped, new ArrayList<>(), context);
+                        // Auto-queue logic with recursive stop-on-result
+                        processNextQueuedTaskRecursive(toQueue, 0, deduped, new ArrayList<>(), context, 0);
 
-                    } else if (!lastFailedTasks.isEmpty()) {
-                        // We have results, but some tasks failed. Allow "Load More".
-                        // Calculate unique servers from failed tasks
-                        Set<Long> failedServerIds = new HashSet<>();
-                        for (SearchTask t : lastFailedTasks)
-                            failedServerIds.add(t.server.getId());
-                        searchState.postValue(SearchState.partial(currentQuery, deduped, failedServerIds.size()));
+                    } else if (totalQueuedTasks > 0) {
+                        // We have results, but more tasks remain. Allow "Load More".
+                        searchState.postValue(SearchState.partial(currentQuery, deduped, totalQueuedTasks));
                     } else {
-                        // All good (or all failed with non-CF errors)
+                        // All done - no more queued tasks
                         searchState.postValue(SearchState.complete(currentQuery, deduped));
                     }
                 });
@@ -301,8 +341,54 @@ public class UnifiedSearchService {
     }
 
     /**
+     * Build a prioritized queue from all pending tasks.
+     * Priority order: 1) Pagination (next pages), 2) CF Retry, 3) Low Priority
+     * servers
+     */
+    private List<SearchTask> buildPrioritizedQueue() {
+        List<SearchTask> prioritized = new ArrayList<>();
+        int paginationCount = 0, cfRetryCount = 0, lowPriorityCount = 0;
+
+        // Priority 1: Pagination tasks (next pages from successful searches)
+        synchronized (paginationQueue) {
+            paginationCount = paginationQueue.size();
+            for (SearchTask task : paginationQueue) {
+                Log.d(TAG, "[BUILD_QUEUE] Priority 1 - Pagination: " + task.server.getName() + " -> " + task.url);
+            }
+            prioritized.addAll(paginationQueue);
+            paginationQueue.clear();
+        }
+
+        // Priority 2: CF retry tasks (high-priority servers that failed with
+        // Cloudflare)
+        synchronized (lastFailedTasks) {
+            cfRetryCount = lastFailedTasks.size();
+            for (SearchTask task : lastFailedTasks) {
+                Log.d(TAG, "[BUILD_QUEUE] Priority 2 - CF Retry: " + task.server.getName() + " -> " + task.url);
+            }
+            prioritized.addAll(lastFailedTasks);
+            lastFailedTasks.clear();
+        }
+
+        // Priority 3: Low-priority servers (priority 4+)
+        synchronized (lowPriorityQueue) {
+            lowPriorityCount = lowPriorityQueue.size();
+            for (SearchTask task : lowPriorityQueue) {
+                Log.d(TAG, "[BUILD_QUEUE] Priority 3 - Low Priority: " + task.server.getName() + " (priority "
+                        + task.server.getBasePriority() + ") -> " + task.url);
+            }
+            prioritized.addAll(lowPriorityQueue);
+            lowPriorityQueue.clear();
+        }
+
+        Log.i(TAG, "Built prioritized queue: " + paginationCount + " pagination + " + cfRetryCount + " CF retry + "
+                + lowPriorityCount + " low-priority = " + prioritized.size() + " total");
+        return prioritized;
+    }
+
+    /**
      * Process queued servers (triggered by user clicking "Load More").
-     * Priority: 1) Pagination queue (next pages), 2) CF retry queue
+     * Uses recursive stop-on-result logic.
      */
     public void processQueuedServers() {
         if (currentQuery == null)
@@ -312,30 +398,12 @@ public class UnifiedSearchService {
         List<SearchResult> baseResults = getCurrentResults();
         searchState.postValue(SearchState.loadingMore(currentQuery, baseResults));
 
-        // Priority 1: Process pagination queue first (round-robin across servers)
-        List<SearchTask> toProcess = new ArrayList<>();
-        synchronized (paginationQueue) {
-            if (!paginationQueue.isEmpty()) {
-                // Take one task per server for round-robin
-                toProcess.addAll(paginationQueue);
-                paginationQueue.clear();
-                Log.d(TAG, "Processing pagination tasks: " + toProcess.size());
-            }
-        }
-
-        // Priority 2: If no pagination tasks, process CF retry queue
-        if (toProcess.isEmpty()) {
-            synchronized (lastFailedTasks) {
-                if (!lastFailedTasks.isEmpty()) {
-                    toProcess.addAll(lastFailedTasks);
-                    lastFailedTasks.clear();
-                    Log.d(TAG, "Processing CF retry tasks: " + toProcess.size());
-                }
-            }
-        }
+        // Build prioritized queue
+        List<SearchTask> toProcess = buildPrioritizedQueue();
 
         if (!toProcess.isEmpty()) {
-            processNextQueuedTask(toProcess, 0, baseResults, new ArrayList<>(), currentContext);
+            // Start recursive processing with stop-on-result
+            processNextQueuedTaskRecursive(toProcess, 0, baseResults, new ArrayList<>(), currentContext, 0);
         } else {
             // No more tasks - mark as complete
             Log.d(TAG, "No more tasks to process");
@@ -344,7 +412,7 @@ public class UnifiedSearchService {
     }
 
     /**
-     * Check if there are pending tasks (pagination or CF retry).
+     * Check if there are pending tasks (pagination, CF retry, or low-priority).
      * Used by UI to show/hide "Load More" button.
      */
     public boolean hasPendingTasks() {
@@ -353,26 +421,93 @@ public class UnifiedSearchService {
                 return true;
         }
         synchronized (lastFailedTasks) {
-            return !lastFailedTasks.isEmpty();
+            if (!lastFailedTasks.isEmpty())
+                return true;
+        }
+        synchronized (lowPriorityQueue) {
+            return !lowPriorityQueue.isEmpty();
         }
     }
 
-    private void processNextQueuedTask(List<SearchTask> tasks, int index,
-            List<SearchResult> baseResults, List<SearchResult> accumulated, MetadataContext context) {
+    /**
+     * Get total count of pending tasks.
+     */
+    public int getPendingTaskCount() {
+        int count = 0;
+        synchronized (paginationQueue) {
+            count += paginationQueue.size();
+        }
+        synchronized (lastFailedTasks) {
+            count += lastFailedTasks.size();
+        }
+        synchronized (lowPriorityQueue) {
+            count += lowPriorityQueue.size();
+        }
+        return count;
+    }
 
+    /**
+     * Process queued tasks recursively.
+     * STOPS as soon as newResultsThisRound >= 1 (user must click "Load More" to
+     * continue).
+     * 
+     * @param tasks               List of tasks to process
+     * @param index               Current task index
+     * @param baseResults         Results from previous phases
+     * @param accumulated         Results accumulated in this round
+     * @param context             Metadata context
+     * @param newResultsThisRound Count of new results found in this round
+     */
+    private void processNextQueuedTaskRecursive(List<SearchTask> tasks, int index,
+            List<SearchResult> baseResults, List<SearchResult> accumulated,
+            MetadataContext context, int newResultsThisRound) {
+
+        // Check if we found results this round - STOP and wait for "Load More"
+        if (newResultsThisRound > 0) {
+            List<SearchResult> currentDisplay = new ArrayList<>(baseResults);
+            currentDisplay.addAll(accumulated);
+            List<SearchResult> deduped = deduplicateResults(currentDisplay);
+
+            // Put remaining tasks back into lowPriorityQueue for "Load More"
+            int tasksAddedBack = 0;
+            if (index < tasks.size()) {
+                synchronized (lowPriorityQueue) {
+                    for (int i = index; i < tasks.size(); i++) {
+                        lowPriorityQueue.add(tasks.get(i));
+                        tasksAddedBack++;
+                    }
+                }
+            }
+
+            // Count remaining = tasks we just added back (now in getPendingTaskCount)
+            int remaining = getPendingTaskCount();
+            Log.i(TAG, "[STOP] Found " + newResultsThisRound + " results. Added " + tasksAddedBack
+                    + " tasks back to queue. " + remaining + " total remaining.");
+            searchState.postValue(SearchState.partial(currentQuery, deduped, remaining));
+            return;
+        }
+
+        // All tasks processed without finding results
         if (index >= tasks.size()) {
-            // All done - merge final results
             List<SearchResult> finalResults = new ArrayList<>(baseResults);
             finalResults.addAll(accumulated);
             List<SearchResult> deduped = deduplicateResults(finalResults);
-            searchState.postValue(SearchState.complete(currentQuery, deduped));
+
+            // Check if there are more tasks in other queues
+            int remaining = getPendingTaskCount();
+            if (remaining > 0) {
+                searchState.postValue(SearchState.partial(currentQuery, deduped, remaining));
+            } else {
+                searchState.postValue(SearchState.complete(currentQuery, deduped));
+            }
             return;
         }
 
         SearchTask task = tasks.get(index);
-        Log.d(TAG, "Processing QUEUED task: " + task.url);
+        Log.i(TAG, "[EXECUTE] Task [" + (index + 1) + "/" + tasks.size() + "] Server: " + task.server.getName()
+                + " (priority " + task.server.getBasePriority() + ") URL: " + task.url);
 
-        // IN THE QUEUE: Allow Fallback = TRUE
+        // IN THE QUEUE: Allow Fallback = TRUE (use WebView if needed)
         android.app.Activity activity = currentActivityRef != null ? currentActivityRef.get() : null;
         scraperManager.search(task.server, task.url, true, activity, new WebViewScraperManager.ScraperCallback() {
             @Override
@@ -380,23 +515,26 @@ public class UnifiedSearchService {
                 executor.execute(() -> {
                     try {
                         List<SearchResult> results = parseResults(task.server, html, context);
+                        int newResults = results.size();
                         accumulated.addAll(results);
 
-                        // Update progress (approximate by unique servers or just tasks)
-                        int remaining = tasks.size() - index - 1;
+                        Log.d(TAG, "Task yielded " + newResults + " results from " + task.server.getName());
 
-                        // Construct current display list: Base + Accumulated So Far
+                        // Construct current display list for progress update
                         List<SearchResult> currentDisplay = new ArrayList<>(baseResults);
                         currentDisplay.addAll(accumulated);
-
+                        int remaining = tasks.size() - index - 1;
                         searchState.postValue(SearchState.partial(currentQuery,
                                 deduplicateResults(currentDisplay), remaining));
 
-                        // Process next
-                        processNextQueuedTask(tasks, index + 1, baseResults, accumulated, context);
+                        // Continue to next task with updated newResultsThisRound
+                        processNextQueuedTaskRecursive(tasks, index + 1, baseResults, accumulated,
+                                context, newResultsThisRound + newResults);
                     } catch (Exception e) {
                         Log.e(TAG, "Error in background search processing", e);
-                        processNextQueuedTask(tasks, index + 1, baseResults, accumulated, context);
+                        // Continue to next task on error
+                        processNextQueuedTaskRecursive(tasks, index + 1, baseResults, accumulated,
+                                context, newResultsThisRound);
                     }
                 });
             }
@@ -405,11 +543,21 @@ public class UnifiedSearchService {
             public void onError(String message) {
                 executor.execute(() -> {
                     Log.e(TAG, "Queued task failed (" + task.url + "): " + message);
-                    // Continue with next task
-                    processNextQueuedTask(tasks, index + 1, baseResults, accumulated, context);
+                    // Continue with next task on failure
+                    processNextQueuedTaskRecursive(tasks, index + 1, baseResults, accumulated,
+                            context, newResultsThisRound);
                 });
             }
         });
+    }
+
+    // Keep the old method for backward compatibility (unused, can be removed later)
+    @SuppressWarnings("unused")
+    private void processNextQueuedTask(List<SearchTask> tasks, int index,
+            List<SearchResult> baseResults, List<SearchResult> accumulated, MetadataContext context) {
+        // Delegate to new recursive method with stop-on-result disabled (0 threshold
+        // means never stop)
+        processNextQueuedTaskRecursive(tasks, index, baseResults, accumulated, context, -1);
     }
 
     /**
